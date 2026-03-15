@@ -1385,4 +1385,6 @@ if __name__ == "__main__":
     scheduler.start()
     log.info("Scheduler started: refreshing every %d minutes", REFRESH_MINUTES)
 
-    app.run(host="0.0.0.0", port=5051, debug=False)
+    port = int(os.getenv("PORT", "8000"))
+    log.info("Listening on http://0.0.0.0:%s/", port)
+    app.run(host="0.0.0.0", port=port, debug=False)

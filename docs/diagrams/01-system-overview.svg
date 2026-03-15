@@ -28,7 +28,7 @@
   <!-- Flask Server -->
   <rect x="240" y="50" width="240" height="200" class="box"/>
   <text x="360" y="78" text-anchor="middle" class="label">Flask Server (server.py)</text>
-  <text x="360" y="98" text-anchor="middle" class="muted">Host 0.0.0.0 :5051</text>
+  <text x="360" y="98" text-anchor="middle" class="muted">Host 0.0.0.0 :8000</text>
   <rect x="256" y="108" width="208" height="58" class="box-api"/>
   <text x="360" y="128" text-anchor="middle" class="muted">In-memory caches</text>
   <text x="360" y="143" text-anchor="middle" class="muted">base_cache, metrics_cache,</text>

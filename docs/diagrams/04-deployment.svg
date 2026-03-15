@@ -40,11 +40,11 @@
   <!-- Listener -->
   <rect x="40" y="252" width="560" height="88" class="box"/>
   <text x="320" y="276" text-anchor="middle" class="label">Server process</text>
-  <text x="320" y="296" text-anchor="middle" class="muted">Binds 0.0.0.0:5051 (all interfaces). First run: full base + 24h metrics fetch; then scheduler every REFRESH_MINUTES.</text>
-  <text x="320" y="316" text-anchor="middle" class="muted">Customer browser: http://&lt;host&gt;:5051/  or place behind reverse proxy (HTTPS, auth) for remote demos.</text>
-  <text x="320" y="336" text-anchor="middle" class="muted">Health check: GET http://&lt;host&gt;:5051/api/health</text>
+  <text x="320" y="296" text-anchor="middle" class="muted">Binds 0.0.0.0:8000 (all interfaces; set PORT to override). First run: full base + 24h metrics fetch; then scheduler every REFRESH_MINUTES.</text>
+  <text x="320" y="316" text-anchor="middle" class="muted">Customer browser: http://&lt;host&gt;:8000/  or place behind reverse proxy (HTTPS, auth) for remote demos.</text>
+  <text x="320" y="336" text-anchor="middle" class="muted">Health check: GET http://&lt;host&gt;:8000/api/health</text>
 
   <!-- External -->
   <rect x="24" y="268" width="12" height="12" fill="#00D68F" rx="2"/>
-  <text x="44" y="278" class="muted">Outbound í ThousandEyes MCP (HTTPS)</text>
+  <text x="44" y="278" class="muted">Outbound ù ThousandEyes MCP (HTTPS)</text>
 </svg>

@@ -148,7 +148,7 @@ The following diagram shows how a user loads the dashboard and how the browser p
 
 ![Request flow](diagrams/03-request-flow.svg)
 
-1. User opens `http://<host>:5051/`.
+1. User opens `http://<host>:8000/` (or the port set by `PORT`).
 2. Server responds with `noc_dashboard.html`.
 3. Browser runs JavaScript: calls `GET /api/data?window=24h` (or last selected window).
 4. Server reads from base_cache and, for the requested window, from metrics_cache and extra_kpi_cache; returns JSON (or 503 if base not ready).
@@ -166,9 +166,9 @@ Optional: If the user changes the time window and the server does not have fresh
 ![Deployment](diagrams/04-deployment.svg)
 
 - **Host:** Any OS where Python 3.10+ and the dependencies run (Windows, macOS, Linux).
-- **Network:** Server must have **outbound HTTPS** to `api.thousandeyes.com`. No inbound rules required if only local browser access; for remote demos, open port 5051 or put the app behind a reverse proxy (HTTPS, optional auth).
-- **Process:** Run `python server.py` (or via a process manager). Server binds **0.0.0.0:5051**.
-- **Health:** `GET http://<host>:5051/api/health` for liveness and cache status.
+- **Network:** Server must have **outbound HTTPS** to `api.thousandeyes.com`. No inbound rules required if only local browser access; for remote demos, open port 8000 (or `PORT`) or put the app behind a reverse proxy (HTTPS, optional auth).
+- **Process:** Run `python server.py` (or via a process manager). Server binds **0.0.0.0:8000** by default (set `PORT` to override).
+- **Health:** `GET http://<host>:8000/api/health` for liveness and cache status.
 
 ### 7.2 Environment Variables
 

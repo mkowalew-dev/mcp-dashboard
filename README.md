@@ -8,7 +8,7 @@ NOC-style dashboard that pulls live ThousandEyes data over the **Model Context P
 
 | Area | Behavior |
 |------|----------|
-| **Backend** | Flask app on `0.0.0.0:5051`; serves `noc_dashboard.html` at `/`. |
+| **Backend** | Flask app on `0.0.0.0:8000` (override with `PORT`); serves `noc_dashboard.html` at `/`. |
 | **Data source** | ThousandEyes MCP over HTTPS (`https://api.thousandeyes.com/mcp`) using a Bearer token. |
 | **MCP tools used** | Lists synthetics tests, endpoint tests, account groups, cloud/enterprise/endpoint agents; triggered alerts; events; outages; batch synthetics metrics (availability, loss, TTFB, VoIP, BGP/API/page metrics); per-test agent breakdown; endpoint agent metrics (latency, Wi‑Fi RSSI, loss). |
 | **Caching** | In-memory base + per-window metrics; TTL defaults to one refresh cycle (min 5m, max 60m). |
@@ -40,6 +40,7 @@ NOC-style dashboard that pulls live ThousandEyes data over the **Model Context P
 | `MCP_URL` | No | ThousandEyes MCP URL | Override only if directed by Cisco. |
 | `MCP_BATCH_SIZE` | No | `20` | Test IDs per synthetics metrics call (5–50). |
 | `MCP_INTER_BATCH_DELAY_SEC` | No | `0.35` | Pause between batch rounds to limit API pressure. |
+| `PORT` | No | `8000` | HTTP port the server listens on. |
 
 Optional: copy `.env` in the project root (loaded by `python-dotenv`); keep `.env` out of version control.
 
@@ -73,7 +74,7 @@ $env:REFRESH_MINUTES = "15"
 python server.py
 ```
 
-Open **http://127.0.0.1:5051/** (or from another machine: `http://<host>:5051/`).
+Open **http://127.0.0.1:8000/** (or from another machine: `http://<host>:8000/`).
 
 Deactivate when done: `deactivate`.
 
