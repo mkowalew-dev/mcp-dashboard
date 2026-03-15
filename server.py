@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import os
+import random
 import re
 import threading
 import time
@@ -37,8 +38,10 @@ app = Flask(__name__)
 MCP_URL = os.getenv("MCP_URL", "https://api.thousandeyes.com/mcp").strip()
 MCP_TOKEN = (os.getenv("TE_TOKEN") or "").strip()
 REFRESH_MINUTES = max(1, min(120, int(os.getenv("REFRESH_MINUTES", "15"))))
-MCP_BATCH_SIZE = max(5, min(50, int(os.getenv("MCP_BATCH_SIZE", "20"))))
-MCP_INTER_BATCH_DELAY = float(os.getenv("MCP_INTER_BATCH_DELAY_SEC", "0.35"))
+MCP_BATCH_SIZE = max(5, min(50, int(os.getenv("MCP_BATCH_SIZE", "15"))))
+# Delay between batch requests; higher reduces 429s (default 1.0s; min 0.5s when set)
+_raw_delay = float(os.getenv("MCP_INTER_BATCH_DELAY_SEC", "1.0"))
+MCP_INTER_BATCH_DELAY = max(0.5, _raw_delay)
 # Cache window metrics at least one refresh cycle (capped)
 METRICS_TTL_SECONDS = max(300, min(3600, REFRESH_MINUTES * 60))
 
@@ -215,6 +218,16 @@ def _set_refresh_status(
             _refresh_status["started_at"] = datetime.now(timezone.utc).isoformat()
 
 
+def _unwrap_exception(e: Exception) -> Exception:
+    """Unwrap ExceptionGroup/TaskGroup (Python 3.11+) to get the root cause for clearer logging."""
+    sub = getattr(e, "exceptions", None)
+    if sub and type(e).__name__ in ("ExceptionGroup", "BaseExceptionGroup"):
+        if len(sub) == 1:
+            return _unwrap_exception(sub[0])
+        return sub[0]
+    return e
+
+
 async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: int = 4):
     from mcp.client.streamable_http import streamablehttp_client
     from mcp import ClientSession
@@ -231,12 +244,13 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                         texts = [c.text for c in result.content if hasattr(c, "text")]
                         err_text = "\n".join(texts)
                         if "429" in err_text or "Too Many Requests" in err_text:
-                            wait = 2 ** (attempt + 1)
+                            wait = min(60, 2 ** (attempt + 2))
+                            jitter = random.uniform(0, min(5, wait * 0.2))
                             log.error(
-                                "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%ds",
-                                tool_name, attempt + 1, retries, wait,
+                                "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%.1fs",
+                                tool_name, attempt + 1, retries, wait + jitter,
                             )
-                            await asyncio.sleep(wait)
+                            await asyncio.sleep(wait + jitter)
                             continue
                         log.error("MCP tool error: tool=%s, error=%s", tool_name, err_text[:500])
                         raise RuntimeError(f"MCP tool error: {err_text[:200]}")
@@ -249,16 +263,19 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
         except RuntimeError:
             raise
         except Exception as e:
-            last_err = e
-            wait = min(2 ** (attempt + 1), 10)
+            root = _unwrap_exception(e)
+            last_err = root
+            wait = min(30, 2 ** (attempt + 2))
+            jitter = random.uniform(0, min(3, wait * 0.2))
             log.error(
-                "MCP transient error: tool=%s, attempt=%d/%d, retry_in=%ds, error=%s",
-                tool_name, attempt + 1, retries, wait, e,
+                "MCP transient error: tool=%s, attempt=%d/%d, retry_in=%.1fs, error=%s",
+                tool_name, attempt + 1, retries, wait + jitter, root,
             )
-            await asyncio.sleep(wait)
+            await asyncio.sleep(wait + jitter)
             continue
-    log.error("MCP failed after %d retries: tool=%s, last_error=%s", retries, tool_name, last_err)
-    raise RuntimeError(f"Failed after {retries} retries on {tool_name}: {last_err}")
+    root = _unwrap_exception(last_err) if last_err else last_err
+    log.error("MCP failed after %d retries: tool=%s, last_error=%s", retries, tool_name, root)
+    raise RuntimeError(f"Failed after {retries} retries on {tool_name}: {root}")
 
 
 async def _mcp_synth_metrics_batch(
@@ -847,7 +864,7 @@ async def fetch_metrics_async(hours: int) -> dict[str, float]:
         for name, val in merged.items():
             if name not in test_availability:
                 test_availability[name] = val
-        await asyncio.sleep(delay)
+        await asyncio.sleep(delay + random.uniform(0, 0.4))
 
     loss_metrics = ["NET_LOSS", "ONE_WAY_NET_LOSS_TO_TARGET"]
     for loss_metric in loss_metrics:
@@ -873,7 +890,7 @@ async def fetch_metrics_async(hours: int) -> dict[str, float]:
                         test_availability[name] = round(100.0 - val, 2)
             except Exception as e:
                 log.error("MCP metrics batch error: metric=%s, batch_index=%s, error=%s", loss_metric, i, e)
-            await asyncio.sleep(delay)
+            await asyncio.sleep(delay + random.uniform(0, 0.4))
 
     _set_refresh_status(message=f"24h availability loaded ({len(test_availability)} tests)")
     log.info("Metrics for %dh: %d tests with availability", hours, len(test_availability))
@@ -938,7 +955,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         resps = await _mcp_synth_metrics_batch(resp_metric_order, batch, start, end)
         merged = _merge_parsed_first_wins(resps)
         resp_by_test.update({k: v for k, v in merged.items() if k not in resp_by_test})
-        await asyncio.sleep(delay)
+        await asyncio.sleep(delay + random.uniform(0, 0.4))
 
     if resp_by_test:
         vals = list(resp_by_test.values())
@@ -963,7 +980,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         resps = await _mcp_synth_metrics_batch(loss_metric_order, batch, start, end)
         merged = _merge_parsed_first_wins(resps)
         loss_by_test.update({k: v for k, v in merged.items() if k not in loss_by_test})
-        await asyncio.sleep(delay)
+        await asyncio.sleep(delay + random.uniform(0, 0.4))
 
     if loss_by_test:
         vals = list(loss_by_test.values())
@@ -990,7 +1007,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         resps = await _mcp_synth_metrics_batch(jitter_order, batch, start, end)
         merged = _merge_parsed_first_wins(resps)
         jitter_by_test.update({k: v for k, v in merged.items() if k not in jitter_by_test})
-        await asyncio.sleep(delay)
+        await asyncio.sleep(delay + random.uniform(0, 0.4))
 
     if jitter_by_test:
         jitter_detail = []
@@ -1007,7 +1024,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         resps = await _mcp_synth_metrics_batch(lat_order, batch, start, end)
         merged = _merge_parsed_first_wins(resps)
         latency_by_test.update({k: v for k, v in merged.items() if k not in latency_by_test})
-        await asyncio.sleep(delay)
+        await asyncio.sleep(delay + random.uniform(0, 0.4))
 
     if latency_by_test:
         lat_detail = []
@@ -1039,7 +1056,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                 by_test.update(parse_csv_metrics(resp))
             except Exception as e:
                 log.error("MCP extra KPI batch error: metric_id=%s, batch_index=%s, error=%s", metric_id, i, e)
-            await asyncio.sleep(delay)
+            await asyncio.sleep(delay + random.uniform(0, 0.4))
         if by_test:
             detail = []
             for test_name, val in by_test.items():
@@ -1071,7 +1088,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                 by_test.update(parse_csv_metrics(resp))
             except Exception as e:
                 log.error("MCP extra KPI batch error: metric_id=%s, batch_index=%s, error=%s", metric_id, i, e)
-            await asyncio.sleep(delay)
+            await asyncio.sleep(delay + random.uniform(0, 0.4))
         if by_test:
             detail = []
             for test_name, val in by_test.items():
@@ -1183,16 +1200,6 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
     return extra
 
 
-async def _fetch_24h_metrics_and_extra_parallel() -> tuple[dict[str, float], dict]:
-    """Run 24h metrics and extra KPIs in parallel to reduce initial load time."""
-    hours = 24
-    metrics_task = asyncio.create_task(fetch_metrics_async(hours))
-    extra_task = asyncio.create_task(fetch_extra_kpis_async(hours))
-    metrics = await metrics_task
-    extra = await extra_task
-    return metrics, extra
-
-
 def get_or_fetch_extra_kpis(window_key: str) -> dict:
     hours = WINDOWS.get(window_key, 24)
 
@@ -1254,19 +1261,10 @@ def run_initial_load():
     try:
         _set_refresh_status(phase="base", message="Fetching base data (tests, agents, alerts)...")
         refresh_base()
-        _set_refresh_status(
-            phase="metrics",
-            message="Fetching 24h metrics and extra KPIs in parallel...",
-        )
-        metrics, extra = asyncio.run(_fetch_24h_metrics_and_extra_parallel())
-        if metrics:
-            with _cache_lock:
-                _metrics_cache["24h"] = {"data": metrics, "ts": time.time()}
-        if extra and (
-            extra.get("avg_response_ms") is not None or extra.get("avg_packet_loss") is not None
-        ):
-            with _cache_lock:
-                _extra_kpi_cache["24h"] = {"data": extra, "ts": time.time()}
+        _set_refresh_status(phase="metrics", message="Fetching 24h metrics...")
+        get_or_fetch_metrics("24h")
+        _set_refresh_status(phase="extra_kpis", message="Fetching extra KPIs...")
+        get_or_fetch_extra_kpis("24h")
         _set_refresh_status(phase="done", message="Ready")
         elapsed = time.perf_counter() - start
         log.info("Initial data load complete in %.2fs", elapsed)

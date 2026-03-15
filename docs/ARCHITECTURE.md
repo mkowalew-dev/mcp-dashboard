@@ -95,8 +95,8 @@ The server then builds in-memory structures: test IDs by name, agent lists with 
 
 ### 4.3 Metrics Refresh — Batched and Parallel Per Batch
 
-- **Input:** Synthetic test IDs from `base_cache` (excluding endpoint test IDs). Split into batches of **MCP_BATCH_SIZE** (default 20).
-- **Between batches:** Sleep **MCP_INTER_BATCH_DELAY_SEC** (default 0.35) to reduce rate-limit risk.
+- **Input:** Synthetic test IDs from `base_cache` (excluding endpoint test IDs). Split into batches of **MCP_BATCH_SIZE** (default 15).
+- **Between batches:** Sleep **MCP_INTER_BATCH_DELAY_SEC** (default 1.0s; min 0.5s) plus small random jitter to reduce rate-limit (429) risk.
 - **Within a batch:** For some metric groups, the server issues **multiple MCP metric calls in parallel** (e.g. `WEB_AVAILABILITY` and `DNS_TRACE_AVAILABILITY` together). Results are merged with a **first-wins** rule so that the same test never gets two different values for the same logical metric (merge order is deterministic).
 
 **Availability (24h default):**
@@ -116,7 +116,7 @@ The server then builds in-memory structures: test IDs by name, agent lists with 
 
 Results are written to **metrics_cache** and **extra_kpi_cache** for the corresponding window (e.g. `"24h"`).
 
-**Initial load performance:** On startup, the server runs base first, then runs **24h metrics** and **24h extra KPIs in parallel** (`asyncio.gather`). That reduces initial load time compared to running metrics then extra KPIs sequentially.
+**Initial load:** On startup, the server runs base first, then **24h metrics**, then **24h extra KPIs** sequentially (not in parallel) to avoid doubling the MCP request rate and triggering 429s.
 
 ### 4.4 On-Demand Metrics
 
@@ -126,7 +126,9 @@ Results are written to **metrics_cache** and **extra_kpi_cache** for the corresp
 ### 4.5 Retries and Rate Limiting
 
 - Each MCP tool call is retried up to **4 times** on transient errors.
-- If the MCP response indicates **429 / Too Many Requests**, the server backs off with exponential delay (2^attempt seconds, capped) before retrying.
+- **429 (rate limit):** Backoff is 2^(attempt+2) seconds with jitter (capped at 60s), then retry.
+- **Other errors:** Same exponential backoff (capped at 30s) with jitter.
+- If you still see 429s, increase **MCP_INTER_BATCH_DELAY_SEC** (e.g. 1.5 or 2.0) or decrease **MCP_BATCH_SIZE** (e.g. 10).
 - Logs mention tool name and attempt; **no tokens or raw response bodies** are logged.
 
 ---
@@ -181,8 +183,8 @@ Optional: If the user changes the time window and the server does not have fresh
 | **TE_TOKEN** | Yes | — | ThousandEyes API token (Bearer) for MCP. Do not commit. |
 | **REFRESH_MINUTES** | No | 15 | Scheduler interval (1–120). UI uses same value from `/api/data`. |
 | **MCP_URL** | No | `https://api.thousandeyes.com/mcp` | Override only if directed. |
-| **MCP_BATCH_SIZE** | No | 20 | Test IDs per synthetics metrics batch (5–50). Larger = fewer round-trips, faster load; may increase 429 risk. |
-| **MCP_INTER_BATCH_DELAY_SEC** | No | 0.35 | Delay (seconds) between batch rounds. Lower = faster; increase if you see 429s. |
+| **MCP_BATCH_SIZE** | No | 15 | Test IDs per synthetics metrics batch (5–50). Smaller = less load per request; increase if 429s are rare. |
+| **MCP_INTER_BATCH_DELAY_SEC** | No | 1.0 | Delay (seconds) between batch rounds; min 0.5. Increase (e.g. 1.5–2.0) if you see 429s or transient errors. |
 
 Use a `.env` file in the project root (loaded by `python-dotenv`) and keep it out of version control. Copy from `.env.example`.
 
