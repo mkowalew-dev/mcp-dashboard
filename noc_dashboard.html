@@ -1,0 +1,2099 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ThousandEyes — NOC Performance Overview</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --te-blue: #049FD9;
+    --te-blue-dark: #037BAA;
+    --te-blue-dim: rgba(4,159,217,0.12);
+    --te-dark: #0B1120;
+    --te-dark-2: #111827;
+    --te-dark-3: #1A2332;
+    --te-dark-4: #243044;
+    --te-border: rgba(255,255,255,0.08);
+    --te-text: #E8ECF4;
+    --te-text-dim: #7B8FAD;
+    --te-green: #00D68F;
+    --te-green-dim: rgba(0,214,143,0.15);
+    --te-yellow: #F7B500;
+    --te-yellow-dim: rgba(247,181,0,0.15);
+    --te-red: #EF4444;
+    --te-red-dim: rgba(239,68,68,0.15);
+    --te-orange: #F97316;
+    --te-purple: #A78BFA;
+    --radius: 10px;
+    --font-body: 'DM Sans', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background: var(--te-dark); color: var(--te-text); font-family: var(--font-body); overflow-x: hidden; min-height: 100vh; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--te-dark); }
+  ::-webkit-scrollbar-thumb { background: var(--te-dark-4); border-radius: 3px; }
+
+  .header { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; height: 58px; background: rgba(11,17,32,0.94); backdrop-filter: blur(20px); border-bottom: 1px solid var(--te-border); }
+  .header-left { display:flex; align-items:center; gap:16px; }
+  .te-logo { display:flex; align-items:center; gap:8px; }
+  .te-logo-icon { display: flex; align-items: center; justify-content: center; }
+  .te-logo-icon svg { height: 28px; width: auto; }
+  .header-brand { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--te-text-dim); margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--te-dark-4); }
+  .header-brand span { color: var(--te-blue); }
+  .header-subtitle { font-size: 11px; color: var(--te-text-dim); letter-spacing: 2px; text-transform: uppercase; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--te-dark-4); }
+  .header-right { display:flex; align-items:center; gap: 20px; }
+  .live-indicator { display:flex; align-items:center; gap:7px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--te-green); font-weight: 600; }
+  .live-dot { width:7px; height:7px; border-radius:50%; background: var(--te-green); animation: pulse 2s ease-in-out infinite; box-shadow: 0 0 8px var(--te-green); }
+  @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
+  .clock { font-family: var(--font-mono); font-size: 13px; color: var(--te-text-dim); font-weight: 500; }
+  
+
+  .kpi-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--te-border); border-bottom: 1px solid var(--te-border); }
+  .kpi-card { background: var(--te-dark-2); padding: 16px 20px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; }
+  .kpi-card:hover { background: var(--te-dark-3); }
+  .kpi-card::before { content: ''; position: absolute; top:0; left:0; right:0; height: 2px; background: var(--te-blue); opacity: 0; transition: opacity 0.2s; }
+  .kpi-card:hover::before { opacity: 1; }
+  .kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); margin-bottom: 6px; font-weight: 600; }
+  .kpi-value { font-size: 26px; font-weight: 700; color: #fff; font-family: var(--font-mono); }
+  .kpi-value.green { color: var(--te-green); }
+  .kpi-value.yellow { color: var(--te-yellow); }
+  .kpi-value.red { color: var(--te-red); }
+  .kpi-value.blue { color: var(--te-blue); }
+  .kpi-sub { font-size: 11px; color: var(--te-text-dim); margin-top: 4px; font-family: var(--font-mono); }
+
+  .main { display: grid; grid-template-columns: 1fr 380px; min-height: calc(100vh - 58px); }
+  .map-panel { padding: 20px; border-right: 1px solid var(--te-border); display: flex; flex-direction: column; }
+  .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .panel-title { font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--te-text); }
+  .panel-badge { font-size: 10px; padding: 3px 10px; border-radius: 20px; font-weight: 600; letter-spacing: 0.5px; }
+  .badge-blue { background: var(--te-blue-dim); color: var(--te-blue); }
+  .map-container { flex: 1; background: var(--te-dark-2); border-radius: var(--radius); border: 1px solid var(--te-border); position: relative; overflow: hidden; min-height: 420px; }
+  #leafletMap { width: 100%; height: 100%; background: var(--te-dark-2); }
+  .map-health-badge { position: absolute; bottom: 14px; right: 14px; z-index: 1000; padding: 6px 16px; border-radius: 20px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.3px; background: rgba(13,17,23,0.85); border: 1px solid var(--te-border); backdrop-filter: blur(6px); display: none; }
+  .leaflet-container { background: var(--te-dark-2) !important; font-family: var(--font-body) !important; }
+  .leaflet-control-zoom { border: 1px solid var(--te-border) !important; }
+  .leaflet-control-zoom a { background: var(--te-dark-3) !important; color: var(--te-text-dim) !important; border-color: var(--te-border) !important; width: 28px !important; height: 28px !important; line-height: 28px !important; font-size: 14px !important; }
+  .leaflet-control-zoom a:hover { background: var(--te-dark-4) !important; color: #fff !important; }
+  .leaflet-control-attribution { display: none !important; }
+  .leaflet-popup-content-wrapper { background: rgba(11,17,32,0.96) !important; color: var(--te-text) !important; border: 1px solid var(--te-blue) !important; border-radius: 8px !important; box-shadow: 0 12px 40px rgba(0,0,0,0.6) !important; padding: 0 !important; }
+  .leaflet-popup-content { margin: 0 !important; min-width: 200px !important; font-size: 12px !important; padding: 0 !important; }
+  .agent-popup { padding: 18px 20px; font-family: 'DM Sans', -apple-system, sans-serif; min-width: 280px; }
+  .agent-popup-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .agent-popup-name { font-weight: 700; font-size: 14px; color: #fff; }
+  .agent-popup-health { font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+  .agent-popup-loc { font-size: 11px; color: var(--te-text-dim); margin-bottom: 14px; }
+  .agent-popup-metrics { display: flex; flex-direction: column; gap: 0; }
+  .agent-popup-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .agent-popup-row:last-child { border-bottom: none; }
+  .agent-popup-label { font-size: 12px; color: var(--te-text-dim); }
+  .agent-popup-val { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+  .agent-popup-btn { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; background: rgba(88,166,255,0.10); border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; color: var(--te-blue); font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
+  .agent-popup-btn:hover { background: rgba(88,166,255,0.20); border-color: var(--te-blue); }
+  .leaflet-popup-tip { background: rgba(11,17,32,0.96) !important; border: 1px solid var(--te-blue) !important; }
+  .leaflet-popup-close-button { color: var(--te-text-dim) !important; font-size: 18px !important; }
+  .leaflet-popup-close-button:hover { color: var(--te-blue) !important; }
+  .facility-marker { border-radius: 50%; border: 2px solid rgba(0,0,0,0.4); cursor: pointer; transition: transform 0.2s; box-shadow: 0 0 12px currentColor; }
+  .facility-marker:hover { transform: scale(1.4); }
+  .marker-ring { position: absolute; border-radius: 50%; border: 1.5px solid; animation: markerPulse 2.5s ease-out infinite; pointer-events: none; }
+  @keyframes markerPulse { 0% { width: 12px; height: 12px; top: -1px; left: -1px; opacity: 0.7; } 100% { width: 40px; height: 40px; top: -15px; left: -15px; opacity: 0; } }
+  .map-toggles { display: flex; gap: 12px; margin-bottom: 10px; }
+  .map-toggle { display: flex; align-items: center; gap: 7px; padding: 5px 14px; border-radius: 6px; border: 1px solid var(--te-border); background: var(--te-dark-3); cursor: pointer; font-size: 11px; font-weight: 600; color: var(--te-text-dim); transition: all 0.2s; user-select: none; font-family: var(--font-body); }
+  .map-toggle:hover { border-color: rgba(255,255,255,0.15); }
+  .map-toggle.active { border-color: var(--te-blue); color: var(--te-text); }
+  .map-toggle .toggle-dot { width: 8px; height: 8px; border-radius: 50%; opacity: 0.4; transition: opacity 0.2s; }
+  .map-toggle.active .toggle-dot { opacity: 1; }
+  .map-toggle .toggle-count { font-family: var(--font-mono); color: var(--te-blue); margin-left: 2px; }
+
+  .map-legend { display: flex; gap: 16px; margin-top: 12px; padding: 10px 0; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--te-text-dim); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .right-panel { display: flex; flex-direction: column; background: var(--te-dark-2); overflow-y: auto; max-height: calc(100vh - 58px); }
+  .tabs { display: flex; border-bottom: 1px solid var(--te-border); position: sticky; top: 0; z-index: 10; background: var(--te-dark-2); }
+  .tab { flex: 1; padding: 13px 8px; text-align: center; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; color: var(--te-text-dim); cursor: pointer; transition: all 0.2s; border-bottom: 2px solid transparent; background: transparent; border-top: none; border-left: none; border-right: none; font-family: var(--font-body); }
+  .tab:hover { color: var(--te-text); background: var(--te-dark-3); }
+  .tab.active { color: var(--te-blue); border-bottom-color: var(--te-blue); }
+  .tab-content { display: none; padding: 16px; flex-direction: column; gap: 10px; }
+  .tab-content.active { display: flex; }
+
+  .test-card { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: var(--radius); overflow: hidden; transition: all 0.2s; }
+  .test-card:hover { border-color: rgba(255,255,255,0.12); }
+  .test-card-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; user-select: none; }
+  .test-card-left { display: flex; align-items: center; gap: 10px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .status-green { background: var(--te-green); box-shadow: 0 0 6px var(--te-green); }
+  .status-yellow { background: var(--te-yellow); box-shadow: 0 0 6px var(--te-yellow); }
+  .status-red { background: var(--te-red); box-shadow: 0 0 6px var(--te-red); }
+  .test-name { font-size: 12px; font-weight: 600; color: var(--te-text); }
+  .test-type { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--te-text-dim); margin-top: 2px; }
+  .test-metric { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; }
+  .expand-arrow { color: var(--te-text-dim); font-size: 10px; transition: transform 0.2s; margin-left: 8px; }
+  .test-card.expanded .expand-arrow { transform: rotate(180deg); }
+  .test-card-body { display: none; padding: 0 14px 14px; border-top: 1px solid var(--te-border); }
+  .test-card.expanded .test-card-body { display: block; }
+  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .metric-box { background: var(--te-dark-2); border-radius: 6px; padding: 10px 12px; }
+  .metric-box-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--te-text-dim); margin-bottom: 4px; }
+  .metric-box-value { font-family: var(--font-mono); font-size: 16px; font-weight: 700; }
+  .agent-list { margin-top: 10px; }
+  .agent-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--te-border); font-size: 11px; }
+  .agent-row:last-child { border-bottom: none; }
+  .agent-name { color: var(--te-text-dim); }
+  .agent-val { font-family: var(--font-mono); font-weight: 600; }
+
+  .insight-card { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 14px; cursor: pointer; transition: all 0.2s; }
+  .insight-card:hover { border-color: var(--te-blue); }
+  .insight-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .insight-provider { font-size: 13px; font-weight: 700; color: #fff; }
+  .insight-severity { font-size: 9px; padding: 2px 8px; border-radius: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+  .sev-high { background: var(--te-red-dim); color: var(--te-red); }
+  .sev-medium { background: var(--te-yellow-dim); color: var(--te-yellow); }
+  .sev-low { background: var(--te-green-dim); color: var(--te-green); }
+  .insight-meta { font-size: 11px; color: var(--te-text-dim); margin-top: 6px; }
+  .insight-bar-container { margin-top: 10px; background: var(--te-dark-2); border-radius: 3px; height: 4px; overflow: hidden; }
+  .insight-bar { height: 100%; border-radius: 3px; transition: width 1s ease; }
+
+  .bottom-section { grid-column: 1 / -1; border-top: 1px solid var(--te-border); padding: 20px 28px; background: var(--te-dark); }
+  .bottom-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .bottom-card { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 16px; overflow: hidden; }
+  .bottom-card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .alert-feed { max-height: 220px; overflow-y: auto; }
+  .alert-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--te-border); cursor: pointer; transition: background 0.15s; border-radius: 4px; }
+  .alert-item:hover { background: var(--te-dark-3); }
+  .alert-item:last-child { border-bottom: none; }
+  .alert-time { font-family: var(--font-mono); font-size: 10px; color: var(--te-text-dim); white-space: nowrap; min-width: 48px; }
+  .alert-msg { font-size: 11px; color: var(--te-text); line-height: 1.4; }
+  .endpoint-table { width: 100%; }
+  .endpoint-table th { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--te-text-dim); text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--te-border); font-weight: 600; }
+  .endpoint-table td { font-size: 11px; padding: 8px; color: var(--te-text); border-bottom: 1px solid var(--te-border); font-family: var(--font-mono); }
+  .endpoint-table tr { cursor: pointer; transition: background 0.15s; }
+  .endpoint-table tr:hover { background: var(--te-dark-3); }
+  .epa-overview { padding: 16px; }
+  .epa-overview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .epa-overview-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); font-weight: 700; }
+  .epa-overview-badge { font-size: 11px; font-family: var(--font-mono); font-weight: 600; }
+  .epa-kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+  .epa-kpi { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: 8px; padding: 12px 14px; }
+  .epa-kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--te-text-dim); margin-bottom: 4px; }
+  .epa-kpi-val { font-family: var(--font-mono); font-size: 20px; font-weight: 700; }
+  .epa-agent-card { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: 10px; margin-bottom: 12px; overflow: hidden; transition: border-color 0.2s; }
+  .epa-agent-card:hover { border-color: rgba(255,255,255,0.12); }
+  .epa-agent-hdr { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; cursor: pointer; user-select: none; }
+  .epa-agent-left { display: flex; align-items: center; gap: 10px; }
+  .epa-agent-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .epa-agent-name { font-weight: 700; font-size: 13px; color: #fff; }
+  .epa-agent-loc { font-size: 10px; color: var(--te-text-dim); margin-top: 1px; }
+  .epa-agent-lat { font-family: var(--font-mono); font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+  .epa-agent-body { display: none; padding: 0 16px 16px; }
+  .epa-agent-card.expanded .epa-agent-body { display: block; }
+  .epa-agent-card.expanded .epa-expand { transform: rotate(180deg); }
+  .epa-expand { color: var(--te-text-dim); font-size: 10px; transition: transform 0.2s; margin-left: 6px; }
+  .epa-metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .epa-metric { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: 8px; padding: 10px 12px; }
+  .epa-metric-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--te-text-dim); margin-bottom: 4px; }
+  .epa-metric-val { font-family: var(--font-mono); font-size: 16px; font-weight: 700; }
+  .epa-detail-section { margin-top: 12px; border-top: 1px solid var(--te-border); padding-top: 12px; }
+  .epa-detail-title { font-size: 9px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--te-text-dim); margin-bottom: 8px; font-weight: 600; }
+  .epa-detail-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .epa-detail-row:last-child { border-bottom: none; }
+  .epa-detail-key { font-size: 11px; color: var(--te-text-dim); }
+  .epa-detail-val { font-size: 11px; font-family: var(--font-mono); font-weight: 600; color: #fff; }
+  .epa-drill-btn { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.25); border-radius: 8px; color: var(--te-blue); font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
+  .epa-drill-btn:hover { background: rgba(88,166,255,0.18); border-color: var(--te-blue); }
+
+  .rssi-cell { position: relative; }
+  .rssi-tip { display: none; position: absolute; right: 0; top: 100%; margin-top: 6px; z-index: 100; background: var(--te-dark); border: 1px solid var(--te-border); border-radius: 8px; padding: 12px 14px; width: 230px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); pointer-events: none; }
+  .rssi-cell:hover .rssi-tip { display: block; }
+  .rssi-cell.tip-above .rssi-tip { top: auto; bottom: 100%; margin-top: 0; margin-bottom: 6px; }
+  .rssi-tip-title { font-size: 11px; font-weight: 700; margin-bottom: 8px; letter-spacing: 0.3px; }
+  .rssi-tip-row { display: flex; align-items: center; gap: 6px; font-size: 10px; padding: 2px 0; font-family: var(--font-mono); color: var(--te-text-dim); }
+  .rssi-tip-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .rssi-tip-row.active { color: var(--te-text); font-weight: 600; }
+  .svc-tip-wrap { position: relative; cursor: default; }
+  .svc-tip { display: none; position: absolute; right: 0; bottom: 100%; margin-bottom: 10px; z-index: 200; background: var(--te-dark); border: 1px solid var(--te-border); border-radius: 10px; padding: 14px 16px; width: 300px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); pointer-events: none; font-size: 11px; line-height: 1.7; }
+  .svc-tip.tip-below { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 10px; }
+  .svc-tip-wrap:hover .svc-tip { display: block; }
+  .gauge-row { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; padding: 8px 0; }
+  .gauge-item { text-align: center; min-width: 100px; }
+  .gauge-svg { width: 110px; height: 110px; }
+  .gauge-label { font-size: 10px; color: var(--te-text-dim); margin-top: 6px; max-width: 110px; line-height: 1.3; }
+
+  .footer { grid-column: 1 / -1; text-align: center; padding: 20px 0; border-top: 1px solid var(--te-border); font-size: 12px; color: var(--te-text-dim); }
+  .footer a { color: var(--te-blue); text-decoration: none; }
+
+  .type-badge { display: inline-block; font-size: 8px; padding: 2px 6px; border-radius: 3px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; margin-left: 6px; }
+  .type-http { background: rgba(4,159,217,0.15); color: var(--te-blue); }
+  .type-dns { background: rgba(167,139,250,0.15); color: var(--te-purple); }
+  .type-agent { background: rgba(0,214,143,0.15); color: var(--te-green); }
+  .type-web { background: rgba(249,115,22,0.15); color: var(--te-orange); }
+  .type-api { background: rgba(247,181,0,0.15); color: var(--te-yellow); }
+  .type-voice { background: rgba(239,68,68,0.15); color: var(--te-red); }
+  .type-bgp { background: rgba(255,255,255,0.08); color: var(--te-text-dim); }
+  .section-divider { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); font-weight: 700; padding: 8px 0 4px; border-bottom: 1px solid var(--te-border); margin-bottom: 4px; }
+  .bsvc-section { margin-bottom: 6px; }
+  .bsvc-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: var(--radius); cursor: pointer; user-select: none; transition: border-color 0.2s; margin-bottom: 2px; }
+  .bsvc-header:hover { border-color: rgba(255,255,255,0.12); }
+  .bsvc-header-left { display: flex; align-items: center; gap: 10px; }
+  .bsvc-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .bsvc-name { font-weight: 700; font-size: 13px; color: #fff; }
+  .bsvc-count { font-size: 10px; color: var(--te-text-dim); font-family: var(--font-mono); }
+  .bsvc-health { font-family: var(--font-mono); font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .bsvc-expand { color: var(--te-text-dim); font-size: 10px; transition: transform 0.2s; }
+  .bsvc-section.expanded .bsvc-expand { transform: rotate(180deg); }
+  .bsvc-body { display: none; padding: 4px 0; }
+  .bsvc-section.expanded .bsvc-body { display: block; }
+  .cea-card { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: 10px; margin-bottom: 8px; overflow: visible; transition: border-color 0.2s; }
+  .cea-card:hover { border-color: rgba(255,255,255,0.12); }
+  .cea-card-hdr { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; cursor: pointer; user-select: none; }
+  .cea-card-left { display: flex; align-items: center; gap: 10px; }
+  .cea-card-name { font-weight: 700; font-size: 13px; color: #fff; }
+  .cea-card-type { font-size: 10px; color: var(--te-text-dim); margin-top: 1px; }
+  .cea-card-resp { font-family: var(--font-mono); font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+  .cea-card-body { display: none; padding: 0 16px 16px; }
+  .cea-card.expanded .cea-card-body { display: block; }
+  .cea-card.expanded .cea-expand { transform: rotate(180deg); }
+  .cea-expand { color: var(--te-text-dim); font-size: 10px; transition: transform 0.2s; margin-left: 6px; }
+  .cea-metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .cea-metric { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: 8px; padding: 10px 12px; }
+  .cea-metric-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--te-text-dim); margin-bottom: 4px; }
+  .cea-metric-val { font-family: var(--font-mono); font-size: 16px; font-weight: 700; }
+  .cea-agents-title { font-size: 9px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--te-text-dim); margin-bottom: 8px; font-weight: 600; margin-top: 12px; border-top: 1px solid var(--te-border); padding-top: 12px; }
+  .cea-agent-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+  .cea-agent-name { font-size: 11px; color: var(--te-text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cea-agent-val { font-family: var(--font-mono); font-size: 11px; font-weight: 600; margin-right: 8px; white-space: nowrap; }
+  .cea-agent-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .cea-agents-loading { text-align: center; padding: 12px 0; font-size: 11px; color: var(--te-text-dim); }
+  .cea-agents-loading .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--te-border); border-top-color: var(--te-cyan); border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px; vertical-align: middle; }
+  .cea-drill-btn { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.25); border-radius: 8px; color: var(--te-blue); font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
+  .cea-drill-btn:hover { background: rgba(88,166,255,0.18); border-color: var(--te-blue); }
+
+  .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--te-dark); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; transition: opacity 0.5s; }
+  .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+  .loading-spinner { width: 48px; height: 48px; border: 3px solid var(--te-dark-4); border-top-color: var(--te-blue); border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { margin-top: 20px; font-size: 14px; color: var(--te-text-dim); letter-spacing: 1px; }
+  .loading-sub { margin-top: 8px; font-size: 11px; color: var(--te-text-dim); opacity: 0.6; }
+
+
+  /* ─── DRILL-DOWN MODAL ─── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 10000;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+    display: none; align-items: center; justify-content: center;
+    animation: modalFadeIn 0.2s ease;
+  }
+  .modal-overlay.visible { display: flex; }
+  @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal {
+    background: var(--te-dark-2); border: 1px solid var(--te-border);
+    border-radius: 14px; width: 90%; max-width: 860px;
+    max-height: 85vh; overflow-y: auto;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+    animation: modalSlideUp 0.3s ease;
+  }
+  @keyframes modalSlideUp { from { transform: translateY(20px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 24px; border-bottom: 1px solid var(--te-border);
+    position: sticky; top: 0; background: var(--te-dark-2);
+    z-index: 5; border-radius: 14px 14px 0 0;
+  }
+  .modal-title { font-size: 16px; font-weight: 700; color: #fff; }
+  .modal-close {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--te-dark-3); border: 1px solid var(--te-border);
+    color: var(--te-text-dim); font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s; font-family: var(--font-body);
+  }
+  .modal-close:hover { background: var(--te-red-dim); color: var(--te-red); border-color: var(--te-red); }
+
+  .modal-body { padding: 24px; }
+
+  .modal-kpi-row {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 24px;
+  }
+  .modal-kpi {
+    background: var(--te-dark-3); border-radius: 8px; padding: 14px;
+    text-align: center;
+  }
+  .modal-kpi-label {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--te-text-dim); margin-bottom: 6px;
+  }
+  .modal-kpi-val {
+    font-family: var(--font-mono); font-size: 22px; font-weight: 700;
+  }
+
+  .modal-chart-area {
+    background: var(--te-dark-3); border-radius: 8px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .modal-chart-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--te-text-dim); font-weight: 600; margin-bottom: 12px;
+  }
+  .modal-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; border-bottom: 1px solid var(--te-border); font-size: 12px;
+  }
+  .modal-row:last-child { border-bottom: none; }
+  .modal-row-name { color: var(--te-text-dim); flex: 1; }
+  .modal-row-val { font-family: var(--font-mono); font-weight: 600; text-align: right; min-width: 70px; }
+
+  @media (max-width: 1100px) {
+    .main { grid-template-columns: 1fr; }
+    .right-panel { max-height: none; }
+    .bottom-grid { grid-template-columns: 1fr; }
+    .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+    .modal-kpi-row { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Connecting to ThousandEyes MCP</div>
+  <div class="loading-sub" id="loadingSub">Fetching live data...</div>
+</div>
+
+<header class="header">
+  <div class="header-left">
+    <div class="te-logo">
+      <div class="te-logo-icon">
+        <svg viewBox="0 0 251 55" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.84 2.78h-2.586v10.629h2.587V2.779ZM38.794 5.822c-.087-.044-.964-.573-2.191-.573-1.666 0-2.85 1.19-2.85 2.823 0 1.632 1.096 2.823 2.85 2.823 1.227 0 2.06-.486 2.191-.574v2.867c-.307.088-1.227.397-2.367.397-2.937 0-5.48-2.073-5.48-5.513 0-3.176 2.324-5.513 5.48-5.513 1.227 0 2.104.308 2.367.397v2.866ZM11.704 5.822c-.088-.044-.92-.573-2.192-.573-1.666 0-2.85 1.19-2.85 2.823 0 1.632 1.097 2.823 2.85 2.823 1.227 0 2.06-.486 2.192-.574v2.867c-.307.088-1.228.397-2.367.397-2.937 0-5.48-2.073-5.48-5.513 0-3.176 2.324-5.513 5.48-5.513 1.227 0 2.104.308 2.367.397v2.866ZM52.383 8.072c0 3.043-2.28 5.513-5.436 5.513s-5.435-2.47-5.435-5.513c0-3.043 2.28-5.513 5.435-5.513 3.2 0 5.436 2.47 5.436 5.513Zm-5.436-2.779c-1.534 0-2.674 1.235-2.674 2.779 0 1.544 1.14 2.779 2.674 2.779s2.674-1.235 2.674-2.78c.044-1.543-1.096-2.778-2.674-2.778ZM27.704 5.16c-.044 0-1.14-.308-2.017-.308-1.052 0-1.622.353-1.622.882 0 .662.746.882 1.184 1.015l.701.22c1.666.574 2.455 1.764 2.455 3.043 0 2.69-2.28 3.573-4.252 3.573-1.403 0-2.674-.265-2.805-.309v-2.425c.219.044 1.315.396 2.454.396 1.272 0 1.885-.396 1.885-1.014 0-.53-.526-.838-1.14-1.059-.175-.044-.394-.132-.57-.176-1.446-.485-2.63-1.367-2.63-3.131 0-1.985 1.447-3.308 3.814-3.308 1.271 0 2.455.308 2.543.352v2.25Z" fill="#E8ECF4"/><path d="M8.898 25.934H3.507c-.702 0-1.008-.529-1.008-1.72v-1.058c0-1.191.306-1.72 1.008-1.72h16.087c.702 0 1.008.529 1.008 1.72v1.058c0 1.191-.306 1.72-1.008 1.72H14.16v18.437c0 .705-.614 1.102-2.06 1.102h-1.184c-1.447 0-2.06-.397-2.06-1.102l.043-18.437ZM22.444 20.73c0-.706.613-1.103 2.06-1.103h.964c1.447 0 2.06.397 2.06 1.103v8.82c1.053-1.278 2.762-2.337 4.822-2.337 3.42 0 5.13 1.764 5.13 5.557v11.556c0 .706-.614 1.103-2.061 1.103h-.964c-1.447 0-2.06-.397-2.06-1.103V33.52c0-1.323-.702-2.117-2.192-2.117-1.403 0-2.324 1.191-2.718 1.985v10.938c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103l.044-23.596ZM50.805 36.431c0-3.44-.964-5.204-3.112-5.204s-3.157 1.764-3.157 5.204c0 3.44 1.009 5.249 3.157 5.249s3.112-1.809 3.112-5.249Zm-3.112-9.218c5.435 0 8.24 3.264 8.24 9.218 0 5.954-2.805 9.262-8.24 9.262-5.436 0-8.241-3.308-8.241-9.262 0-5.954 2.849-9.218 8.24-9.218ZM58.695 28.536c0-.706.614-1.102 2.06-1.102h.965c1.447 0 2.06.396 2.06 1.102v10.806c0 1.323.526 2.117 2.06 2.117 1.403 0 2.324-1.19 2.718-1.985V28.536c0-.706.614-1.102 2.06-1.102h.965c1.446 0 2.06.396 2.06 1.102v10.806c0 3.529.395 4.234.395 4.984 0 .838-2.981 1.103-3.814 1.103-1.096 0-1.14-1.456-1.359-2.382-1.008 1.28-2.85 2.602-5.085 2.602-3.419 0-4.997-1.764-4.997-5.557V28.536h-.088ZM77.763 40.71c.438 0 1.753.97 3.331.97 1.447 0 2.06-.53 2.06-1.544 0-3-6.794-1.235-6.794-7.366 0-3.44 2.411-5.557 6.269-5.557 1.14 0 5.04.22 5.04 2.161 0 .441-.788 2.558-1.446 2.558-.35 0-1.359-.705-2.893-.705-1.14 0-1.841.396-1.841 1.235 0 2.513 6.794 1.19 6.794 7.321 0 3.617-2.542 5.954-6.356 5.954-2.98 0-5.961-.794-5.961-2.425 0-.75 1.096-2.603 1.797-2.603ZM97.094 41.68c1.272 0 2.5-.927 3.069-2.162v-1.896c-3.244 0-4.778.882-4.778 2.558 0 .838.57 1.5 1.71 1.5Zm3.069-7.366v-1.147c0-1.323-.79-1.94-2.674-1.94-2.499 0-3.945 1.102-4.34 1.102-.701 0-1.753-2.029-1.753-2.734 0-1.147 2.718-2.382 6.487-2.382 5.392 0 7.321 2.382 7.321 5.734v6.44c0 3.528.394 4.233.394 4.983 0 .838-2.98 1.103-3.813 1.103-1.096 0-1.14-1.456-1.359-2.382-.219.441-1.885 2.602-4.997 2.602-3.682 0-5.041-2.205-5.041-4.984 0-2.778 1.096-6.395 9.775-6.395ZM108.887 33.52c0-3.44-.395-4.146-.395-4.852 0-.837 2.981-1.102 3.814-1.102 1.096 0 1.14 1.367 1.359 2.205 1.008-1.323 2.849-2.602 5.085-2.602 3.419 0 4.997 1.764 4.997 5.557v11.556c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103V33.52c0-1.323-.526-2.117-2.06-2.117-1.403 0-2.324 1.191-2.718 1.985v10.938c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103V33.52h.088ZM136.458 39.519v-7.63a4.595 4.595 0 0 0-2.367-.662c-2.148 0-3.156 1.764-3.156 5.204 0 3.44.877 5.117 2.762 5.117 1.227 0 2.148-.97 2.761-2.03Zm-10.695-3.088c0-5.601 2.586-9.218 7.189-9.218 1.622 0 2.761.53 3.463 1.059V20.73c0-.706.613-1.103 2.06-1.103h.964c1.447 0 2.061.397 2.061 1.103v18.656c0 3.529.394 4.234.394 4.984 0 .838-2.981 1.103-3.814 1.103-1.096 0-1.139-1.456-1.359-2.338-.789 1.456-2.454 2.559-4.558 2.559-3.683-.045-6.4-3.264-6.4-9.263Z" fill="#E8ECF4"/><path d="M145.226 22.803c0-.97.394-1.367 1.358-1.367h12.406c.701 0 1.008.529 1.008 1.72v1.058c0 1.191-.307 1.72-1.008 1.72h-8.592v4.984h7.671c.702 0 1.008.53 1.008 1.72v1.059c0 1.19-.306 1.72-1.008 1.72h-7.671v5.557h8.636c.701 0 1.008.53 1.008 1.72v.97c0 1.192-.307 1.721-1.008 1.721h-12.45c-.964 0-1.358-.397-1.358-1.367V22.803ZM161.269 28.8a1.754 1.754 0 0 1-.131-.617c0-.485.657-.75 2.06-.75h1.096c1.008 0 1.753.177 1.929.706l2.016 6.351c.219.794.658 2.691.964 4.146h.132c.307-1.455.701-3.396.964-4.146l2.017-6.35c.175-.53.92-.706 1.928-.706h.833c1.447 0 2.061.264 2.061.75 0 .176-.044.396-.088.617l-7.803 22.935c-.219.53-.92.706-1.929.706h-.569c-1.403 0-2.061-.265-2.061-.706 0-.176.044-.397.132-.618l2.148-5.733-5.699-16.584ZM187.877 34.71c0-1.984-.745-3.483-2.455-3.483-1.446 0-2.674.838-3.068 3.484h5.523Zm-2.455-7.497c5.348 0 7.365 4.058 7.365 8.821 0 .573-1.315 2.029-1.754 2.029h-8.679c.219 2.734 1.71 3.617 3.901 3.617 2.192 0 3.639-1.059 4.121-1.059.745 0 1.753 1.897 1.753 2.602 0 1.72-4.208 2.47-6.137 2.47-6.18 0-8.898-3.616-8.898-9.13.087-6.748 3.507-9.35 8.328-9.35ZM195.592 40.71c.439 0 1.754.97 3.332.97 1.446 0 2.06-.53 2.06-1.544 0-3-6.794-1.235-6.794-7.366 0-3.44 2.411-5.557 6.268-5.557 1.14 0 5.041.22 5.041 2.161 0 .441-.789 2.558-1.446 2.558-.351 0-1.359-.705-2.893-.705-1.14 0-1.842.396-1.842 1.235 0 2.513 6.795 1.19 6.795 7.321 0 3.617-2.543 5.954-6.356 5.954-2.981 0-5.962-.794-5.962-2.425-.044-.75 1.052-2.603 1.797-2.603Z" fill="#FF682E"/><path d="M217.422 33.168c1.797 2.426 6.882 8.248 13.238 8.248 4.428 0 8.855-2.779 13.063-8.248-4.296-5.337-8.679-8.072-13.063-8.072-6.356.045-11.397 5.734-13.238 8.072Zm13.282 11.997c-10.082 0-16.876-10.542-17.139-10.983l-.658-1.014.658-1.015c.263-.44 7.057-10.761 17.139-10.761 5.962 0 11.66 3.572 16.964 10.63l.833 1.102-.833 1.146c-5.304 7.278-11.002 10.895-16.964 10.895Z" fill="#FF682E"/><path d="M222.989 45.165c-9.862-.31-16.219-10.63-16.482-11.07l-.526-1.015.614-1.015c.263-.44 6.532-10.32 16.307-10.673-7.628 3.528-12.888 11.864-12.888 11.864s4.428 7.498 12.975 11.909ZM229.214 39.386c2.455-1.367 5.348-3.175 7.759-6.218-2.367-2.956-5.655-4.676-8.066-5.999 5.83-1.279 10.871 4.499 10.871 4.499l1.359 1.5-1.359 1.543c-5.26 5.822-10.564 4.675-10.564 4.675Z" fill="#FF682E"/><path d="M226.935 36.035a2.726 2.726 0 0 0 2.717-2.735 2.726 2.726 0 0 0-2.717-2.735 2.726 2.726 0 0 0-2.718 2.735 2.726 2.726 0 0 0 2.718 2.735Z" fill="#FF682E"/></svg>
+      </div>
+      <div class="header-brand" id="headerBrand">ThousandEyes</div>
+    </div>
+    <span class="header-subtitle">NOC Performance Overview</span>
+  </div>
+  <div class="header-right">
+    <div class="live-indicator"><div class="live-dot"></div> LIVE DATA &middot; 15 min refresh</div>
+    <div class="clock" id="clock"></div>
+  </div>
+</header>
+
+<div class="kpi-strip" id="kpiStrip">
+  <div class="kpi-card" onclick="openModal('availability')"><div class="kpi-label">Overall Availability</div><div class="kpi-value green" id="kpiAvail">--</div><div class="kpi-sub" id="kpiAvailSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('response')"><div class="kpi-label">Avg Response Time</div><div class="kpi-value blue" id="kpiResp">--</div><div class="kpi-sub" id="kpiRespSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('loss')"><div class="kpi-label">Packet Loss</div><div class="kpi-value green" id="kpiLoss">--</div><div class="kpi-sub" id="kpiLossSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('alerts')"><div class="kpi-label">Active Alerts</div><div class="kpi-value" id="kpiAlerts">--</div><div class="kpi-sub" id="kpiAlertsSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('events')"><div class="kpi-label">Active Events</div><div class="kpi-value" id="kpiEvents">--</div><div class="kpi-sub" id="kpiEventsSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('outages')"><div class="kpi-label">Internet Outages</div><div class="kpi-value" id="kpiOutages">--</div><div class="kpi-sub" id="kpiOutagesSub">loading...</div></div>
+</div>
+
+<div class="main">
+  <div class="map-panel">
+    <div class="panel-header">
+      <span class="panel-title">Global Agent Deployment &mdash; ThousandEyes Monitoring</span>
+      <span class="panel-badge badge-blue" id="mapBadge">-- Mapped Locations</span>
+    </div>
+    <div class="map-toggles">
+      <button class="map-toggle active" id="toggleEnterprise" onclick="toggleMapLayer('enterprise')">
+        <div class="toggle-dot" style="background:var(--te-green)"></div>
+        Enterprise Agents <span class="toggle-count" id="toggleEnterpriseCount">0</span>
+      </button>
+      <button class="map-toggle active" id="toggleEndpoint" onclick="toggleMapLayer('endpoint')">
+        <div class="toggle-dot" style="background:var(--te-orange)"></div>
+        Endpoint Agents <span class="toggle-count" id="toggleEndpointCount">0</span>
+      </button>
+      <span style="margin-left:auto; font-family:var(--font-mono); font-size:10px; color:var(--te-text-dim); display:flex; align-items:center;" id="mapOrgLabel"></span>
+    </div>
+    <div class="map-container" id="mapContainer"><div id="leafletMap"></div><div id="mapHealthBadge" class="map-health-badge"></div></div>
+  </div>
+
+  <div class="right-panel">
+    <div class="tabs">
+      <button class="tab active" data-tab="cea">Services</button>
+      <button class="tab" data-tab="epa">Endpoints</button>
+      <button class="tab" data-tab="ii">Internet Insights</button>
+    </div>
+    <div class="tab-content active" id="tab-cea"></div>
+    <div class="tab-content" id="tab-epa"></div>
+    <div class="tab-content" id="tab-ii"></div>
+  </div>
+
+  <div class="bottom-section">
+    <div class="bottom-grid">
+      <div class="bottom-card">
+        <div class="bottom-card-title"><span style="color:var(--te-red)">&bull;</span> Live Activity Feed</div>
+        <div class="alert-feed" id="alertFeed"></div>
+      </div>
+      <div class="bottom-card">
+        <div class="bottom-card-title"><span style="color:var(--te-orange)">&bull;</span> Endpoint Agent &mdash; Worst Performers</div>
+        <table class="endpoint-table" id="endpointTable"><thead><tr><th>Agent</th><th>Location</th><th>Latency</th><th>WiFi</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="bottom-card">
+        <div class="bottom-card-title" id="gaugeTitle"><span style="color:var(--te-green)">&bull;</span> Service Health Gauges</div>
+        <div class="gauge-row" id="gaugeRow"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer" id="footer">
+    <strong>Powered by <a href="https://www.thousandeyes.com" target="_blank" rel="noopener noreferrer">Cisco ThousandEyes</a></strong> &mdash; <span id="footerOrg"></span> &middot; Live Data via MCP
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Drill-Down</div>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+let DATA = null;
+let leafletMap = null;
+let currentWindow = '24h';
+const AUTO_REFRESH_MS = 15 * 60 * 1000;
+
+const TYPE_LABELS = {
+  'http-server': 'HTTP Server', 'page-load': 'Page Load', 'dns-server': 'DNS Server',
+  'agent-to-server': 'Agent-to-Server', 'agent-to-agent': 'Agent-to-Agent',
+  'web-transactions': 'Web Transaction', 'api': 'API', 'voice': 'Voice/RTP',
+  'bgp': 'BGP', 'DnsTrace': 'DNS Trace', 'sip-server': 'SIP Server',
+  'ftp-server': 'FTP Server', 'Dnssec': 'DNSSEC',
+};
+const TYPE_BADGE = {
+  'http-server': 'type-http', 'page-load': 'type-http', 'dns-server': 'type-dns',
+  'agent-to-server': 'type-agent', 'agent-to-agent': 'type-agent',
+  'web-transactions': 'type-web', 'api': 'type-api', 'voice': 'type-voice',
+  'bgp': 'type-bgp', 'DnsTrace': 'type-dns', 'sip-server': 'type-voice',
+  'ftp-server': 'type-http', 'Dnssec': 'type-dns',
+};
+
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toUTCString().replace('GMT','') + 'UTC';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function fetchData(win) {
+  const resp = await fetch('/api/data?window=' + encodeURIComponent(win));
+  if (!resp.ok) throw new Error('API returned ' + resp.status);
+  return await resp.json();
+}
+
+async function loadData() {
+  try {
+    DATA = await fetchData(currentWindow);
+    renderAll();
+    document.getElementById('loadingOverlay').classList.add('hidden');
+  } catch (e) {
+    console.error('Failed to load data:', e);
+    document.querySelector('.loading-text').textContent = 'Connection error';
+    document.querySelector('.loading-sub').textContent = 'Retrying in 5 seconds...';
+    setTimeout(loadData, 5000);
+  }
+}
+
+function renderAll() {
+  var orgName = DATA.ACCOUNT_GROUP || 'ThousandEyes';
+  document.title = 'ThousandEyes ' + orgName + ' \u2014 NOC Performance Overview';
+  document.getElementById('headerBrand').textContent = orgName;
+  document.getElementById('mapOrgLabel').textContent = orgName;
+  document.getElementById('footerOrg').textContent = orgName;
+  var loadSub = document.getElementById('loadingSub');
+  if (loadSub) loadSub.textContent = 'Fetching live data from ' + orgName + '...';
+  renderKPIs();
+  buildMap();
+  renderCEATests();
+  renderEPAData();
+  renderII();
+  renderAlerts();
+  renderEndpointTable();
+  renderGauges();
+  renderFooter();
+}
+
+function renderKPIs() {
+  const c = DATA.COUNTS || {};
+  const ex = DATA.EXTRA_KPI || {};
+  const avail = DATA.TEST_AVAILABILITY || {};
+  const testTypes = DATA.TEST_TYPES || {};
+
+  var httpAvail = {};
+  Object.keys(avail).forEach(function(name) {
+    if (testTypes[name] === 'http-server') httpAvail[name] = avail[name];
+  });
+  var availVals = Object.values(httpAvail);
+  var overallAvail = availVals.length > 0 ? (availVals.reduce(function(a,b){return a+b;},0) / availVals.length) : null;
+  var availEl = document.getElementById('kpiAvail');
+  if (overallAvail !== null) {
+    availEl.textContent = overallAvail.toFixed(2) + '%';
+    availEl.className = 'kpi-value ' + (overallAvail >= 99.5 ? 'green' : overallAvail >= 95 ? 'yellow' : 'red');
+  } else {
+    availEl.textContent = '--';
+    availEl.className = 'kpi-value blue';
+  }
+  document.getElementById('kpiAvailSub').textContent = availVals.length + ' HTTP tests \u00B7 24h';
+
+  var respEl = document.getElementById('kpiResp');
+  if (ex.avg_response_ms != null) {
+    respEl.textContent = ex.avg_response_ms + 'ms';
+  } else {
+    respEl.textContent = '--';
+  }
+  respEl.className = 'kpi-value blue';
+  document.getElementById('kpiRespSub').textContent = ex.p95_response_ms != null ? 'P95: ' + ex.p95_response_ms + 'ms' : '24h window';
+
+  var lossEl = document.getElementById('kpiLoss');
+  if (ex.avg_packet_loss != null) {
+    lossEl.textContent = ex.avg_packet_loss + '%';
+    lossEl.className = 'kpi-value ' + (ex.avg_packet_loss <= 0.1 ? 'green' : ex.avg_packet_loss <= 1 ? 'yellow' : 'red');
+  } else {
+    lossEl.textContent = '--';
+    lossEl.className = 'kpi-value green';
+  }
+  var lossTests = ex.loss_by_test || [];
+  var above5 = lossTests.filter(function(t){ return t.loss > 5; }).length;
+  document.getElementById('kpiLossSub').textContent = above5 + ' test' + (above5 !== 1 ? 's' : '') + ' above 5%';
+
+  var alertFeed = DATA.ALERT_FEED || [];
+  var alertCount = alertFeed.length;
+  var alertEl = document.getElementById('kpiAlerts');
+  alertEl.textContent = alertCount;
+  alertEl.className = 'kpi-value ' + (alertCount > 0 ? 'red' : 'green');
+  var alertDetail = [];
+  var crit = alertFeed.filter(function(a){ return a.severity === 'CRITICAL' || a.severity === 'MAJOR'; }).length;
+  var warn = alertFeed.filter(function(a){ return a.severity === 'MINOR' || a.severity === 'WARNING'; }).length;
+  var info = alertFeed.filter(function(a){ return a.severity === 'INFO'; }).length;
+  if (crit > 0) alertDetail.push(crit + ' critical');
+  if (warn > 0) alertDetail.push(warn + ' warning');
+  if (info > 0) alertDetail.push(info + ' info');
+  document.getElementById('kpiAlertsSub').textContent = alertDetail.length > 0 ? alertDetail.join(' \u00B7 ') : 'all clear';
+
+  var events = DATA.LIVE_EVENTS || [];
+  var eventCount = events.length;
+  var eventsEl = document.getElementById('kpiEvents');
+  eventsEl.textContent = eventCount;
+  eventsEl.className = 'kpi-value ' + (eventCount > 5 ? 'red' : eventCount > 0 ? 'yellow' : 'green');
+  var evHigh = events.filter(function(e){ return e.impact === 'HIGH'; }).length;
+  var evMed = events.filter(function(e){ return e.impact === 'MEDIUM'; }).length;
+  var evLow = events.filter(function(e){ return e.impact === 'LOW'; }).length;
+  var evDetail = [];
+  if (evHigh > 0) evDetail.push(evHigh + ' high');
+  if (evMed > 0) evDetail.push(evMed + ' medium');
+  if (evLow > 0) evDetail.push(evLow + ' low');
+  document.getElementById('kpiEventsSub').textContent = evDetail.length > 0 ? evDetail.join(' \u00B7 ') : 'no ongoing events';
+
+  var totalOutages = (c.app_outages || 0) + (c.net_outages || 0);
+  var outEl = document.getElementById('kpiOutages');
+  outEl.textContent = totalOutages;
+  outEl.className = 'kpi-value ' + (totalOutages > 5 ? 'red' : totalOutages > 0 ? 'yellow' : 'green');
+  var providers = (DATA.OUTAGES || []).length;
+  document.getElementById('kpiOutagesSub').textContent = providers + ' providers affected';
+}
+
+var mapLayers = { enterprise: null, endpoint: null };
+var mapLayerVisible = { enterprise: true, endpoint: true };
+
+function getEnterpriseAgentHealth(agent, agentTests, testAvail, lossByTest) {
+  var testNames = agentTests[agent.id] || [];
+  var availVals = [], lossVals = [];
+  testNames.forEach(function(tn) {
+    if (testAvail[tn] != null) availVals.push(testAvail[tn]);
+    if (lossByTest[tn] != null) lossVals.push(lossByTest[tn]);
+  });
+  var avg = function(arr) { return arr.length ? arr.reduce(function(a,b){return a+b;},0) / arr.length : null; };
+  var availability = avg(availVals);
+  var avgLoss = avg(lossVals);
+
+  if (availability == null && avgLoss == null) return { health: 'unknown', color: '#8b949e' };
+  if ((availability != null && availability < 95) || (avgLoss != null && avgLoss > 5)) return { health: 'critical', color: '#f85149' };
+  if ((availability != null && availability < 99) || (avgLoss != null && avgLoss > 1)) return { health: 'warning', color: '#e3b341' };
+  return { health: 'healthy', color: '#00D68F' };
+}
+
+function buildEnterprisePopup(agent, agentTests, testAvail, respByTest, lossByTest, jitterByTest) {
+  var testNames = agentTests[agent.id] || [];
+  var activeTests = testNames.length;
+
+  var availVals = [], respVals = [], lossVals = [], jitterVals = [];
+  testNames.forEach(function(tn) {
+    if (testAvail[tn] != null) availVals.push(testAvail[tn]);
+    if (respByTest[tn] != null) respVals.push(respByTest[tn]);
+    if (lossByTest[tn] != null) lossVals.push(lossByTest[tn]);
+    if (jitterByTest[tn] != null) jitterVals.push(jitterByTest[tn]);
+  });
+
+  var avg = function(arr) { return arr.length ? arr.reduce(function(a,b){return a+b;},0) / arr.length : null; };
+  var availability = avg(availVals);
+  var avgResp = avg(respVals);
+  var avgLoss = avg(lossVals);
+  var avgJitter = avg(jitterVals);
+
+  var agentHealth = getEnterpriseAgentHealth(agent, agentTests, testAvail, lossByTest);
+  var health = agentHealth.health === 'critical' ? 'Critical' : agentHealth.health === 'warning' ? 'Warning' : agentHealth.health === 'healthy' ? 'Healthy' : 'No Data';
+  var healthColor = agentHealth.health === 'critical' ? 'var(--te-red)' : agentHealth.health === 'warning' ? 'var(--te-yellow)' : agentHealth.health === 'healthy' ? 'var(--te-green)' : 'var(--te-text-dim)';
+
+  function fmtAvail(v) { return v != null ? v.toFixed(2) + '%' : '--'; }
+  function fmtMs(v) { return v != null ? Math.round(v) + 'ms' : '--'; }
+  function fmtPct(v) { return v != null ? v.toFixed(2) + '%' : '--'; }
+  function fmtJitter(v) { return v != null ? v.toFixed(1) + 'ms' : '--'; }
+  function valColor(v, threshWarn, threshCrit, invert) {
+    if (v == null) return 'var(--te-text-dim)';
+    if (invert) return v >= threshCrit ? 'var(--te-red)' : v >= threshWarn ? 'var(--te-yellow)' : 'var(--te-green)';
+    return v <= threshCrit ? 'var(--te-red)' : v <= threshWarn ? 'var(--te-yellow)' : 'var(--te-green)';
+  }
+
+  var h = '<div class="agent-popup">';
+  h += '<div class="agent-popup-header">';
+  h += '<div class="agent-popup-name">' + escHtml(agent.name || agent.city || '') + '</div>';
+  h += '<div class="agent-popup-health" style="color:' + healthColor + ';"><span style="font-size:8px;">\u25CF</span> ' + health + '</div>';
+  h += '</div>';
+  h += '<div class="agent-popup-loc">' + escHtml(agent.loc || agent.city || '') + '</div>';
+  h += '<div class="agent-popup-metrics">';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">Availability</span><span class="agent-popup-val" style="color:' + valColor(availability, 95, 90, false) + ';">' + fmtAvail(availability) + '</span></div>';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">Avg Response</span><span class="agent-popup-val" style="color:var(--te-text);">' + fmtMs(avgResp) + '</span></div>';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">Packet Loss</span><span class="agent-popup-val" style="color:var(--te-text);">' + fmtPct(avgLoss) + '</span></div>';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">Jitter</span><span class="agent-popup-val" style="color:var(--te-text);">' + fmtJitter(avgJitter) + '</span></div>';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">Active Tests</span><span class="agent-popup-val" style="color:var(--te-text);">' + activeTests + '</span></div>';
+  h += '</div>';
+  var teLink = 'https://app.thousandeyes.com/settings/agents/enterprise/?agentId=' + encodeURIComponent(agent.id);
+  h += '<a class="agent-popup-btn" href="' + teLink + '" target="_blank" rel="noopener noreferrer">Open Drill-Down \u2192</a>';
+  h += '</div>';
+  return h;
+}
+
+function buildMap() {
+  var allAgents = (DATA.ALL_AGENTS || []).filter(function(a) {
+    return a.lat != null && a.lng != null && (a.type === 'enterprise' || a.type === 'endpoint');
+  });
+
+  var eaCount = allAgents.filter(function(a){ return a.type === 'enterprise'; }).length;
+  var epCount = allAgents.filter(function(a){ return a.type === 'endpoint'; }).length;
+  document.getElementById('toggleEnterpriseCount').textContent = eaCount;
+  document.getElementById('toggleEndpointCount').textContent = epCount;
+  updateMapBadge();
+
+  if (leafletMap) leafletMap.remove();
+  leafletMap = L.map('leafletMap', {
+    center: [20, 0], zoom: 2, minZoom: 2, maxZoom: 12,
+    zoomControl: true, attributionControl: false, worldCopyJump: false,
+    maxBounds: [[-85, -180], [85, 180]], maxBoundsViscosity: 1.0,
+  });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 19, noWrap: true, bounds: [[-90, -180], [90, 180]],
+  }).addTo(leafletMap);
+
+  mapLayers.enterprise = L.layerGroup();
+  mapLayers.endpoint = L.layerGroup();
+
+  var colors = { enterprise: '#00D68F', endpoint: '#F97316' };
+  var agentTests = DATA.AGENT_TESTS || {};
+  var testAvail = DATA.TEST_AVAILABILITY || {};
+  var extra = DATA.EXTRA_KPI || {};
+  var respByTest = {};
+  (extra.resp_by_test || []).forEach(function(r) { respByTest[r.test] = r.ms; });
+  var lossByTest = {};
+  (extra.loss_by_test || []).forEach(function(r) { lossByTest[r.test] = r.loss; });
+  var jitterByTest = {};
+  (extra.jitter_by_test || []).forEach(function(r) { jitterByTest[r.test] = r.jitter; });
+
+  var healthyCnt = 0, totalEa = 0;
+  allAgents.forEach(function(m) {
+    var color = colors[m.type] || '#F97316';
+    if (m.type === 'enterprise') {
+      var eaHealth = getEnterpriseAgentHealth(m, agentTests, testAvail, lossByTest);
+      color = eaHealth.color;
+      totalEa++;
+      if (eaHealth.health === 'healthy') healthyCnt++;
+    }
+    var size = m.type === 'enterprise' ? 10 : 7;
+    var icon = L.divIcon({
+      className: '',
+      html: '<div style="position:relative;width:'+size+'px;height:'+size+'px;"><div class="facility-marker" style="width:'+size+'px;height:'+size+'px;background:'+color+';color:'+color+';"></div></div>',
+      iconSize: [size, size], iconAnchor: [size/2, size/2],
+    });
+    var marker = L.marker([m.lat, m.lng], { icon: icon });
+    var popupHtml;
+    if (m.type === 'enterprise') {
+      popupHtml = buildEnterprisePopup(m, agentTests, testAvail, respByTest, lossByTest, jitterByTest);
+    } else {
+      var popupExtra = m.device ? '<div style="font-size:10px;color:#7B8FAD;margin-top:4px;">' + escHtml(m.device) + '</div>' : '';
+      popupHtml = '<div style="padding:14px 18px;font-family:DM Sans,sans-serif;"><div style="font-weight:700;font-size:13px;color:#fff;margin-bottom:6px;">' + escHtml(m.name) + '</div><div style="font-size:11px;color:#7B8FAD;">' + escHtml(m.loc || m.city || '') + '</div>' + popupExtra + '<div style="margin-top:6px;font-size:10px;padding:2px 8px;border-radius:4px;display:inline-block;background:rgba(249,115,22,0.15);color:#F97316;">Endpoint Agent</div></div>';
+    }
+    marker.bindPopup(popupHtml, { maxWidth: 360, closeButton: true });
+    marker.on('mouseover', function() { this.openPopup(); });
+    mapLayers[m.type].addLayer(marker);
+  });
+
+  var badge = document.getElementById('mapHealthBadge');
+  if (totalEa > 0) {
+    var badgeColor = healthyCnt === totalEa ? 'var(--te-green)' : healthyCnt >= totalEa * 0.9 ? 'var(--te-yellow)' : 'var(--te-red)';
+    var statusWord = healthyCnt === totalEa ? 'Healthy' : healthyCnt >= totalEa * 0.9 ? 'Warning' : 'Critical';
+    badge.style.color = badgeColor;
+    badge.style.borderColor = badgeColor.indexOf('var') === 0 ? '' : badgeColor;
+    badge.textContent = healthyCnt + ' / ' + totalEa + ' ' + statusWord;
+    badge.style.display = 'block';
+  }
+
+  if (mapLayerVisible.enterprise) mapLayers.enterprise.addTo(leafletMap);
+  if (mapLayerVisible.endpoint) mapLayers.endpoint.addTo(leafletMap);
+
+  setTimeout(function() { leafletMap.invalidateSize(); }, 100);
+}
+
+function toggleMapLayer(type) {
+  mapLayerVisible[type] = !mapLayerVisible[type];
+  var btn = document.getElementById('toggle' + type.charAt(0).toUpperCase() + type.slice(1));
+  if (mapLayerVisible[type]) {
+    btn.classList.add('active');
+    if (mapLayers[type] && leafletMap) mapLayers[type].addTo(leafletMap);
+  } else {
+    btn.classList.remove('active');
+    if (mapLayers[type] && leafletMap) leafletMap.removeLayer(mapLayers[type]);
+  }
+  updateMapBadge();
+}
+
+function updateMapBadge() {
+  if (!DATA) return;
+  var allAgents = (DATA.ALL_AGENTS || []).filter(function(a) {
+    return a.lat != null && a.lng != null && (a.type === 'enterprise' || a.type === 'endpoint');
+  });
+  var visible = allAgents.filter(function(a) { return mapLayerVisible[a.type]; }).length;
+  document.getElementById('mapBadge').textContent = visible + ' Mapped Locations';
+}
+
+document.querySelectorAll('.tab').forEach(function(tab) {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+var BUSINESS_SERVICES = [
+  { name: 'Collaboration - Microsoft', icon: '\uD83D\uDCE7', patterns: [/^MSTeams(?!.*RetailDemo)/i] },
+  { name: 'Collaboration - Webex', icon: '\uD83D\uDCDE', patterns: [/^Webex/i] },
+  { name: 'Microsoft O365', icon: '\uD83D\uDCE7', patterns: [/^MSO365/i, /^MS O365/i, /^SD-WAN DIA.*O365/i] },
+  { name: 'Retail Operations', icon: '\uD83C\uDFEA', patterns: [/^RetailDemo/i, /^RetailSite/i, /^Public_Sector/i] },
+  { name: 'Pseudoco Platform', icon: '\uD83D\uDDA5', patterns: [/^Pseudoco/i, /^Psuedoco/i, /pseudoco\./i] },
+  { name: 'AI Services', icon: '\uD83E\uDD16', patterns: [/Bedrock/i] },
+  { name: 'AWS Cloud Services', icon: '\u2601', patterns: [/^AWS/i] },
+  { name: 'Azure Cloud Services', icon: '\u2601', patterns: [/^Azure/i] },
+  { name: 'Salesforce & CRM', icon: '\uD83D\uDCC8', patterns: [/^Salesforce/i, /^SAP/i, /salesforce\.com/i, /lightning\.force/i] },
+  { name: 'Workday HR', icon: '\uD83D\uDC64', patterns: [/^Workday/i, /^RetailDemo_Workday/i] },
+  { name: 'Facebook & Social', icon: '\uD83C\uDF10', patterns: [/^Facebook/i, /Facebook.*Traffic/i] },
+  { name: 'Network Infrastructure', icon: '\uD83D\uDD17', patterns: [/^SD-WAN/i, /^DataCenter/i, /^Site-DC/i, /^Stores/i, /^TOR-NYC/i, /^SIP/i, /^SFTP/i] },
+  { name: 'Data Center Management', icon: '\uD83D\uDCBB', patterns: [/ESXi/i, /TrueNAS/i, /Xen Management/i, /Splunk/i] },
+  { name: 'Demo & Monitoring', icon: '\uD83D\uDD2C', patterns: [/^Mar Demo/i, /^Boutique/i, /^Internet Test/i, /^ThousandEyes/i, /thousandeyes\.com/i] },
+];
+
+function getBusinessService(testName) {
+  for (var s = 0; s < BUSINESS_SERVICES.length; s++) {
+    var svc = BUSINESS_SERVICES[s];
+    for (var p = 0; p < svc.patterns.length; p++) {
+      if (svc.patterns[p].test(testName)) return svc.name;
+    }
+  }
+  return 'Other Services';
+}
+
+function toggleBsvc(id) { document.getElementById(id).classList.toggle('expanded'); }
+
+function renderCEATests() {
+  var container = document.getElementById('tab-cea');
+  var tests = DATA.ALL_TESTS || [];
+  var availability = DATA.TEST_AVAILABILITY || {};
+  var issues = DATA.KNOWN_ISSUES || {};
+  var extra = DATA.EXTRA_KPI || {};
+  var respMap = {};
+  (extra.resp_by_test || []).forEach(function(r) { respMap[r.test] = r.ms; });
+  var lossMap = {};
+  (extra.loss_by_test || []).forEach(function(r) { lossMap[r.test] = r.loss; });
+  var jitterMap = {};
+  (extra.jitter_by_test || []).forEach(function(r) { jitterMap[r.test] = r.jitter; });
+  var latencyMap = {};
+  (extra.latency_by_test || []).forEach(function(r) { latencyMap[r.test] = r.latency; });
+  var mosMap = {};
+  (extra.mos_by_test || []).forEach(function(r) { mosMap[r.test] = r.value; });
+  var voipLatMap = {};
+  (extra.voip_latency_by_test || []).forEach(function(r) { voipLatMap[r.test] = r.value; });
+  var voipLossMap = {};
+  (extra.voip_loss_by_test || []).forEach(function(r) { voipLossMap[r.test] = r.value; });
+  var pdvMap = {};
+  (extra.pdv_by_test || []).forEach(function(r) { pdvMap[r.test] = r.value; });
+  var bgpReachMap = {};
+  (extra.bgp_reach_by_test || []).forEach(function(r) { bgpReachMap[r.test] = r.value; });
+  var apiCompMap = {};
+  (extra.api_completion_by_test || []).forEach(function(r) { apiCompMap[r.test] = r.value; });
+  var txnCompMap = {};
+  (extra.txn_completion_by_test || []).forEach(function(r) { txnCompMap[r.test] = r.value; });
+  var pageCompMap = {};
+  (extra.page_completion_by_test || []).forEach(function(r) { pageCompMap[r.test] = r.value; });
+  var apiTxnTimeMap = {};
+  (extra.api_txn_time_by_test || []).forEach(function(r) { apiTxnTimeMap[r.test] = r.value; });
+
+  function getTestHealth(t) {
+    var tp = (t.type || '').toLowerCase();
+    if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
+      var l = lossMap[t.name];
+      if (l != null) {
+        if (l > 5) return { status: 'critical', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
+        if (l > 1) return { status: 'warning', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
+        return { status: 'healthy', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
+      }
+      var lat = latencyMap[t.name];
+      if (lat != null) {
+        if (lat > 200) return { status: 'warning', kpi: 'Latency', val: Math.round(lat) + 'ms' };
+        return { status: 'healthy', kpi: 'Latency', val: Math.round(lat) + 'ms' };
+      }
+      return { status: 'unknown', kpi: 'Pkt Loss', val: '--' };
+    }
+    if (tp === 'http-server' || tp === 'ftp-server') {
+      var a = availability[t.name];
+      if (a == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
+      if (a < 95) return { status: 'critical', kpi: 'Availability', val: a.toFixed(1) + '%' };
+      if (a < 99) return { status: 'warning', kpi: 'Availability', val: a.toFixed(1) + '%' };
+      return { status: 'healthy', kpi: 'Availability', val: a.toFixed(1) + '%' };
+    }
+    if (tp === 'voice') {
+      var m = mosMap[t.name];
+      if (m == null) return { status: 'unknown', kpi: 'MOS', val: '--' };
+      if (m < 3.0) return { status: 'critical', kpi: 'MOS', val: m.toFixed(2) };
+      if (m < 3.5) return { status: 'warning', kpi: 'MOS', val: m.toFixed(2) };
+      return { status: 'healthy', kpi: 'MOS', val: m.toFixed(2) };
+    }
+    if (tp === 'bgp') {
+      var r = bgpReachMap[t.name];
+      if (r == null) return { status: 'unknown', kpi: 'Reachability', val: '--' };
+      if (r < 95) return { status: 'critical', kpi: 'Reachability', val: r.toFixed(1) + '%' };
+      if (r < 99) return { status: 'warning', kpi: 'Reachability', val: r.toFixed(1) + '%' };
+      return { status: 'healthy', kpi: 'Reachability', val: r.toFixed(1) + '%' };
+    }
+    if (tp === 'api') {
+      var c = apiCompMap[t.name];
+      if (c == null) return { status: 'unknown', kpi: 'Completion', val: '--' };
+      if (c < 95) return { status: 'critical', kpi: 'Completion', val: c.toFixed(1) + '%' };
+      if (c < 99) return { status: 'warning', kpi: 'Completion', val: c.toFixed(1) + '%' };
+      return { status: 'healthy', kpi: 'Completion', val: c.toFixed(1) + '%' };
+    }
+    if (tp === 'web-transactions') {
+      var wc = txnCompMap[t.name];
+      if (wc == null) return { status: 'unknown', kpi: 'Completion', val: '--' };
+      if (wc < 95) return { status: 'critical', kpi: 'Completion', val: wc.toFixed(1) + '%' };
+      if (wc < 99) return { status: 'warning', kpi: 'Completion', val: wc.toFixed(1) + '%' };
+      return { status: 'healthy', kpi: 'Completion', val: wc.toFixed(1) + '%' };
+    }
+    if (tp === 'page-load') {
+      var pc = pageCompMap[t.name];
+      if (pc == null) return { status: 'unknown', kpi: 'Completion', val: '--' };
+      if (pc < 95) return { status: 'critical', kpi: 'Completion', val: pc.toFixed(1) + '%' };
+      if (pc < 99) return { status: 'warning', kpi: 'Completion', val: pc.toFixed(1) + '%' };
+      return { status: 'healthy', kpi: 'Completion', val: pc.toFixed(1) + '%' };
+    }
+    if (tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec') {
+      var da = availability[t.name];
+      if (da == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
+      if (da < 95) return { status: 'critical', kpi: 'Availability', val: da.toFixed(1) + '%' };
+      if (da < 99) return { status: 'warning', kpi: 'Availability', val: da.toFixed(1) + '%' };
+      return { status: 'healthy', kpi: 'Availability', val: da.toFixed(1) + '%' };
+    }
+    if (tp === 'sip-server') {
+      var sa = availability[t.name];
+      if (sa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
+      if (sa < 95) return { status: 'critical', kpi: 'Availability', val: sa.toFixed(1) + '%' };
+      if (sa < 99) return { status: 'warning', kpi: 'Availability', val: sa.toFixed(1) + '%' };
+      return { status: 'healthy', kpi: 'Availability', val: sa.toFixed(1) + '%' };
+    }
+    var fa = availability[t.name];
+    if (fa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
+    if (fa < 95) return { status: 'critical', kpi: 'Availability', val: fa.toFixed(1) + '%' };
+    if (fa < 99) return { status: 'warning', kpi: 'Availability', val: fa.toFixed(1) + '%' };
+    return { status: 'healthy', kpi: 'Availability', val: fa.toFixed(1) + '%' };
+  }
+
+  var STATUS_COLORS = { healthy: 'var(--te-green)', warning: 'var(--te-yellow)', critical: 'var(--te-red)', unknown: 'var(--te-text-dim)' };
+  var STATUS_LABELS = { healthy: 'Healthy', warning: 'Warning', critical: 'Critical', unknown: 'No Data' };
+
+  var grouped = {};
+  tests.forEach(function(t) {
+    var svc = getBusinessService(t.name);
+    if (!grouped[svc]) grouped[svc] = [];
+    grouped[svc].push(t);
+  });
+
+  var STATUS_PRIORITY = { critical: 0, warning: 1, healthy: 2, unknown: 3 };
+
+  var svcOrder = BUSINESS_SERVICES.map(function(s) { return s.name; });
+  svcOrder.push('Other Services');
+
+  var svcStatusMap = {};
+  var svcCritCount = {};
+  svcOrder.forEach(function(svcName) {
+    var items = grouped[svcName];
+    if (!items || items.length === 0) { svcStatusMap[svcName] = 'unknown'; svcCritCount[svcName] = 0; return; }
+    var c = 0, w = 0, o = 0;
+    items.forEach(function(t) {
+      var h = getTestHealth(t);
+      if (h.status === 'critical') c++;
+      else if (h.status === 'warning') w++;
+      else if (h.status === 'healthy') o++;
+    });
+    svcStatusMap[svcName] = c > 0 ? 'critical' : w > 0 ? 'warning' : o > 0 ? 'healthy' : 'unknown';
+    svcCritCount[svcName] = c * 1000 + w;
+  });
+
+  svcOrder = svcOrder.filter(function(s) { return grouped[s] && grouped[s].length > 0; });
+  svcOrder.sort(function(a, b) {
+    var pa = STATUS_PRIORITY[svcStatusMap[a]] !== undefined ? STATUS_PRIORITY[svcStatusMap[a]] : 3;
+    var pb = STATUS_PRIORITY[svcStatusMap[b]] !== undefined ? STATUS_PRIORITY[svcStatusMap[b]] : 3;
+    if (pa !== pb) return pa - pb;
+    return (svcCritCount[b] || 0) - (svcCritCount[a] || 0);
+  });
+
+  var totalTests = tests.length;
+  var html = '<div style="padding:12px 14px 6px;"><div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;color:var(--te-text-dim);font-weight:600;text-transform:uppercase;letter-spacing:1.2px;">Business Services</span><span style="font-size:10px;color:var(--te-blue);font-family:var(--font-mono);">' + totalTests + ' tests</span></div></div>';
+
+  svcOrder.forEach(function(svcName, si) {
+    var items = grouped[svcName];
+    if (!items || items.length === 0) return;
+
+    var crit = 0, warn = 0, ok = 0, unk = 0;
+    var tipLines = [];
+    items.forEach(function(t) {
+      var h = getTestHealth(t);
+      if (h.status === 'critical') crit++;
+      else if (h.status === 'warning') warn++;
+      else if (h.status === 'healthy') ok++;
+      else unk++;
+    });
+    var svcStatus = crit > 0 ? 'critical' : warn > 0 ? 'warning' : ok > 0 ? 'healthy' : 'unknown';
+    var dotColor = STATUS_COLORS[svcStatus];
+    var healthLabel = STATUS_LABELS[svcStatus];
+    var healthColor = dotColor;
+    var svcId = 'bsvc-' + si;
+
+    var tipContent = '<div style="font-weight:700;font-size:12px;margin-bottom:8px;color:#fff;">' + escHtml(svcName) + ' \u2014 Service Health</div>';
+    tipContent += '<div style="display:flex;gap:12px;margin-bottom:10px;">';
+    tipContent += '<span style="color:var(--te-green);">\u25CF ' + ok + ' Healthy</span>';
+    tipContent += '<span style="color:var(--te-yellow);">\u25CF ' + warn + ' Warning</span>';
+    tipContent += '<span style="color:var(--te-red);">\u25CF ' + crit + ' Critical</span>';
+    if (unk > 0) tipContent += '<span style="color:var(--te-text-dim);">\u25CF ' + unk + ' No Data</span>';
+    tipContent += '</div>';
+    tipContent += '<div style="font-size:10px;color:var(--te-text-dim);border-top:1px solid rgba(255,255,255,0.08);padding-top:8px;margin-top:2px;">';
+    tipContent += '<div style="font-weight:600;margin-bottom:4px;">Health Scale</div>';
+    tipContent += '<div><span style="color:var(--te-green);">\u25CF Green</span> \u2014 Operating normally</div>';
+    tipContent += '<div><span style="color:var(--te-yellow);">\u25CF Yellow</span> \u2014 Degraded / caution</div>';
+    tipContent += '<div><span style="color:var(--te-red);">\u25CF Red</span> \u2014 Down or impaired</div>';
+    tipContent += '<div style="margin-top:6px;font-weight:600;">Key KPI per Test Type</div>';
+    tipContent += '<div>A2A / A2S: Pkt Loss &gt; 5%</div>';
+    tipContent += '<div>HTTP: Availability</div>';
+    tipContent += '<div>Voice/RTP: MOS</div>';
+    tipContent += '<div>BGP: Reachability %</div>';
+    tipContent += '<div>API / Txn / Page Load: Completion %</div>';
+    tipContent += '</div>';
+
+    html += '<div class="bsvc-section" id="' + svcId + '">';
+    html += '<div class="bsvc-header" onclick="toggleBsvc(\'' + svcId + '\')">';
+    html += '<div class="bsvc-header-left">';
+    html += '<div class="bsvc-dot" style="background:' + dotColor + ';box-shadow:0 0 6px ' + dotColor + ';"></div>';
+    html += '<div><div class="bsvc-name">' + escHtml(svcName) + '</div>';
+    html += '<div class="bsvc-count">' + items.length + ' tests</div></div>';
+    html += '</div>';
+    html += '<div style="display:flex;align-items:center;gap:8px;position:relative;">';
+    var svcTipClass = si < 2 ? 'svc-tip tip-below' : 'svc-tip';
+    html += '<span class="bsvc-health svc-tip-wrap" style="color:' + healthColor + ';">' + healthLabel;
+    html += '<span class="' + svcTipClass + '">' + tipContent + '</span>';
+    html += '</span>';
+    html += '<span class="bsvc-expand">\u25BC</span>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div class="bsvc-body">';
+    var HEALTH_PRI = { critical: 0, warning: 1, unknown: 2, healthy: 3 };
+    items.sort(function(a, b) {
+      var ha = getTestHealth(a), hb = getTestHealth(b);
+      var pa = HEALTH_PRI[ha.status] !== undefined ? HEALTH_PRI[ha.status] : 2;
+      var pb = HEALTH_PRI[hb.status] !== undefined ? HEALTH_PRI[hb.status] : 2;
+      return pa - pb;
+    });
+    items.forEach(function(t, i) {
+      var avail = availability[t.name];
+      var resp = respMap[t.name];
+      var loss = lossMap[t.name];
+      var jitter = jitterMap[t.name];
+      var latency = latencyMap[t.name];
+      var mos = mosMap[t.name];
+      var voipLat = voipLatMap[t.name];
+      var voipLoss = voipLossMap[t.name];
+      var pdv = pdvMap[t.name];
+      var apiComp = apiCompMap[t.name];
+      var apiTxnTime = apiTxnTimeMap[t.name];
+      var hasIssue = issues[t.name];
+      var isA2S = /^agent-to-server$|^agent-to-agent$/i.test(t.type || '');
+      var isVoice = /^voice$/i.test(t.type || '');
+      var isAPI = /^api$/i.test(t.type || '');
+
+      // MOS color: 4.0+ excellent, 3.5-4.0 good, 3.0-3.5 fair, <3.0 poor
+      var mosStr = mos != null ? mos.toFixed(2) : '--';
+      var mosColor = mos == null ? 'var(--te-text-dim)' : mos >= 4.0 ? 'var(--te-green)' : mos >= 3.5 ? '#fff' : mos >= 3.0 ? 'var(--te-yellow)' : 'var(--te-red)';
+      var voipLatStr = voipLat != null ? Math.round(voipLat) + 'ms' : '--';
+      var voipLatColor = voipLat == null ? 'var(--te-text-dim)' : voipLat > 150 ? 'var(--te-red)' : voipLat > 100 ? 'var(--te-yellow)' : '#fff';
+      var voipLossStr = voipLoss != null ? voipLoss.toFixed(2) + '%' : '0%';
+      var voipLossColor = voipLoss == null ? 'var(--te-green)' : voipLoss > 3 ? 'var(--te-red)' : voipLoss > 1 ? 'var(--te-yellow)' : 'var(--te-green)';
+      var pdvStr = pdv != null ? pdv.toFixed(1) + 'ms' : '--';
+      var pdvColor = pdv == null ? 'var(--te-text-dim)' : pdv > 30 ? 'var(--te-red)' : pdv > 15 ? 'var(--te-yellow)' : '#fff';
+
+      var testHealth = getTestHealth(t);
+      var testDot = hasIssue ? 'var(--te-red)' : STATUS_COLORS[testHealth.status];
+
+      var availStr = avail != null ? avail.toFixed(1) + '%' : '--';
+      var availColor = avail == null ? 'var(--te-text-dim)' : avail < 95 ? 'var(--te-red)' : avail < 99 ? 'var(--te-yellow)' : 'var(--te-green)';
+      var respStr = resp != null ? Math.round(resp) + 'ms' : '--';
+      var respColor = resp == null ? 'var(--te-text-dim)' : resp > 500 ? 'var(--te-red)' : resp > 200 ? 'var(--te-yellow)' : '#fff';
+      var lossStr = loss != null ? loss.toFixed(2) + '%' : '--';
+      var lossColor = loss == null ? 'var(--te-text-dim)' : loss > 5 ? 'var(--te-red)' : loss > 1 ? 'var(--te-yellow)' : 'var(--te-green)';
+      var latStr = latency != null ? Math.round(latency) + 'ms' : '--';
+      var latColor = latency == null ? 'var(--te-text-dim)' : latency > 200 ? 'var(--te-red)' : latency > 100 ? 'var(--te-yellow)' : '#fff';
+      var jitStr = jitter != null ? jitter.toFixed(1) + 'ms' : '--';
+      var jitColor = jitter == null ? 'var(--te-text-dim)' : jitter > 30 ? 'var(--te-red)' : jitter > 10 ? 'var(--te-yellow)' : '#fff';
+      var typeLabel = TYPE_LABELS[t.type] || t.type || '--';
+      var isDns = /^dns-server$|^DnsTrace$|^Dnssec$/i.test(t.type || '');
+      var respMetricLabel = isDns ? 'Resolution Time' : 'Response Time';
+      var cardId = 'cea-' + si + '-' + i;
+
+      var apiCompStr = apiComp != null ? apiComp.toFixed(1) + '%' : '--';
+      var apiCompColor = apiComp == null ? 'var(--te-text-dim)' : apiComp < 95 ? 'var(--te-red)' : apiComp < 99 ? 'var(--te-yellow)' : 'var(--te-green)';
+      var apiTxnStr = apiTxnTime != null ? Math.round(apiTxnTime) + 'ms' : '--';
+      var apiTxnColor = apiTxnTime == null ? 'var(--te-text-dim)' : apiTxnTime > 5000 ? 'var(--te-red)' : apiTxnTime > 2000 ? 'var(--te-yellow)' : '#fff';
+
+      var headerVal = testHealth.val;
+      var headerColor = STATUS_COLORS[testHealth.status];
+
+      var kpiTip = '<div style="font-weight:700;font-size:11px;margin-bottom:6px;color:#fff;">' + escHtml(testHealth.kpi) + ' \u2014 ' + escHtml(typeLabel) + '</div>';
+      kpiTip += '<div style="font-size:11px;font-weight:600;margin-bottom:6px;">Current: <span style="color:' + headerColor + ';">' + headerVal + '</span></div>';
+      var tp = (t.type || '').toLowerCase();
+      if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
+        kpiTip += '<div style="font-size:10px;color:var(--te-text-dim);line-height:1.8;">';
+        kpiTip += '<div><span style="color:var(--te-green);">\u25CF</span> Healthy: Pkt Loss \u2264 1%</div>';
+        kpiTip += '<div><span style="color:var(--te-yellow);">\u25CF</span> Warning: Pkt Loss 1\u20135%</div>';
+        kpiTip += '<div><span style="color:var(--te-red);">\u25CF</span> Critical: Pkt Loss &gt; 5%</div></div>';
+      } else if (tp === 'voice') {
+        kpiTip += '<div style="font-size:10px;color:var(--te-text-dim);line-height:1.8;">';
+        kpiTip += '<div><span style="color:var(--te-green);">\u25CF</span> Healthy: MOS \u2265 3.5</div>';
+        kpiTip += '<div><span style="color:var(--te-yellow);">\u25CF</span> Warning: MOS 3.0\u20133.5</div>';
+        kpiTip += '<div><span style="color:var(--te-red);">\u25CF</span> Critical: MOS &lt; 3.0</div></div>';
+      } else if (tp === 'bgp') {
+        kpiTip += '<div style="font-size:10px;color:var(--te-text-dim);line-height:1.8;">';
+        kpiTip += '<div><span style="color:var(--te-green);">\u25CF</span> Healthy: Reachability \u2265 99%</div>';
+        kpiTip += '<div><span style="color:var(--te-yellow);">\u25CF</span> Warning: Reachability 95\u201399%</div>';
+        kpiTip += '<div><span style="color:var(--te-red);">\u25CF</span> Critical: Reachability &lt; 95%</div></div>';
+      } else if (tp === 'api') {
+        kpiTip += '<div style="font-size:10px;color:var(--te-text-dim);line-height:1.8;">';
+        kpiTip += '<div><span style="color:var(--te-green);">\u25CF</span> Healthy: Completion \u2265 99%</div>';
+        kpiTip += '<div><span style="color:var(--te-yellow);">\u25CF</span> Warning: Completion 95\u201399%</div>';
+        kpiTip += '<div><span style="color:var(--te-red);">\u25CF</span> Critical: Completion &lt; 95%</div></div>';
+      } else if (tp === 'web-transactions') {
+        kpiTip += '<div style="font-size:10px;color:var(--te-text-dim);line-height:1.8;">';
+        kpiTip += '<div><span style="color:var(--te-green);">\u25CF</span> Healthy: Completion \u2265 99%</div>';
+        kpiTip += '<div><span style="color:var(--te-yellow);">\u25CF</span> Warning: Completion 95\u201399%</div>';
+        kpiTip += '<div><span style="color:var(--te-red);">\u25CF</span> Critical: Completion &lt; 95%</div></div>';
+      } else if (tp === 'page-load') {
+        kpiTip += '<div style="font-size:10px;color:var(--te-text-dim);line-height:1.8;">';
+        kpiTip += '<div><span style="color:var(--te-green);">\u25CF</span> Healthy: Completion \u2265 99%</div>';
+        kpiTip += '<div><span style="color:var(--te-yellow);">\u25CF</span> Warning: Completion 95\u201399%</div>';
+        kpiTip += '<div><span style="color:var(--te-red);">\u25CF</span> Critical: Completion &lt; 95%</div></div>';
+      } else {
+        kpiTip += '<div style="font-size:10px;color:var(--te-text-dim);line-height:1.8;">';
+        kpiTip += '<div><span style="color:var(--te-green);">\u25CF</span> Healthy: Availability \u2265 99%</div>';
+        kpiTip += '<div><span style="color:var(--te-yellow);">\u25CF</span> Warning: Availability 95\u201399%</div>';
+        kpiTip += '<div><span style="color:var(--te-red);">\u25CF</span> Critical: Availability &lt; 95%</div></div>';
+      }
+
+      html += '<div class="cea-card" id="' + cardId + '">';
+      html += '<div class="cea-card-hdr" onclick="toggleCard(\'' + cardId + '\')">';
+      html += '<div class="cea-card-left">';
+      html += '<div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:' + testDot + ';box-shadow:0 0 6px ' + testDot + ';"></div>';
+      html += '<div><div class="cea-card-name">' + escHtml(t.name) + '</div>';
+      html += '<div class="cea-card-type">' + escHtml(typeLabel) + '</div></div>';
+      html += '</div>';
+      html += '<div style="display:flex;align-items:center;">';
+      var testTipClass = i < 2 ? 'svc-tip tip-below' : 'svc-tip';
+      html += '<span class="cea-card-resp svc-tip-wrap" style="color:' + headerColor + ';" onclick="event.stopPropagation();">' + headerVal;
+      html += '<span class="' + testTipClass + '" style="right:auto;left:50%;transform:translateX(-50%);">' + kpiTip + '</span>';
+      html += '</span>';
+      html += '<span class="cea-expand">\u25BC</span>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '<div class="cea-card-body">';
+      html += '<div class="cea-metric-grid">';
+      var nk = 'var(--te-text)';
+      if (isVoice) {
+        html += '<div class="cea-metric"><div class="cea-metric-label">MOS</div><div class="cea-metric-val" style="color:' + mosColor + ';">' + mosStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Latency</div><div class="cea-metric-val" style="color:' + nk + ';">' + voipLatStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Loss</div><div class="cea-metric-val" style="color:' + nk + ';">' + voipLossStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">PDV</div><div class="cea-metric-val" style="color:' + nk + ';">' + pdvStr + '</div></div>';
+      } else if (isA2S) {
+        html += '<div class="cea-metric"><div class="cea-metric-label">Latency</div><div class="cea-metric-val" style="color:' + nk + ';">' + latStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Jitter</div><div class="cea-metric-val" style="color:' + nk + ';">' + jitStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Packet Loss</div><div class="cea-metric-val" style="color:' + lossColor + ';">' + lossStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Test Type</div><div class="cea-metric-val" style="font-size:11px;color:' + nk + ';">' + escHtml(typeLabel) + '</div></div>';
+      } else if (isAPI) {
+        html += '<div class="cea-metric"><div class="cea-metric-label">Completion %</div><div class="cea-metric-val" style="color:' + apiCompColor + ';">' + apiCompStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Transaction Time</div><div class="cea-metric-val" style="color:' + nk + ';">' + apiTxnStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Packet Loss</div><div class="cea-metric-val" style="color:' + nk + ';">' + lossStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Test Type</div><div class="cea-metric-val" style="font-size:11px;color:' + nk + ';">' + escHtml(typeLabel) + '</div></div>';
+      } else if (/^bgp$/i.test(t.type || '')) {
+        var bgpR = bgpReachMap[t.name]; var bgpStr = bgpR != null ? bgpR.toFixed(1) + '%' : '--';
+        var bgpCol = bgpR == null ? 'var(--te-text-dim)' : bgpR < 95 ? 'var(--te-red)' : bgpR < 99 ? 'var(--te-yellow)' : 'var(--te-green)';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Reachability</div><div class="cea-metric-val" style="color:' + bgpCol + ';">' + bgpStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">' + respMetricLabel + '</div><div class="cea-metric-val" style="color:' + nk + ';">' + respStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Packet Loss</div><div class="cea-metric-val" style="color:' + nk + ';">' + lossStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Test Type</div><div class="cea-metric-val" style="font-size:11px;color:' + nk + ';">' + escHtml(typeLabel) + '</div></div>';
+      } else if (/^web-transactions$/i.test(t.type || '')) {
+        var txnC = txnCompMap[t.name]; var txnStr = txnC != null ? txnC.toFixed(1) + '%' : '--';
+        var txnCol = txnC == null ? 'var(--te-text-dim)' : txnC < 95 ? 'var(--te-red)' : txnC < 99 ? 'var(--te-yellow)' : 'var(--te-green)';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Completion %</div><div class="cea-metric-val" style="color:' + txnCol + ';">' + txnStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">' + respMetricLabel + '</div><div class="cea-metric-val" style="color:' + nk + ';">' + respStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Packet Loss</div><div class="cea-metric-val" style="color:' + nk + ';">' + lossStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Test Type</div><div class="cea-metric-val" style="font-size:11px;color:' + nk + ';">' + escHtml(typeLabel) + '</div></div>';
+      } else if (/^page-load$/i.test(t.type || '')) {
+        var pgC = pageCompMap[t.name]; var pgStr = pgC != null ? pgC.toFixed(1) + '%' : '--';
+        var pgCol = pgC == null ? 'var(--te-text-dim)' : pgC < 95 ? 'var(--te-red)' : pgC < 99 ? 'var(--te-yellow)' : 'var(--te-green)';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Completion %</div><div class="cea-metric-val" style="color:' + pgCol + ';">' + pgStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">' + respMetricLabel + '</div><div class="cea-metric-val" style="color:' + nk + ';">' + respStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Packet Loss</div><div class="cea-metric-val" style="color:' + nk + ';">' + lossStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Test Type</div><div class="cea-metric-val" style="font-size:11px;color:' + nk + ';">' + escHtml(typeLabel) + '</div></div>';
+      } else {
+        html += '<div class="cea-metric"><div class="cea-metric-label">Availability</div><div class="cea-metric-val" style="color:' + availColor + ';">' + availStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">' + respMetricLabel + '</div><div class="cea-metric-val" style="color:' + nk + ';">' + respStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Packet Loss</div><div class="cea-metric-val" style="color:' + nk + ';">' + lossStr + '</div></div>';
+        html += '<div class="cea-metric"><div class="cea-metric-label">Test Type</div><div class="cea-metric-val" style="font-size:11px;color:' + nk + ';">' + escHtml(typeLabel) + '</div></div>';
+      }
+      html += '</div>';
+
+      html += '<div class="cea-agents-wrap" id="agents-' + cardId + '" data-test-id="' + escHtml(t.id) + '" data-loaded="0">';
+      html += '<div class="cea-agents-title">Monitoring Agents</div>';
+      html += '<div class="cea-agents-loading"><span class="spin"></span>Loading agent performance\u2026</div>';
+      html += '</div>';
+
+      var teLink = 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(t.id);
+      html += '<a class="cea-drill-btn" href="' + teLink + '" target="_blank" rel="noopener noreferrer">Open Full Drill-Down \u2192</a>';
+      html += '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    html += '</div>';
+  });
+
+  container.innerHTML = html;
+}
+
+function renderEPAData() {
+  var container = document.getElementById('tab-epa');
+  var eps = DATA.ENDPOINT_AGENTS || [];
+  var extra = DATA.EXTRA_KPI || {};
+  var worst = extra.ep_worst_performers || [];
+
+  var latMap = {}, rssiMap = {};
+  worst.forEach(function(w) { latMap[w.name] = w.latency; rssiMap[w.name] = w.rssi; });
+
+  var allLats = worst.filter(function(w) { return w.latency != null; }).map(function(w) { return w.latency; });
+  var allRssi = worst.filter(function(w) { return w.rssi != null; }).map(function(w) { return w.rssi; });
+  var avgLat = allLats.length ? Math.round(allLats.reduce(function(a,b){return a+b;},0) / allLats.length) : null;
+  var avgRssi = allRssi.length ? Math.round(allRssi.reduce(function(a,b){return a+b;},0) / allRssi.length) : null;
+  var issueCount = worst.filter(function(w) { return (w.latency != null && w.latency > 150) || (w.rssi != null && w.rssi < -70); }).length;
+
+  var latColor = avgLat == null ? 'var(--te-text-dim)' : avgLat > 200 ? 'var(--te-red)' : avgLat > 100 ? 'var(--te-yellow)' : '#fff';
+  var rssiColor = avgRssi == null ? 'var(--te-text-dim)' : avgRssi < -70 ? 'var(--te-red)' : avgRssi < -60 ? 'var(--te-yellow)' : 'var(--te-green)';
+  var issueColor = issueCount > 0 ? 'var(--te-red)' : 'var(--te-green)';
+
+  var html = '<div class="epa-overview">';
+  html += '<div class="epa-overview-header">';
+  html += '<span class="epa-overview-title">Endpoint Agent Overview</span>';
+  html += '<span class="epa-overview-badge" style="color:var(--te-green);">' + eps.length + ' agents active</span>';
+  html += '</div>';
+
+  html += '<div class="epa-kpi-grid">';
+  html += '<div class="epa-kpi"><div class="epa-kpi-label">Avg Latency</div><div class="epa-kpi-val" style="color:' + latColor + ';">' + (avgLat != null ? avgLat + 'ms' : '--') + '</div></div>';
+  html += '<div class="epa-kpi"><div class="epa-kpi-label">Avg WiFi RSSI</div><div class="epa-kpi-val" style="color:' + rssiColor + ';">' + (avgRssi != null ? avgRssi + ' dBm' : '--') + '</div></div>';
+  html += '<div class="epa-kpi"><div class="epa-kpi-label">Monitored</div><div class="epa-kpi-val" style="color:#fff;">' + worst.length + '</div></div>';
+  html += '<div class="epa-kpi"><div class="epa-kpi-label">Agents w/ Issues</div><div class="epa-kpi-val" style="color:' + issueColor + ';">' + issueCount + '</div></div>';
+  html += '</div>';
+
+  worst.forEach(function(ep, i) {
+    var lat = ep.latency != null ? Math.round(ep.latency) : null;
+    var rssi = ep.rssi != null ? Math.round(ep.rssi) : null;
+
+    var dotColor = 'var(--te-green)';
+    if (lat != null && lat > 200) dotColor = 'var(--te-red)';
+    else if (lat != null && lat > 100) dotColor = 'var(--te-yellow)';
+    if (rssi != null && rssi < -70) dotColor = 'var(--te-red)';
+    else if (rssi != null && rssi < -60 && dotColor !== 'var(--te-red)') dotColor = 'var(--te-yellow)';
+
+    var latStr = lat != null ? lat + 'ms' : '--';
+    var latHeaderColor = lat == null ? 'var(--te-text-dim)' : lat > 200 ? 'var(--te-red)' : lat > 100 ? 'var(--te-yellow)' : '#fff';
+
+    var rInfo = rssi != null ? rssiRating(rssi) : { color: 'var(--te-text-dim)', label: '' };
+    var rssiStr = rssi != null ? rssi + ' dBm' : '--';
+
+    var loss = ep.loss != null ? ep.loss : null;
+    var lossStr = loss != null ? loss.toFixed(2) + '%' : '0%';
+    var lossColor = loss == null ? 'var(--te-green)' : loss > 5 ? 'var(--te-red)' : loss > 1 ? 'var(--te-yellow)' : 'var(--te-green)';
+    if (loss != null && loss > 5) dotColor = 'var(--te-red)';
+
+    var deviceStr = ep.device || '';
+
+    var cardId = 'epa-card-' + i;
+
+    html += '<div class="epa-agent-card" id="' + cardId + '">';
+    html += '<div class="epa-agent-hdr" onclick="toggleEpaCard(\'' + cardId + '\')">';
+    html += '<div class="epa-agent-left">';
+    html += '<div class="epa-agent-dot" style="background:' + dotColor + ';box-shadow:0 0 8px ' + dotColor + ';"></div>';
+    html += '<div><div class="epa-agent-name">' + escHtml(ep.name) + '</div>';
+    html += '<div class="epa-agent-loc">' + escHtml(ep.loc) + '</div></div>';
+    html += '</div>';
+    html += '<div style="display:flex;align-items:center;">';
+    html += '<span class="epa-agent-lat" style="color:' + latHeaderColor + ';">' + latStr + '</span>';
+    html += '<span class="epa-expand">\u25BC</span>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div class="epa-agent-body">';
+    html += '<div class="epa-metric-grid">';
+    html += '<div class="epa-metric"><div class="epa-metric-label">Network Latency</div><div class="epa-metric-val" style="color:' + latHeaderColor + ';">' + latStr + '</div></div>';
+    html += '<div class="epa-metric"><div class="epa-metric-label">Avg WiFi RSSI</div><div class="epa-metric-val" style="color:' + rInfo.color + ';">' + rssiStr + '</div></div>';
+    html += '<div class="epa-metric"><div class="epa-metric-label">Packet Loss</div><div class="epa-metric-val" style="color:' + lossColor + ';">' + lossStr + '</div></div>';
+    html += '<div class="epa-metric"><div class="epa-metric-label">Platform</div><div class="epa-metric-val" style="font-size:11px;color:#fff;">' + escHtml(deviceStr || '--') + '</div></div>';
+    html += '</div>';
+
+    html += '<div class="epa-detail-section">';
+    html += '<div class="epa-detail-title">WiFi &amp; System Details</div>';
+    html += '<div class="epa-detail-row"><span class="epa-detail-key">Signal Strength</span><span class="epa-detail-val" style="color:' + rInfo.color + ';">' + (rInfo.label || '--') + '</span></div>';
+    html += '<div class="epa-detail-row"><span class="epa-detail-key">RSSI</span><span class="epa-detail-val">' + rssiStr + '</span></div>';
+    html += '<div class="epa-detail-row"><span class="epa-detail-key">Latency</span><span class="epa-detail-val">' + latStr + '</span></div>';
+    html += '<div class="epa-detail-row"><span class="epa-detail-key">Location</span><span class="epa-detail-val">' + escHtml(ep.loc) + '</span></div>';
+    html += '</div>';
+
+    var teLink = ep.id ? 'https://app.thousandeyes.com/view/endpoint-agent/?agentId=' + encodeURIComponent(ep.id) : '#';
+    html += '<a class="epa-drill-btn" href="' + teLink + '" target="_blank" rel="noopener noreferrer">Open Full Drill-Down \u2192</a>';
+    html += '</div>';
+    html += '</div>';
+  });
+
+  if (worst.length === 0 && eps.length > 0) {
+    html += '<div style="padding:20px;text-align:center;font-size:12px;color:var(--te-text-dim);">No endpoint performance data available yet</div>';
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function renderII() {
+  var container = document.getElementById('tab-ii');
+  var outages = DATA.OUTAGES || [];
+  var html = '<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-size:11px;color:var(--te-text-dim);font-weight:600;">INTERNET INSIGHTS \u2014 OUTAGES (24H)</span></div><div style="font-size:11px;color:var(--te-text-dim);margin-bottom:12px;">Monitoring global SaaS, CDN, ISP, and IaaS providers via ThousandEyes Internet Insights</div></div>';
+  if (outages.length === 0) {
+    html += '<div style="padding:20px;text-align:center;color:var(--te-text-dim);font-size:12px;">No outages detected in this window</div>';
+  }
+  outages.forEach(function(o) {
+    var barColor = o.severity === 'high' ? 'var(--te-red)' : o.severity === 'medium' ? 'var(--te-yellow)' : 'var(--te-green)';
+    var durationMin = o.duration ? Math.round(o.duration / 60) : 0;
+    if (o.duration < 120) durationMin = o.duration;
+    var iiType = o._raw_type === 'app' ? 'application' : 'network';
+    var iiLink = o.id ? 'https://app.thousandeyes.com/internet-insights/#/outages/' + iiType + '/' + encodeURIComponent(o.id) : '';
+    if (iiLink) {
+      html += '<a href="' + iiLink + '" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:block;">';
+    }
+    html += '<div class="insight-card">';
+    html += '<div class="insight-header"><div class="insight-provider">' + escHtml(o.provider) + '</div><span class="insight-severity sev-' + o.severity + '">' + escHtml(o.severity) + '</span></div>';
+    html += '<div class="insight-meta">' + escHtml(o.type) + ' \u00B7 ' + escHtml(o.affected) + ' \u00B7 Started ' + escHtml(o.start) + '</div>';
+    html += '<div class="insight-bar-container"><div class="insight-bar" style="width:' + Math.min(o.impact, 100) + '%;background:' + barColor + '"></div></div>';
+    html += '<div style="font-size:9px;color:var(--te-text-dim);margin-top:4px;">Impact Score: ' + o.impact + '/100 \u00B7 Duration: ' + durationMin + ' min</div>';
+    html += '</div>';
+    if (iiLink) { html += '</a>'; }
+  });
+  container.innerHTML = html;
+}
+
+function renderAlerts() {
+  var feed = document.getElementById('alertFeed');
+  var alerts = DATA.ALERT_FEED || [];
+  var events = DATA.LIVE_EVENTS || [];
+
+  var combined = [];
+  alerts.forEach(function(a) {
+    var color = a.sev === 'red' ? 'var(--te-red)' : a.sev === 'yellow' ? 'var(--te-yellow)' : 'var(--te-green)';
+    var link = a.alertId ? 'https://app.thousandeyes.com/alerts/list/active?alertId=' + encodeURIComponent(a.alertId) : '';
+    combined.push({ time: a.time || '', color: color, msg: a.msg || '', link: link, tag: 'ALERT', tagColor: 'var(--te-red)', tagBg: 'rgba(248,81,73,0.12)' });
+  });
+  events.forEach(function(e) {
+    var color = e.impact === 'HIGH' ? 'var(--te-red)' : e.impact === 'MEDIUM' ? 'var(--te-yellow)' : 'var(--te-blue)';
+    var link = e.eventId ? 'https://app.thousandeyes.com/alerts/list/active?eventId=' + encodeURIComponent(e.eventId) : '';
+    var label = (e.impact || '') + ' \u2014 ' + (e.title || 'Event');
+    if (e.type) label += ' (' + e.type + ')';
+    combined.push({ time: e.time || '', color: color, msg: label, link: link, tag: 'EVENT', tagColor: 'var(--te-blue)', tagBg: 'rgba(88,166,255,0.12)' });
+  });
+
+  combined.sort(function(a, b) { return a.time < b.time ? 1 : a.time > b.time ? -1 : 0; });
+
+  if (combined.length === 0) {
+    feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--te-green);font-size:12px;">\u2713 No active alerts or events</div>';
+    return;
+  }
+  var html = '';
+  combined.forEach(function(item) {
+    var msgHtml = item.link
+      ? '<a href="' + item.link + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.4);transition:color 0.2s, border-color 0.2s;" onmouseover="this.style.color=\'#79c0ff\';this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.color=\'var(--te-blue)\';this.style.borderBottomColor=\'rgba(88,166,255,0.4)\'">' + escHtml(item.msg) + '</a>'
+      : escHtml(item.msg);
+    html += '<div class="alert-item">';
+    html += '<span class="alert-time">' + escHtml(item.time) + '</span>';
+    html += '<span style="color:' + item.color + ';font-size:8px;">\u25CF</span>';
+    html += '<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:' + item.tagBg + ';color:' + item.tagColor + ';font-weight:600;letter-spacing:0.5px;white-space:nowrap;">' + item.tag + '</span>';
+    html += '<span class="alert-msg">' + msgHtml + '</span>';
+    html += '</div>';
+  });
+  feed.innerHTML = html;
+}
+
+var RSSI_BANDS = [
+  { min: -50,   label: 'Excellent',  color: 'var(--te-green)',  range: '\u2265 -50 dBm' },
+  { min: -60,   label: 'Good',       color: 'var(--te-blue)',   range: '-50 to -60' },
+  { min: -67,   label: 'Acceptable', color: 'var(--te-yellow)', range: '-60 to -67' },
+  { min: -70,   label: 'Weak',       color: 'var(--te-orange)', range: '-67 to -70' },
+  { min: -80,   label: 'Poor',       color: 'var(--te-red)',    range: '-70 to -80' },
+  { min: -999,  label: 'Unusable',   color: 'var(--te-red)',    range: '< -80 dBm' }
+];
+function rssiRating(val) {
+  for (var i = 0; i < RSSI_BANDS.length; i++) {
+    if (val >= RSSI_BANDS[i].min) return RSSI_BANDS[i];
+  }
+  return RSSI_BANDS[RSSI_BANDS.length - 1];
+}
+function rssiTipHtml(val) {
+  if (val === '--') return '';
+  var r = rssiRating(val);
+  var h = '<div class="rssi-tip">';
+  h += '<div class="rssi-tip-title" style="color:' + r.color + '">' + r.label + ' \u2014 ' + val + ' dBm</div>';
+  for (var i = 0; i < RSSI_BANDS.length; i++) {
+    var b = RSSI_BANDS[i];
+    var active = (b.label === r.label) ? ' active' : '';
+    h += '<div class="rssi-tip-row' + active + '">';
+    h += '<span class="rssi-tip-dot" style="background:' + b.color + '"></span>';
+    h += '<span style="min-width:68px;">' + b.range + '</span>';
+    h += '<span>' + b.label + '</span>';
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+function renderEndpointTable() {
+  var ex = DATA.EXTRA_KPI || {};
+  var worst = (ex.ep_worst_performers || []).slice(0, 10);
+  var tbody = document.querySelector('#endpointTable tbody');
+  if (worst.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:12px;text-align:center;font-size:11px;color:var(--te-text-dim);">No endpoint performance data available</td></tr>';
+    return;
+  }
+  var total = worst.length;
+  tbody.innerHTML = worst.map(function(ep, idx) {
+    var latMs = ep.latency != null ? ep.latency : '--';
+    var rssi = ep.rssi != null ? Math.round(ep.rssi) : '--';
+    var latColor = latMs === '--' ? 'var(--te-text-dim)' : latMs > 250 ? 'var(--te-red)' : latMs > 150 ? 'var(--te-orange)' : latMs > 80 ? 'var(--te-yellow)' : 'var(--te-green)';
+    var rInfo = rssi !== '--' ? rssiRating(rssi) : { label: '', color: 'var(--te-text-dim)' };
+    var latDisplay = latMs !== '--' ? Math.round(latMs) + 'ms' : '--';
+    var rssiDisplay = rssi !== '--' ? rssi : '--';
+    var flipClass = idx >= total - 3 ? ' tip-above' : '';
+    var agentLink = ep.id ? 'https://app.thousandeyes.com/view/endpoint-agent/?agentId=' + encodeURIComponent(ep.id) : '';
+    var nameHtml = agentLink
+      ? '<a href="' + agentLink + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.4);transition:color 0.2s,border-color 0.2s;" onmouseover="this.style.color=\'#79c0ff\';this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.color=\'var(--te-blue)\';this.style.borderBottomColor=\'rgba(88,166,255,0.4)\'">' + escHtml(ep.name) + '</a>'
+      : escHtml(ep.name);
+    return '<tr>' +
+      '<td style="font-size:11px;font-family:var(--font-mono);font-weight:500;">' + nameHtml + '</td>' +
+      '<td style="font-size:11px;color:var(--te-text-dim);">' + escHtml(ep.loc) + '</td>' +
+      '<td style="font-size:11px;font-family:var(--font-mono);font-weight:600;color:' + latColor + ';">' + latDisplay + '</td>' +
+      '<td class="rssi-cell' + flipClass + '" style="font-size:11px;font-family:var(--font-mono);font-weight:600;color:' + rInfo.color + ';text-align:right;">' + rssiDisplay + rssiTipHtml(rssi) + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function renderGauges() {
+  var tests = DATA.ALL_TESTS || [];
+  var availability = DATA.TEST_AVAILABILITY || {};
+  var extra = DATA.EXTRA_KPI || {};
+  if (tests.length === 0) return;
+
+  var lossMap = {};
+  (extra.loss_by_test || []).forEach(function(r) { lossMap[r.test] = r.loss != null ? r.loss : r.value; });
+  var mosMap = {};
+  (extra.mos_by_test || []).forEach(function(r) { mosMap[r.test] = r.value; });
+  var apiCompMap = {};
+  (extra.api_completion_by_test || []).forEach(function(r) { apiCompMap[r.test] = r.value; });
+  var txnCompMap = {};
+  (extra.txn_completion_by_test || []).forEach(function(r) { txnCompMap[r.test] = r.value; });
+  var pageCompMap = {};
+  (extra.page_completion_by_test || []).forEach(function(r) { pageCompMap[r.test] = r.value; });
+  var bgpReachMap = {};
+  (extra.bgp_reach_by_test || []).forEach(function(r) { bgpReachMap[r.test] = r.value; });
+
+  function testHealthPct(t) {
+    var tp = (t.type || '').toLowerCase();
+    if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
+      var l = lossMap[t.name];
+      if (l != null) return Math.max(0, 100 - l);
+      return availability[t.name] != null ? availability[t.name] : null;
+    }
+    if (tp === 'voice') {
+      var m = mosMap[t.name];
+      if (m != null) return Math.min(100, (m / 4.5) * 100);
+      return null;
+    }
+    if (tp === 'web-transactions') return txnCompMap[t.name] != null ? txnCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
+    if (tp === 'page-load') return pageCompMap[t.name] != null ? pageCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
+    if (tp === 'api') return apiCompMap[t.name] != null ? apiCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
+    if (tp === 'bgp') return bgpReachMap[t.name] != null ? bgpReachMap[t.name] : null;
+    return availability[t.name] != null ? availability[t.name] : null;
+  }
+
+  var grouped = {};
+  tests.forEach(function(t) {
+    var svc = getBusinessService(t.name);
+    if (!grouped[svc]) grouped[svc] = [];
+    grouped[svc].push(t);
+  });
+
+  var svcData = [];
+  var svcOrder = BUSINESS_SERVICES.map(function(s) { return s.name; });
+  svcOrder.push('Other Services');
+  svcOrder.forEach(function(svcName) {
+    var items = grouped[svcName];
+    if (!items || items.length === 0) return;
+    var vals = [];
+    items.forEach(function(t) {
+      var v = testHealthPct(t);
+      if (v != null) vals.push(v);
+    });
+    if (vals.length === 0) return;
+    var avg = vals.reduce(function(a,b){return a+b;},0) / vals.length;
+    svcData.push({ name: svcName, value: Math.round(avg * 100) / 100, count: items.length });
+  });
+
+  var STATUS_PRI = { critical: 0, warning: 1, healthy: 2 };
+  svcData.sort(function(a, b) {
+    var sa = a.value < 95 ? 'critical' : a.value < 99 ? 'warning' : 'healthy';
+    var sb = b.value < 95 ? 'critical' : b.value < 99 ? 'warning' : 'healthy';
+    var pa = STATUS_PRI[sa] !== undefined ? STATUS_PRI[sa] : 3;
+    var pb = STATUS_PRI[sb] !== undefined ? STATUS_PRI[sb] : 3;
+    if (pa !== pb) return pa - pb;
+    return a.value - b.value;
+  });
+
+  var overallBullet = 'var(--te-green)';
+  if (svcData.some(function(s) { return s.value < 95; })) overallBullet = 'var(--te-red)';
+  else if (svcData.some(function(s) { return s.value < 99; })) overallBullet = 'var(--te-yellow)';
+  document.getElementById('gaugeTitle').innerHTML = '<span style="color:' + overallBullet + '">&bull;</span> Service Health Gauges';
+
+  document.getElementById('gaugeRow').innerHTML = svcData.map(function(s) {
+    var pct = s.value;
+    var gaugeColor;
+    if (pct >= 99) gaugeColor = '#3fb950';
+    else if (pct >= 95) gaugeColor = '#e3b341';
+    else gaugeColor = '#f85149';
+
+    var angle = Math.min((pct / 100) * 270, 270);
+    var r = 40, cx = 55, cy = 55, sw = 7;
+    var sa = 135 * Math.PI / 180;
+    var ea = (135 + angle) * Math.PI / 180;
+    var be = (135 + 270) * Math.PI / 180;
+    var la = angle > 180 ? 1 : 0;
+    var x1 = cx + r * Math.cos(sa), y1 = cy + r * Math.sin(sa);
+    var x2 = cx + r * Math.cos(ea), y2 = cy + r * Math.sin(ea);
+    var bx = cx + r * Math.cos(be), by = cy + r * Math.sin(be);
+
+    var valStr = pct >= 100 ? '100%' : pct.toFixed(pct >= 99.5 ? 1 : 2) + '%';
+
+    var svg = '<svg class="gauge-svg" viewBox="0 0 110 110">';
+    svg += '<path d="M '+x1+' '+y1+' A '+r+' '+r+' 0 1 1 '+bx+' '+by+'" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="'+sw+'" stroke-linecap="round"/>';
+    svg += '<path d="M '+x1+' '+y1+' A '+r+' '+r+' 0 '+la+' 1 '+x2+' '+y2+'" fill="none" stroke="'+gaugeColor+'" stroke-width="'+sw+'" stroke-linecap="round"/>';
+    svg += '<text x="'+cx+'" y="'+(cy-2)+'" text-anchor="middle" fill="'+gaugeColor+'" font-size="17" font-weight="700" font-family="var(--font-mono)">'+valStr+'</text>';
+    svg += '<text x="'+cx+'" y="'+(cy+12)+'" text-anchor="middle" fill="var(--te-text-dim)" font-size="9" letter-spacing="1.5" font-family="var(--font-body)">AVAIL</text>';
+    svg += '</svg>';
+    return '<div class="gauge-item">' + svg + '<div class="gauge-label">' + escHtml(s.name) + '</div></div>';
+  }).join('');
+}
+
+function renderFooter() {
+  var ts = DATA.lastRefresh || '';
+  var label = 'Live Data via MCP';
+  if (ts) {
+    try {
+      var d = new Date(ts);
+      label = 'Last refresh: ' + d.toUTCString().replace('GMT','UTC');
+    } catch(e) {}
+  }
+  var orgName = (DATA.ACCOUNT_GROUP || 'ThousandEyes');
+  document.getElementById('footer').innerHTML = '<strong>Powered by <a href="https://www.thousandeyes.com" target="_blank" rel="noopener noreferrer">Cisco ThousandEyes</a></strong> &mdash; ' + escHtml(orgName) + ' \u00B7 ' + label;
+}
+
+function toggleCard(id) {
+  var card = document.getElementById(id);
+  card.classList.toggle('expanded');
+  if (card.classList.contains('expanded')) {
+    var wrap = document.getElementById('agents-' + id);
+    if (wrap && wrap.getAttribute('data-loaded') === '0') {
+      loadAgentPerf(wrap);
+    }
+  }
+}
+
+function agentDotColor(val, higherIsWorse, testType) {
+  if (val == null) return 'var(--te-text-dim)';
+  if (higherIsWorse) {
+    if (val > 5) return 'var(--te-red)';
+    if (val > 1) return 'var(--te-yellow)';
+    return 'var(--te-green)';
+  }
+  if (testType === 'voice') {
+    if (val >= 4.0) return 'var(--te-green)';
+    if (val >= 3.5) return '#fff';
+    if (val >= 3.0) return 'var(--te-yellow)';
+    return 'var(--te-red)';
+  }
+  if (val >= 99) return 'var(--te-green)';
+  if (val >= 95) return 'var(--te-yellow)';
+  return 'var(--te-red)';
+}
+
+function loadAgentPerf(wrap) {
+  var testId = wrap.getAttribute('data-test-id');
+  if (!testId) return;
+  wrap.setAttribute('data-loaded', '1');
+  fetch('/api/agent_perf/' + encodeURIComponent(testId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var agents = d.agents || [];
+      var label = d.metric_label || 'Value';
+      var hiw = d.higher_is_worse;
+      var tt = d.test_type || '';
+      var top5 = agents.slice(0, 5);
+      var h = '<div class="cea-agents-title">Top 5 Worst Agents \u2014 <span style="color:var(--te-text-dim);font-weight:400;text-transform:none;letter-spacing:0;">' + escHtml(label) + '</span></div>';
+      if (top5.length === 0) {
+        h += '<div style="font-size:11px;color:var(--te-text-dim);padding:6px 0;">No per-agent data available</div>';
+      } else {
+        top5.forEach(function(a) {
+          var v = a.value;
+          var dotCol = agentDotColor(v, hiw, tt);
+          var valStr;
+          if (tt === 'voice') {
+            valStr = v != null ? v.toFixed(2) : '--';
+          } else if (hiw) {
+            valStr = v != null ? v.toFixed(2) + '%' : '--';
+          } else {
+            valStr = v != null ? v.toFixed(1) + '%' : '--';
+          }
+          h += '<div class="cea-agent-row">';
+          h += '<span class="cea-agent-name">' + escHtml(a.name) + '</span>';
+          h += '<span class="cea-agent-val" style="color:' + dotCol + ';">' + valStr + '</span>';
+          h += '<span class="cea-agent-dot" style="background:' + dotCol + ';"></span>';
+          h += '</div>';
+        });
+      }
+      wrap.innerHTML = h;
+    })
+    .catch(function() {
+      wrap.innerHTML = '<div class="cea-agents-title">Monitoring Agents</div><div style="font-size:11px;color:var(--te-text-dim);padding:6px 0;">Failed to load agent data</div>';
+    });
+}
+function toggleEpaCard(id) { document.getElementById(id).classList.toggle('expanded'); }
+
+// ═══════════════════════════════════════════
+// MODALS — Drill-Down Views
+// ═══════════════════════════════════════════
+function openModal(type) {
+  if (!DATA) return;
+  var overlay = document.getElementById('modalOverlay');
+  var title = document.getElementById('modalTitle');
+  var body = document.getElementById('modalBody');
+  overlay.classList.add('visible');
+
+  if (type === 'availability') {
+    title.textContent = 'Overall Availability \u2014 Drill-Down';
+    body.innerHTML = buildAvailabilityModal();
+  } else if (type === 'response') {
+    title.textContent = 'Response Time Analysis';
+    body.innerHTML = buildResponseModal();
+  } else if (type === 'loss') {
+    title.textContent = 'Packet Loss Analysis';
+    body.innerHTML = buildLossModal();
+  } else if (type === 'alerts') {
+    title.textContent = 'Active Alert Details';
+    body.innerHTML = buildAlertModal();
+  } else if (type === 'events') {
+    title.textContent = 'Event Detection \u2014 Active Events';
+    body.innerHTML = buildEventsModal();
+  } else if (type === 'outages') {
+    title.textContent = 'Internet Insights \u2014 Active Outages';
+    body.innerHTML = buildOutagesModal();
+  }
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('visible');
+}
+
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+
+function buildAvailabilityModal() {
+  var rawAvail = DATA.TEST_AVAILABILITY || {};
+  var testTypes = DATA.TEST_TYPES || {};
+  var tests = DATA.ALL_TESTS || [];
+  var idLookup = {};
+  tests.forEach(function(t) { if (t.name && t.id) idLookup[t.name] = t.id; });
+
+  var avail = {};
+  Object.keys(rawAvail).forEach(function(name) {
+    if (testTypes[name] === 'http-server') avail[name] = rawAvail[name];
+  });
+
+  var vals = Object.values(avail);
+  var overall = vals.length > 0 ? (vals.reduce(function(a,b){return a+b;},0) / vals.length) : 0;
+  var sortedVals = vals.slice().sort(function(a,b){ return a - b; });
+  var n = sortedVals.length;
+  var p1 = n > 0 ? sortedVals[Math.min(Math.floor(n * 0.01), n - 1)] : '--';
+  var p5 = n > 0 ? sortedVals[Math.min(Math.floor(n * 0.05), n - 1)] : '--';
+  var perfect = vals.filter(function(v){return v >= 100;}).length;
+  var degraded = vals.filter(function(v){return v < 99.5;}).length;
+
+  function aColor(v) {
+    if (v === '--') return '#fff';
+    if (v >= 99.5) return 'var(--te-green)';
+    if (v >= 95) return 'var(--te-yellow)';
+    return 'var(--te-red)';
+  }
+
+  var html = '<div class="modal-kpi-row">';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Overall Avg</div><div class="modal-kpi-val" style="color:' + aColor(overall) + '">' + overall.toFixed(2) + '%</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">100% Available</div><div class="modal-kpi-val" style="color:var(--te-green)">' + perfect + '<span style="font-size:12px;color:var(--te-text-dim);font-weight:400;"> / ' + n + '</span></div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Below 99.5%</div><div class="modal-kpi-val" style="color:' + (degraded > 0 ? 'var(--te-red)' : 'var(--te-green)') + '">' + degraded + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Worst P1</div><div class="modal-kpi-val" style="color:' + aColor(p1) + '">' + (p1 !== '--' ? p1.toFixed(1) + '%' : '--') + '</div></div>';
+  html += '</div>';
+
+  var sorted = Object.keys(avail).map(function(name) {
+    return { name: name, val: avail[name], id: idLookup[name] || '' };
+  }).sort(function(a,b) { return a.val - b.val; });
+
+  if (sorted.length > 1) {
+    var chartData = sorted.slice().sort(function(a,b){ return b.val - a.val; });
+    var maxVal = 100;
+    var minVal = chartData[chartData.length - 1].val;
+    var range = maxVal - minVal || 1;
+    var W = 760, H = 180, padL = 50, padR = 16, padT = 20, padB = 30;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var cLen = chartData.length;
+
+    var points = chartData.map(function(t, i) {
+      var x = padL + (i / (cLen - 1 || 1)) * plotW;
+      var y = padT + plotH - ((t.val - minVal) / range) * plotH;
+      return { x: x, y: y, val: t.val };
+    });
+
+    var pathD = 'M' + points.map(function(p){ return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L');
+    var areaD = pathD + ' L' + points[points.length-1].x.toFixed(1) + ',' + (padT + plotH) + ' L' + points[0].x.toFixed(1) + ',' + (padT + plotH) + ' Z';
+
+    html += '<div class="modal-chart-area">';
+    html += '<div class="modal-chart-title">Availability Distribution &mdash; All Monitored Tests</div>';
+    html += '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;">';
+    html += '<defs><linearGradient id="availGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--te-green)" stop-opacity="0.25"/><stop offset="100%" stop-color="var(--te-green)" stop-opacity="0.02"/></linearGradient></defs>';
+
+    for (var g = 0; g <= 4; g++) {
+      var gy = padT + (plotH / 4) * g;
+      var gVal = (maxVal - (g / 4) * range).toFixed(1);
+      html += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--te-border)" stroke-width="0.5" stroke-dasharray="3,3"/>';
+      html += '<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)">' + gVal + '%</text>';
+    }
+
+    html += '<path d="' + areaD + '" fill="url(#availGrad)"/>';
+    html += '<path d="' + pathD + '" fill="none" stroke="var(--te-green)" stroke-width="2" stroke-linejoin="round"/>';
+
+    var thresholdY = padT + plotH - ((99.5 - minVal) / range) * plotH;
+    if (thresholdY >= padT && thresholdY <= padT + plotH) {
+      html += '<line x1="' + padL + '" y1="' + thresholdY.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + thresholdY.toFixed(1) + '" stroke="var(--te-yellow)" stroke-width="1" stroke-dasharray="6,4" opacity="0.6"/>';
+      html += '<text x="' + (W - padR - 2) + '" y="' + (thresholdY - 5).toFixed(1) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)" opacity="0.7">99.5% SLA</text>';
+    }
+
+    html += '</svg></div>';
+  }
+
+  html += '<div class="modal-chart-area">';
+  html += '<div class="modal-chart-title">Top Lowest Availability Tests</div>';
+  html += '<div class="table-wrap" style="border:none;"><table style="width:100%;border-collapse:collapse;">';
+  html += '<thead><tr><th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);">Rank</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);">Test Name</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:right;border-bottom:1px solid var(--te-border);">Availability</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);width:40%;">Distribution</th></tr></thead><tbody>';
+
+  var worst = sorted.slice(0, 10);
+
+  worst.forEach(function(t, idx) {
+    var pct = Math.max(3, t.val);
+    var barColor = t.val >= 99.5 ? 'var(--te-green)' : t.val >= 95 ? 'var(--te-yellow)' : 'var(--te-red)';
+    var valColor = t.val >= 99.5 ? 'var(--te-green)' : t.val >= 95 ? 'var(--te-yellow)' : 'var(--te-red)';
+    var teLink = t.id ? 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(t.id) : '#';
+    html += '<tr style="border-bottom:1px solid var(--te-border);">';
+    html += '<td style="padding:9px 14px;font-family:var(--font-mono);font-size:11px;color:var(--te-text-dim);font-weight:600;">' + (idx + 1) + '</td>';
+    html += '<td style="padding:9px 14px;font-size:12px;font-weight:500;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="' + teLink + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.3);transition:border-color 0.2s;" onmouseover="this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.borderBottomColor=\'rgba(88,166,255,0.3)\'">' + escHtml(t.name) + '</a></td>';
+    html += '<td style="padding:9px 14px;font-family:var(--font-mono);font-size:12px;font-weight:700;color:' + valColor + ';text-align:right;">' + t.val.toFixed(2) + '%</td>';
+    html += '<td style="padding:9px 14px;"><div style="height:8px;background:var(--te-dark);border-radius:4px;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:4px;transition:width 0.8s;"></div></div></td>';
+    html += '</tr>';
+  });
+
+  if (sorted.length === 0) {
+    html += '<tr><td colspan="4" style="padding:20px;text-align:center;font-size:12px;color:var(--te-text-dim);">No availability data available</td></tr>';
+  }
+
+  html += '</tbody></table></div></div>';
+  return html;
+}
+
+function buildResponseModal() {
+  var ex = DATA.EXTRA_KPI || {};
+  var p50 = ex.p50_response_ms != null ? ex.p50_response_ms : '--';
+  var p75 = ex.p75_response_ms != null ? ex.p75_response_ms : '--';
+  var p95 = ex.p95_response_ms != null ? ex.p95_response_ms : '--';
+  var p99 = ex.p99_response_ms != null ? ex.p99_response_ms : '--';
+  var respByTest = ex.resp_by_test || [];
+
+  function pColor(val, threshold) {
+    if (val === '--') return '#fff';
+    if (val <= 150) return 'var(--te-green)';
+    if (val <= 300) return '#fff';
+    if (val <= 500) return 'var(--te-orange)';
+    return 'var(--te-red)';
+  }
+
+  var html = '<div class="modal-kpi-row">';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">P50</div><div class="modal-kpi-val" style="color:' + pColor(p50) + '">' + p50 + 'ms</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">P75</div><div class="modal-kpi-val" style="color:' + pColor(p75) + '">' + p75 + 'ms</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">P95</div><div class="modal-kpi-val" style="color:' + pColor(p95) + '">' + p95 + 'ms</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">P99</div><div class="modal-kpi-val" style="color:' + pColor(p99) + '">' + p99 + 'ms</div></div>';
+  html += '</div>';
+
+  if (respByTest.length > 1) {
+    var sorted = respByTest.slice().sort(function(a,b){ return a.ms - b.ms; });
+    var maxMs = sorted[sorted.length - 1].ms;
+    var minMs = sorted[0].ms;
+    var range = maxMs - minMs || 1;
+    var W = 760, H = 180, padL = 50, padR = 16, padT = 20, padB = 30;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var n = sorted.length;
+
+    var thresholdMs = p95 !== '--' ? p95 : null;
+
+    var points = sorted.map(function(t, i) {
+      var x = padL + (i / (n - 1 || 1)) * plotW;
+      var y = padT + plotH - ((t.ms - minMs) / range) * plotH;
+      return { x: x, y: y, ms: t.ms };
+    });
+
+    var pathD = 'M' + points.map(function(p){ return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L');
+    var areaD = pathD + ' L' + points[points.length-1].x.toFixed(1) + ',' + (padT + plotH) + ' L' + points[0].x.toFixed(1) + ',' + (padT + plotH) + ' Z';
+
+    html += '<div class="modal-chart-area">';
+    html += '<div class="modal-chart-title">Response Time Distribution &mdash; All HTTP Tests</div>';
+    html += '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;">';
+    html += '<defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--te-red)" stop-opacity="0.25"/><stop offset="100%" stop-color="var(--te-red)" stop-opacity="0.02"/></linearGradient></defs>';
+
+    for (var g = 0; g <= 4; g++) {
+      var gy = padT + (plotH / 4) * g;
+      var gVal = Math.round(maxMs - (g / 4) * range);
+      html += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--te-border)" stroke-width="0.5" stroke-dasharray="3,3"/>';
+      html += '<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)">' + gVal + 'ms</text>';
+    }
+
+    html += '<path d="' + areaD + '" fill="url(#areaGrad)"/>';
+    html += '<path d="' + pathD + '" fill="none" stroke="var(--te-red)" stroke-width="2" stroke-linejoin="round"/>';
+
+    if (thresholdMs !== null) {
+      var ty = padT + plotH - ((thresholdMs - minMs) / range) * plotH;
+      html += '<line x1="' + padL + '" y1="' + ty.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + ty.toFixed(1) + '" stroke="var(--te-red)" stroke-width="1" stroke-dasharray="6,4" opacity="0.6"/>';
+      html += '<text x="' + (W - padR - 2) + '" y="' + (ty - 5).toFixed(1) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)" opacity="0.7">Threshold</text>';
+    }
+
+    html += '</svg></div>';
+  }
+
+  html += '<div class="modal-chart-area">';
+  html += '<div class="modal-chart-title">Top Slowest Tests Contributing to Response Time</div>';
+  html += '<div class="table-wrap" style="border:none;"><table style="width:100%;border-collapse:collapse;">';
+  html += '<thead><tr><th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);">Rank</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);">Test Name</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:right;border-bottom:1px solid var(--te-border);">Avg Response</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);width:40%;">Distribution</th></tr></thead><tbody>';
+
+  var worst = respByTest.slice(0, 10);
+  var barMax = worst.length > 0 ? worst[0].ms : 1;
+
+  worst.forEach(function(t, idx) {
+    var pct = Math.max(3, (t.ms / barMax) * 100);
+    var barColor = t.ms > 500 ? 'var(--te-red)' : t.ms > 300 ? 'var(--te-orange)' : t.ms > 150 ? 'var(--te-yellow)' : 'var(--te-green)';
+    var valColor = t.ms > 500 ? 'var(--te-red)' : t.ms > 300 ? 'var(--te-orange)' : t.ms > 150 ? '#fff' : 'var(--te-green)';
+    var teLink = 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(t.id);
+    html += '<tr style="border-bottom:1px solid var(--te-border);">';
+    html += '<td style="padding:9px 14px;font-family:var(--font-mono);font-size:11px;color:var(--te-text-dim);font-weight:600;">' + (idx + 1) + '</td>';
+    html += '<td style="padding:9px 14px;font-size:12px;font-weight:500;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="' + teLink + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.3);transition:border-color 0.2s;" onmouseover="this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.borderBottomColor=\'rgba(88,166,255,0.3)\'">' + escHtml(t.test) + '</a></td>';
+    html += '<td style="padding:9px 14px;font-family:var(--font-mono);font-size:12px;font-weight:700;color:' + valColor + ';text-align:right;">' + t.ms + 'ms</td>';
+    html += '<td style="padding:9px 14px;"><div style="height:8px;background:var(--te-dark);border-radius:4px;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:4px;transition:width 0.8s;"></div></div></td>';
+    html += '</tr>';
+  });
+
+  if (respByTest.length === 0) {
+    html += '<tr><td colspan="4" style="padding:20px;text-align:center;font-size:12px;color:var(--te-text-dim);">No response time data available</td></tr>';
+  }
+
+  html += '</tbody></table></div></div>';
+  return html;
+}
+
+function buildLossModal() {
+  var ex = DATA.EXTRA_KPI || {};
+  var p50 = ex.p50_loss != null ? ex.p50_loss : '--';
+  var p75 = ex.p75_loss != null ? ex.p75_loss : '--';
+  var p95 = ex.p95_loss != null ? ex.p95_loss : '--';
+  var p99 = ex.p99_loss != null ? ex.p99_loss : '--';
+  var lossByTest = ex.loss_by_test || [];
+
+  function lColor(v) {
+    if (v === '--') return '#fff';
+    if (v <= 0.1) return 'var(--te-green)';
+    if (v <= 1) return 'var(--te-yellow)';
+    if (v <= 5) return 'var(--te-orange)';
+    return 'var(--te-red)';
+  }
+
+  var html = '<div class="modal-kpi-row">';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">P50</div><div class="modal-kpi-val" style="color:' + lColor(p50) + '">' + p50 + '%</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">P75</div><div class="modal-kpi-val" style="color:' + lColor(p75) + '">' + p75 + '%</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">P95</div><div class="modal-kpi-val" style="color:' + lColor(p95) + '">' + p95 + '%</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">P99</div><div class="modal-kpi-val" style="color:' + lColor(p99) + '">' + p99 + '%</div></div>';
+  html += '</div>';
+
+  if (lossByTest.length > 1) {
+    var chartData = lossByTest.slice().sort(function(a,b){ return a.loss - b.loss; });
+    var maxLoss = chartData[chartData.length - 1].loss;
+    var minLoss = chartData[0].loss;
+    var range = maxLoss - minLoss || 0.01;
+    var W = 760, H = 180, padL = 50, padR = 16, padT = 20, padB = 30;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var cLen = chartData.length;
+
+    var points = chartData.map(function(t, i) {
+      var x = padL + (i / (cLen - 1 || 1)) * plotW;
+      var y = padT + plotH - ((t.loss - minLoss) / range) * plotH;
+      return { x: x, y: y, loss: t.loss };
+    });
+
+    var pathD = 'M' + points.map(function(p){ return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L');
+    var areaD = pathD + ' L' + points[points.length-1].x.toFixed(1) + ',' + (padT + plotH) + ' L' + points[0].x.toFixed(1) + ',' + (padT + plotH) + ' Z';
+
+    html += '<div class="modal-chart-area">';
+    html += '<div class="modal-chart-title">Packet Loss Distribution &mdash; All Monitored Tests</div>';
+    html += '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;">';
+    html += '<defs><linearGradient id="lossGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--te-orange)" stop-opacity="0.25"/><stop offset="100%" stop-color="var(--te-orange)" stop-opacity="0.02"/></linearGradient></defs>';
+
+    for (var g = 0; g <= 4; g++) {
+      var gy = padT + (plotH / 4) * g;
+      var gVal = (maxLoss - (g / 4) * range).toFixed(2);
+      html += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--te-border)" stroke-width="0.5" stroke-dasharray="3,3"/>';
+      html += '<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)">' + gVal + '%</text>';
+    }
+
+    html += '<path d="' + areaD + '" fill="url(#lossGrad)"/>';
+    html += '<path d="' + pathD + '" fill="none" stroke="var(--te-orange)" stroke-width="2" stroke-linejoin="round"/>';
+
+    if (p95 !== '--' && p95 > minLoss) {
+      var threshY = padT + plotH - ((p95 - minLoss) / range) * plotH;
+      if (threshY >= padT && threshY <= padT + plotH) {
+        html += '<line x1="' + padL + '" y1="' + threshY.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + threshY.toFixed(1) + '" stroke="var(--te-red)" stroke-width="1" stroke-dasharray="6,4" opacity="0.6"/>';
+        html += '<text x="' + (W - padR - 2) + '" y="' + (threshY - 5).toFixed(1) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)" opacity="0.7">P95 Threshold</text>';
+      }
+    }
+
+    html += '</svg></div>';
+  }
+
+  html += '<div class="modal-chart-area">';
+  html += '<div class="modal-chart-title">Top Highest Packet Loss Tests</div>';
+  html += '<div class="table-wrap" style="border:none;"><table style="width:100%;border-collapse:collapse;">';
+  html += '<thead><tr><th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);">Rank</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);">Test Name</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:right;border-bottom:1px solid var(--te-border);">Packet Loss</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);width:40%;">Distribution</th></tr></thead><tbody>';
+
+  var worst = lossByTest.slice(0, 10);
+  var barMax = worst.length > 0 ? Math.max(worst[0].loss, 0.01) : 0.01;
+
+  worst.forEach(function(t, idx) {
+    var pct = Math.max(3, (t.loss / barMax) * 100);
+    var barColor = t.loss > 5 ? 'var(--te-red)' : t.loss > 1 ? 'var(--te-orange)' : t.loss > 0.1 ? 'var(--te-yellow)' : 'var(--te-green)';
+    var valColor = t.loss > 5 ? 'var(--te-red)' : t.loss > 1 ? 'var(--te-orange)' : t.loss > 0.1 ? 'var(--te-yellow)' : 'var(--te-green)';
+    var teLink = t.id ? 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(t.id) : '#';
+    html += '<tr style="border-bottom:1px solid var(--te-border);">';
+    html += '<td style="padding:9px 14px;font-family:var(--font-mono);font-size:11px;color:var(--te-text-dim);font-weight:600;">' + (idx + 1) + '</td>';
+    html += '<td style="padding:9px 14px;font-size:12px;font-weight:500;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="' + teLink + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.3);transition:border-color 0.2s;" onmouseover="this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.borderBottomColor=\'rgba(88,166,255,0.3)\'">' + escHtml(t.test) + '</a></td>';
+    html += '<td style="padding:9px 14px;font-family:var(--font-mono);font-size:12px;font-weight:700;color:' + valColor + ';text-align:right;">' + t.loss.toFixed(3) + '%</td>';
+    html += '<td style="padding:9px 14px;"><div style="height:8px;background:var(--te-dark);border-radius:4px;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:4px;transition:width 0.8s;"></div></div></td>';
+    html += '</tr>';
+  });
+
+  if (lossByTest.length === 0) {
+    html += '<tr><td colspan="4" style="padding:20px;text-align:center;font-size:12px;color:var(--te-text-dim);">No packet loss data available</td></tr>';
+  }
+
+  html += '</tbody></table></div></div>';
+  return html;
+}
+
+function buildAlertModal() {
+  var feed = DATA.ALERT_FEED || [];
+  var crit = feed.filter(function(a){ return a.severity === 'CRITICAL' || a.severity === 'MAJOR'; }).length;
+  var warn = feed.filter(function(a){ return a.severity === 'MINOR' || a.severity === 'WARNING'; }).length;
+  var info = feed.filter(function(a){ return a.severity === 'INFO'; }).length;
+  var total = feed.length;
+
+  var html = '<div class="modal-kpi-row">';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Critical</div><div class="modal-kpi-val" style="color:' + (crit > 0 ? 'var(--te-red)' : 'var(--te-green)') + '">' + crit + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Warning</div><div class="modal-kpi-val" style="color:' + (warn > 0 ? 'var(--te-yellow)' : 'var(--te-green)') + '">' + warn + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Info</div><div class="modal-kpi-val" style="color:var(--te-blue)">' + info + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Total Active</div><div class="modal-kpi-val" style="color:#fff">' + total + '</div></div>';
+  html += '</div>';
+
+  html += '<div class="modal-chart-area"><div class="modal-chart-title">All Active Alerts</div>';
+  if (feed.length === 0) {
+    html += '<div style="padding:16px;text-align:center;color:var(--te-green);font-size:12px;">\u2713 No active alerts</div>';
+  }
+  feed.forEach(function(a) {
+    var color = a.sev === 'red' ? 'var(--te-red)' : a.sev === 'yellow' ? 'var(--te-yellow)' : 'var(--te-green)';
+    var teLink = a.alertId ? 'https://app.thousandeyes.com/alerts/list/active?alertId=' + encodeURIComponent(a.alertId) : '#';
+    html += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--te-border);">';
+    html += '<span style="font-family:var(--font-mono);font-size:10px;color:var(--te-text-dim);white-space:nowrap;min-width:48px;">' + escHtml(a.time) + '</span>';
+    html += '<span style="color:' + color + ';font-size:10px;">\u25CF</span>';
+    html += '<a href="' + teLink + '" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:var(--te-blue);line-height:1.4;text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.3);transition:border-color 0.2s;" onmouseover="this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.borderBottomColor=\'rgba(88,166,255,0.3)\'">' + escHtml(a.msg) + '</a>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  return html;
+}
+
+function buildEventsModal() {
+  var events = DATA.LIVE_EVENTS || [];
+  var high = events.filter(function(e){ return e.impact === 'HIGH'; }).length;
+  var med = events.filter(function(e){ return e.impact === 'MEDIUM'; }).length;
+  var low = events.filter(function(e){ return e.impact === 'LOW'; }).length;
+  var totalAgents = events.reduce(function(sum, e){ return sum + (e.agentsAffected || 0); }, 0);
+  var avgAgents = events.length > 0 ? Math.round(totalAgents / events.length) : 0;
+  var totalDurMin = events.reduce(function(sum, e){ return sum + (e.durationMin || 0); }, 0);
+  var avgDurMin = events.length > 0 ? Math.round(totalDurMin / events.length) : 0;
+  var avgDurStr = avgDurMin >= 60 ? Math.floor(avgDurMin / 60) + 'h ' + (avgDurMin % 60) + 'm' : avgDurMin + 'm';
+
+  var html = '<div class="modal-kpi-row">';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">High Impact</div><div class="modal-kpi-val" style="color:' + (high > 0 ? 'var(--te-red)' : 'var(--te-green)') + '">' + high + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Medium Impact</div><div class="modal-kpi-val" style="color:' + (med > 0 ? 'var(--te-yellow)' : 'var(--te-green)') + '">' + med + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Low Impact</div><div class="modal-kpi-val" style="color:' + (low > 0 ? 'var(--te-blue)' : 'var(--te-green)') + '">' + low + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Avg Agents Impacted</div><div class="modal-kpi-val" style="color:#fff">' + avgAgents + '</div></div>';
+  html += '</div>';
+
+  html += '<div class="modal-chart-area">';
+  html += '<div class="modal-chart-title">Ongoing Events &mdash; Event Detection</div>';
+  html += '<div class="table-wrap" style="border:none;"><table style="width:100%;border-collapse:collapse;">';
+  html += '<thead><tr>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);">Type</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);">Event</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);">Impact</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:right;border-bottom:1px solid var(--te-border);">Duration</th>';
+  html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:right;border-bottom:1px solid var(--te-border);">Agents</th>';
+  html += '</tr></thead><tbody>';
+
+  if (events.length === 0) {
+    html += '<tr><td colspan="5" style="padding:20px;text-align:center;font-size:12px;color:var(--te-green);">\u2713 No ongoing events detected</td></tr>';
+  }
+
+  events.forEach(function(e) {
+    var impactColor = e.impact === 'HIGH' ? 'var(--te-red)' : e.impact === 'MEDIUM' ? 'var(--te-yellow)' : 'var(--te-blue)';
+    var impactBg = e.impact === 'HIGH' ? 'rgba(248,81,73,0.12)' : e.impact === 'MEDIUM' ? 'rgba(227,179,65,0.12)' : 'rgba(88,166,255,0.12)';
+    var teLink = e.eventId ? 'https://app.thousandeyes.com/alerts/list/active?eventId=' + encodeURIComponent(e.eventId) : '#';
+    html += '<tr style="border-bottom:1px solid var(--te-border);">';
+    html += '<td style="padding:9px 14px;"><span style="font-size:10px;padding:3px 10px;border-radius:4px;background:var(--te-dark);color:var(--te-text-dim);border:1px solid var(--te-border);white-space:nowrap;">' + escHtml(e.type || 'Event') + '</span></td>';
+    html += '<td style="padding:9px 14px;font-size:12px;font-weight:500;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="' + teLink + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.3);transition:border-color 0.2s;" onmouseover="this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.borderBottomColor=\'rgba(88,166,255,0.3)\'">' + escHtml(e.title || 'Event') + '</a></td>';
+    html += '<td style="padding:9px 14px;"><span style="font-size:10px;font-weight:600;padding:3px 10px;border-radius:4px;background:' + impactBg + ';color:' + impactColor + ';white-space:nowrap;">' + e.impact + '</span></td>';
+    html += '<td style="padding:9px 14px;font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--te-text);text-align:right;white-space:nowrap;">' + escHtml(e.duration || '--') + '</td>';
+    html += '<td style="padding:9px 14px;font-family:var(--font-mono);font-size:12px;font-weight:700;color:' + (e.agentsAffected > 5 ? 'var(--te-red)' : e.agentsAffected > 0 ? 'var(--te-yellow)' : 'var(--te-green)') + ';text-align:right;">' + (e.agentsAffected || 0) + '</td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div></div>';
+  return html;
+}
+
+function buildOutagesModal() {
+  var outages = DATA.OUTAGES || [];
+  var c = DATA.COUNTS || {};
+  var appOut = c.app_outages || 0;
+  var netOut = c.net_outages || 0;
+  var totalOut = appOut + netOut;
+  var providers = outages.length;
+  var highSev = outages.filter(function(o) { return o.severity === 'high'; }).length;
+
+  var html = '<div class="modal-kpi-row">';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Total Outages</div><div class="modal-kpi-val" style="color:' + (totalOut > 0 ? 'var(--te-red)' : 'var(--te-green)') + '">' + totalOut + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">App Outages</div><div class="modal-kpi-val" style="color:' + (appOut > 0 ? 'var(--te-yellow)' : 'var(--te-green)') + '">' + appOut + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Network Outages</div><div class="modal-kpi-val" style="color:' + (netOut > 0 ? 'var(--te-yellow)' : 'var(--te-green)') + '">' + netOut + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">High Severity</div><div class="modal-kpi-val" style="color:' + (highSev > 0 ? 'var(--te-red)' : 'var(--te-green)') + '">' + highSev + '</div></div>';
+  html += '</div>';
+
+  if (outages.length === 0) {
+    html += '<div class="modal-chart-area"><div style="padding:20px;text-align:center;color:var(--te-green);font-size:12px;">\u2713 No outages detected in the 24 Hour window</div></div>';
+  } else {
+    outages.forEach(function(o) {
+      var barColor = o.severity === 'high' ? 'var(--te-red)' : o.severity === 'medium' ? 'var(--te-yellow)' : 'var(--te-green)';
+      var sevClass = o.severity === 'high' ? 'sev-high' : o.severity === 'medium' ? 'sev-medium' : 'sev-low';
+      var durationMin = o.duration ? Math.round(o.duration / 60) : 0;
+      if (o.duration < 120) durationMin = o.duration;
+      var iiType = o._raw_type === 'app' ? 'application' : 'network';
+      var iiLink = o.id ? 'https://app.thousandeyes.com/internet-insights/#/outages/' + iiType + '/' + encodeURIComponent(o.id) : '';
+      if (iiLink) {
+        html += '<a href="' + iiLink + '" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:block;margin-bottom:10px;">';
+      }
+      html += '<div class="insight-card">';
+      html += '<div class="insight-header"><div class="insight-provider">' + escHtml(o.provider) + '</div><span class="insight-severity ' + sevClass + '">' + escHtml(o.severity) + '</span></div>';
+      html += '<div class="insight-meta">' + escHtml(o.type) + ' \u00B7 ' + escHtml(o.affected) + ' \u00B7 Started ' + escHtml(o.start) + '</div>';
+      html += '<div class="insight-bar-container" style="margin-top:8px;"><div class="insight-bar" style="width:' + Math.min(o.impact, 100) + '%;background:' + barColor + '"></div></div>';
+      html += '<div style="font-size:10px;color:var(--te-text-dim);margin-top:4px;">Impact Score: ' + o.impact + '/100 \u00B7 Duration: ' + durationMin + ' min</div>';
+      html += '</div>';
+      if (iiLink) { html += '</a>'; }
+    });
+  }
+
+  return html;
+}
+
+loadData();
+setInterval(loadData, AUTO_REFRESH_MS);
+</script>
+</body>
+</html>

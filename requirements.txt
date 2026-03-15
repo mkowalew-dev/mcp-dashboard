@@ -1,0 +1,5 @@
+flask
+mcp[cli]
+python-dotenv
+apscheduler
+httpx
