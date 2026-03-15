@@ -110,7 +110,7 @@ The server then builds in-memory structures: test IDs by name, agent lists with 
 - **Loss / jitter / latency:** Similar batched parallel calls for the respective metric trios; first-wins merge.
 - **VoIP:** Sequential per metric (MOS, latency, loss, PDV) over batches.
 - **BGP, API, Web Transaction, Page Load:** Sequential per metric over batches.
-- **Endpoint agents:** Single `asyncio.gather` of three `get_endpoint_agent_metrics` calls (LATENCY, WIRELESS_RSSI, LOSS) by `ENDPOINT_AGENT_MACHINE_ID`.
+- **Endpoint agents:** Single `asyncio.gather` of two `get_endpoint_agent_metrics` calls (ENDPOINT_TEST_NET_LATENCY, ENDPOINT_GATEWAY_WIRELESS_RSSI) by `ENDPOINT_AGENT_MACHINE_ID`.
 
 Results are written to **metrics_cache** and **extra_kpi_cache** for the corresponding window (e.g. `"24h"`).
 

@@ -1063,11 +1063,11 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
             detail.sort(key=lambda x: x["value"])
             extra[extra_key] = detail
 
-    # --- Endpoint Agent worst performers (latency + WiFi RSSI + loss) ---
+    # --- Endpoint Agent worst performers (test net latency + WiFi RSSI) ---
     try:
-        ep_latency_resp, ep_rssi_resp, ep_loss_resp = await asyncio.gather(
+        ep_latency_resp, ep_rssi_resp = await asyncio.gather(
             call_mcp_tool("get_endpoint_agent_metrics", {
-                "metric_id": "ENDPOINT_GATEWAY_LATENCY",
+                "metric_id": "ENDPOINT_TEST_NET_LATENCY",
                 "start_date": start, "end_date": end,
                 "aggregation_type": "MEAN",
                 "group_by": "ENDPOINT_AGENT_MACHINE_ID",
@@ -1078,18 +1078,11 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                 "aggregation_type": "MEAN",
                 "group_by": "ENDPOINT_AGENT_MACHINE_ID",
             }),
-            call_mcp_tool("get_endpoint_agent_metrics", {
-                "metric_id": "ENDPOINT_GATEWAY_LOSS",
-                "start_date": start, "end_date": end,
-                "aggregation_type": "MEAN",
-                "group_by": "ENDPOINT_AGENT_MACHINE_ID",
-            }),
         )
     except Exception as e:
         log.warning("Endpoint metrics fetch error: %s", e)
         ep_latency_resp = None
         ep_rssi_resp = None
-        ep_loss_resp = None
 
     def _parse_ep_csv(resp):
         if not resp or not isinstance(resp, dict):
@@ -1121,20 +1114,19 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
 
     latency_by_name = _parse_ep_csv(ep_latency_resp)
     rssi_by_name = _parse_ep_csv(ep_rssi_resp)
-    loss_by_name = _parse_ep_csv(ep_loss_resp)
-    log.info("EP CSV parsed: latency=%d, rssi=%d, loss=%d agents",
-             len(latency_by_name), len(rssi_by_name), len(loss_by_name))
+    log.info("EP CSV parsed: test_net_latency=%d, rssi=%d agents",
+             len(latency_by_name), len(rssi_by_name))
 
     with _cache_lock:
         ep_agents = list(_base_cache.get("ENDPOINT_AGENTS") or [])
 
-    all_names = set(list(latency_by_name.keys()) + list(rssi_by_name.keys()) + list(loss_by_name.keys()))
+    all_names = set(list(latency_by_name.keys()) + list(rssi_by_name.keys()))
     ep_perf = []
     seen_names = set()
     for comp_name in all_names:
         lat_val = latency_by_name.get(comp_name)
         rssi_val = rssi_by_name.get(comp_name)
-        loss_val = loss_by_name.get(comp_name)
+        loss_val = None  # Endpoint worst performers use test net latency + RSSI only
         loc = ""
         agent_id = ""
         device = ""
@@ -1159,7 +1151,13 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                 "loss": loss_val,
             })
 
-    ep_perf.sort(key=lambda x: (x.get("latency") is None, -(x.get("latency") or 0)))
+    # Sort by test net latency (highest first = worst); then by RSSI (lowest first = worst)
+    ep_perf.sort(key=lambda x: (
+        x.get("latency") is None,
+        -(x.get("latency") or 0),
+        x.get("rssi") is None,
+        x.get("rssi") or 0,
+    ))
     extra["ep_worst_performers"] = ep_perf
 
     _set_refresh_status(message="Extra KPIs loaded")

@@ -1269,7 +1269,7 @@ function renderEPAData() {
   html += '</div>';
 
   html += '<div class="epa-kpi-grid">';
-  html += '<div class="epa-kpi"><div class="epa-kpi-label">Avg Latency</div><div class="epa-kpi-val" style="color:' + latColor + ';">' + (avgLat != null ? avgLat + 'ms' : '--') + '</div></div>';
+  html += '<div class="epa-kpi"><div class="epa-kpi-label">Avg Test Net Latency</div><div class="epa-kpi-val" style="color:' + latColor + ';">' + (avgLat != null ? avgLat + 'ms' : '--') + '</div></div>';
   html += '<div class="epa-kpi"><div class="epa-kpi-label">Avg WiFi RSSI</div><div class="epa-kpi-val" style="color:' + rssiColor + ';">' + (avgRssi != null ? avgRssi + ' dBm' : '--') + '</div></div>';
   html += '<div class="epa-kpi"><div class="epa-kpi-label">Monitored</div><div class="epa-kpi-val" style="color:#fff;">' + worst.length + '</div></div>';
   html += '<div class="epa-kpi"><div class="epa-kpi-label">Agents w/ Issues</div><div class="epa-kpi-val" style="color:' + issueColor + ';">' + issueCount + '</div></div>';
@@ -1291,11 +1291,6 @@ function renderEPAData() {
     var rInfo = rssi != null ? rssiRating(rssi) : { color: 'var(--te-text-dim)', label: '' };
     var rssiStr = rssi != null ? rssi + ' dBm' : '--';
 
-    var loss = ep.loss != null ? ep.loss : null;
-    var lossStr = loss != null ? loss.toFixed(2) + '%' : '0%';
-    var lossColor = loss == null ? 'var(--te-green)' : loss > 5 ? 'var(--te-red)' : loss > 1 ? 'var(--te-yellow)' : 'var(--te-green)';
-    if (loss != null && loss > 5) dotColor = 'var(--te-red)';
-
     var deviceStr = ep.device || '';
 
     var cardId = 'epa-card-' + i;
@@ -1315,9 +1310,8 @@ function renderEPAData() {
 
     html += '<div class="epa-agent-body">';
     html += '<div class="epa-metric-grid">';
-    html += '<div class="epa-metric"><div class="epa-metric-label">Network Latency</div><div class="epa-metric-val" style="color:' + latHeaderColor + ';">' + latStr + '</div></div>';
+    html += '<div class="epa-metric"><div class="epa-metric-label">Test Net Latency</div><div class="epa-metric-val" style="color:' + latHeaderColor + ';">' + latStr + '</div></div>';
     html += '<div class="epa-metric"><div class="epa-metric-label">Avg WiFi RSSI</div><div class="epa-metric-val" style="color:' + rInfo.color + ';">' + rssiStr + '</div></div>';
-    html += '<div class="epa-metric"><div class="epa-metric-label">Packet Loss</div><div class="epa-metric-val" style="color:' + lossColor + ';">' + lossStr + '</div></div>';
     html += '<div class="epa-metric"><div class="epa-metric-label">Platform</div><div class="epa-metric-val" style="font-size:11px;color:#fff;">' + escHtml(deviceStr || '--') + '</div></div>';
     html += '</div>';
 
@@ -1402,7 +1396,6 @@ function renderAlerts() {
       : escHtml(item.msg);
     html += '<div class="alert-item">';
     html += '<span class="alert-time">' + escHtml(item.time) + '</span>';
-    html += '<span style="color:' + item.color + ';font-size:8px;">\u25CF</span>';
     html += '<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:' + item.tagBg + ';color:' + item.tagColor + ';font-weight:600;letter-spacing:0.5px;white-space:nowrap;">' + item.tag + '</span>';
     html += '<span class="alert-msg">' + msgHtml + '</span>';
     html += '</div>';
@@ -2026,11 +2019,9 @@ function buildAlertModal() {
     html += '<div style="padding:16px;text-align:center;color:var(--te-green);font-size:12px;">\u2713 No active alerts</div>';
   }
   feed.forEach(function(a) {
-    var color = a.sev === 'red' ? 'var(--te-red)' : a.sev === 'yellow' ? 'var(--te-yellow)' : 'var(--te-green)';
     var teLink = a.alertId ? 'https://app.thousandeyes.com/alerts/list/active?alertId=' + encodeURIComponent(a.alertId) : '#';
     html += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--te-border);">';
     html += '<span style="font-family:var(--font-mono);font-size:10px;color:var(--te-text-dim);white-space:nowrap;min-width:48px;">' + escHtml(a.time) + '</span>';
-    html += '<span style="color:' + color + ';font-size:10px;">\u25CF</span>';
     html += '<a href="' + teLink + '" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:var(--te-blue);line-height:1.4;text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.3);transition:border-color 0.2s;" onmouseover="this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.borderBottomColor=\'rgba(88,166,255,0.3)\'">' + escHtml(a.msg) + '</a>';
     html += '</div>';
   });
