@@ -59,12 +59,79 @@ start_dashboard() {
         rm -f "$PID_FILE"
     fi
     cd "$PROJECT_ROOT"
-    nohup python server.py > .mcp-dashboard.log 2>&1 &
-    echo $! > "$PID_FILE"
+    # Use python3 if available (common on Linux), else python (e.g. venv)
+    PYTHON=""
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON="python3"
+    else
+        PYTHON="python"
+    fi
+    # Run server in background and disown so we get the real server PID (not nohup's).
+    # Redirect output so we can inspect .mcp-dashboard.log if port doesn't show.
+    $PYTHON server.py >> .mcp-dashboard.log 2>&1 &
+    pid=$!
+    disown $pid
+    echo $pid > "$PID_FILE"
     port="${PORT:-8000}"
-    echo "MCP dashboard started in the background (PID $(cat "$PID_FILE"))."
+    echo "MCP dashboard started in the background (PID $pid)."
     echo "URL: http://127.0.0.1:${port}/"
     echo "To stop: $0 --shutdown"
+
+    # Wait for server to listen, then track initial load status
+    base_url="http://127.0.0.1:${port}"
+    wait_sec=0
+    max_wait=30
+    while [ $wait_sec -lt $max_wait ]; do
+        if curl -s -o /dev/null -w "%{http_code}" "$base_url/" 2>/dev/null | grep -q 200; then
+            break
+        fi
+        sleep 1
+        wait_sec=$((wait_sec + 1))
+    done
+    if [ $wait_sec -ge $max_wait ]; then
+        echo "Server did not respond within ${max_wait}s. Check: $PROJECT_ROOT/.mcp-dashboard.log"
+        return 0
+    fi
+
+    echo "Waiting for initial data load..."
+    last_msg=""
+    while true; do
+        status_json=$(curl -s "$base_url/api/refresh-status" 2>/dev/null || echo "{}")
+        status_out=$(echo "$status_json" | $PYTHON -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    for k in ('phase', 'message', 'current', 'total', 'error'):
+        v = d.get(k, '' if k != 'current' and k != 'total' else 0)
+        if v is None: v = '' if k != 'current' and k != 'total' else 0
+        print(str(v).replace(chr(10), ' '))
+except Exception:
+    print(''); print(''); print('0'); print('0'); print('')
+" 2>/dev/null)
+        phase=$(echo "$status_out" | sed -n '1p')
+        message=$(echo "$status_out" | sed -n '2p')
+        current=$(echo "$status_out" | sed -n '3p')
+        total=$(echo "$status_out" | sed -n '4p')
+        error=$(echo "$status_out" | sed -n '5p')
+
+        line=""
+        if [ -n "$message" ]; then
+            if [ -n "$total" ] && [ "$total" -gt 0 ] 2>/dev/null && [ -n "$current" ]; then
+                line="  [$phase] $message ($current/$total)"
+            else
+                line="  [$phase] $message"
+            fi
+            if [ "$line" != "$last_msg" ]; then
+                echo "$line"
+                last_msg="$line"
+            fi
+        fi
+        case "$phase" in
+            done) echo "Dashboard ready."; break ;;
+            error) echo "Initial load failed: ${error:-unknown error}"; break ;;
+        esac
+        sleep 2
+    done
 }
 
 stop_dashboard() {

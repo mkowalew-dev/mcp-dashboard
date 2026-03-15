@@ -173,6 +173,43 @@ _metrics_cache = {}
 _extra_kpi_cache = {}
 _cache_lock = threading.Lock()
 
+# Refresh status for initial load and startup script / UI (thread-safe)
+_refresh_status_lock = threading.Lock()
+_refresh_status = {
+    "phase": "idle",       # idle | base | metrics | extra_kpis | done | error
+    "message": "",
+    "current": 0,
+    "total": 0,
+    "error": None,
+    "started_at": None,
+    "completed_at": None,
+}
+
+
+def _set_refresh_status(
+    phase: str | None = None,
+    message: str | None = None,
+    current: int | None = None,
+    total: int | None = None,
+    error: str | None = None,
+):
+    with _refresh_status_lock:
+        if phase is not None:
+            _refresh_status["phase"] = phase
+        if message is not None:
+            _refresh_status["message"] = message
+        if current is not None:
+            _refresh_status["current"] = current
+        if total is not None:
+            _refresh_status["total"] = total
+        if error is not None:
+            _refresh_status["error"] = error
+            _refresh_status["phase"] = "error"
+        if phase == "done" or phase == "error" or _refresh_status["phase"] == "error":
+            _refresh_status["completed_at"] = datetime.now(timezone.utc).isoformat()
+        if phase and phase not in ("done", "error") and _refresh_status["started_at"] is None:
+            _refresh_status["started_at"] = datetime.now(timezone.utc).isoformat()
+
 
 async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: int = 4):
     from mcp.client.streamable_http import streamablehttp_client
@@ -353,6 +390,7 @@ def _parse_list(resp):
 
 async def refresh_base_data_async():
     log.info("Refreshing base data via MCP...")
+    _set_refresh_status(phase="base", message="Fetching base data (tests, agents, alerts)...")
 
     tests_resp, ep_tests_resp, acct_groups_resp = await asyncio.gather(
         safe_call("list_network_app_synthetics_tests"),
@@ -743,6 +781,7 @@ async def refresh_base_data_async():
     with _cache_lock:
         _base_cache.update(base)
 
+    _set_refresh_status(message="Base data loaded")
     log.info(
         "Base refresh complete: %d tests, %d agents (%d cloud + %d enterprise), "
         "%d endpoints, %d alerts, %d outages",
@@ -773,9 +812,17 @@ async def fetch_metrics_async(hours: int) -> dict[str, float]:
     test_availability = {}
     batch_size = MCP_BATCH_SIZE
     delay = MCP_INTER_BATCH_DELAY
+    num_batches = (len(all_synth_tids) + batch_size - 1) // batch_size
+    _set_refresh_status(
+        phase="metrics",
+        message=f"Fetching 24h availability ({len(synth_ids)} tests, {num_batches} batches)...",
+        total=num_batches,
+        current=0,
+    )
 
     for i in range(0, len(all_synth_tids), batch_size):
         batch = all_synth_tids[i : i + batch_size]
+        _set_refresh_status(current=(i // batch_size) + 1)
         resps = await _mcp_synth_metrics_batch(
             ["WEB_AVAILABILITY", "DNS_TRACE_AVAILABILITY"], batch, start, end
         )
@@ -811,6 +858,7 @@ async def fetch_metrics_async(hours: int) -> dict[str, float]:
                 log.warning("%s fetch error batch %d: %s", loss_metric, i, e)
             await asyncio.sleep(delay)
 
+    _set_refresh_status(message=f"24h availability loaded ({len(test_availability)} tests)")
     log.info("Metrics for %dh: %d tests with availability", hours, len(test_availability))
     return test_availability
 
@@ -859,6 +907,10 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
     synth_ids = [tid for n, tid in test_ids_by_name.items() if not tid.startswith("ep-")]
     batch_size = MCP_BATCH_SIZE
     delay = MCP_INTER_BATCH_DELAY
+    _set_refresh_status(
+        phase="extra_kpis",
+        message=f"Fetching extra KPIs (response, loss, jitter, latency) for {len(synth_ids)} tests...",
+    )
     extra = {"avg_response_ms": None, "p95_response_ms": None,
              "avg_packet_loss": None, "loss_affected_paths": 0}
 
@@ -1110,6 +1162,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
     ep_perf.sort(key=lambda x: (x.get("latency") is None, -(x.get("latency") or 0)))
     extra["ep_worst_performers"] = ep_perf
 
+    _set_refresh_status(message="Extra KPIs loaded")
     log.info("Extra KPIs for %dh: resp=%s loss=%s ep_worst=%d",
              hours, extra["avg_response_ms"], extra["avg_packet_loss"], len(ep_perf))
     return extra
@@ -1162,6 +1215,22 @@ def scheduled_refresh():
     refresh_default_metrics()
 
 
+def run_initial_load():
+    """Run initial data load in background; updates _refresh_status for /api/refresh-status."""
+    try:
+        _set_refresh_status(phase="base", message="Fetching base data (tests, agents, alerts)...")
+        refresh_base()
+        _set_refresh_status(phase="metrics", message="Fetching 24h metrics...")
+        get_or_fetch_metrics("24h")
+        _set_refresh_status(phase="extra_kpis", message="Fetching extra KPIs...")
+        get_or_fetch_extra_kpis("24h")
+        _set_refresh_status(phase="done", message="Ready")
+        log.info("Initial data load complete.")
+    except Exception as e:
+        log.exception("Initial load failed: %s", e)
+        _set_refresh_status(error=str(e))
+
+
 # ---------------------------------------------------------------------------
 # Flask routes
 # ---------------------------------------------------------------------------
@@ -1194,6 +1263,14 @@ def api_health():
         "last_base_refresh": last,
         "refresh_interval_minutes": REFRESH_MINUTES,
     })
+
+
+@app.route("/api/refresh-status")
+def api_refresh_status():
+    """Current status of the initial/background data load for startup script and UI."""
+    with _refresh_status_lock:
+        out = dict(_refresh_status)
+    return jsonify(out)
 
 
 @app.route("/api/data")
@@ -1376,15 +1453,14 @@ if __name__ == "__main__":
         log.error("TE_TOKEN environment variable is not set!")
         raise SystemExit(1)
 
-    log.info("Performing initial data fetch via MCP...")
-    refresh_base()
-    refresh_default_metrics()
-
+    port = int(os.getenv("PORT", "8000"))
     scheduler = BackgroundScheduler()
     scheduler.add_job(scheduled_refresh, "interval", minutes=REFRESH_MINUTES)
     scheduler.start()
     log.info("Scheduler started: refreshing every %d minutes", REFRESH_MINUTES)
 
-    port = int(os.getenv("PORT", "8000"))
+    log.info("Starting initial data load in background (status at GET /api/refresh-status)...")
+    threading.Thread(target=run_initial_load, daemon=True).start()
+
     log.info("Listening on http://0.0.0.0:%s/", port)
     app.run(host="0.0.0.0", port=port, debug=False)

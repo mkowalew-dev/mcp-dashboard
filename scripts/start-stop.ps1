@@ -73,6 +73,46 @@ function Start-Dashboard {
     Write-Host "MCP dashboard started in the background (PID $($p.Id))."
     Write-Host "URL: http://127.0.0.1:${port}/"
     Write-Host "To stop: $PSCommandPath --shutdown"
+
+    $baseUrl = "http://127.0.0.1:${port}"
+    $maxWait = 30
+    $waited = 0
+    while ($waited -lt $maxWait) {
+        try {
+            $r = Invoke-WebRequest -Uri "$baseUrl/" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+            if ($r.StatusCode -eq 200) { break }
+        } catch {}
+        Start-Sleep -Seconds 1
+        $waited++
+    }
+    if ($waited -ge $maxWait) {
+        Write-Host "Server did not respond within ${maxWait}s. Check .mcp-dashboard.log in project root."
+        return
+    }
+
+    Write-Host "Waiting for initial data load..."
+    $lastMessage = ""
+    while ($true) {
+        try {
+            $status = Invoke-RestMethod -Uri "$baseUrl/api/refresh-status" -Method Get -TimeoutSec 5
+        } catch {
+            $status = @{ phase = ""; message = ""; current = 0; total = 0; error = "" }
+        }
+        $msg = $status.message
+        if ($msg -and $msg -ne $lastMessage) {
+            if ($status.total -and [int]$status.total -gt 0 -and $null -ne $status.current) {
+                Write-Host "  [$($status.phase)] $msg ($($status.current)/$($status.total))"
+            } else {
+                Write-Host "  [$($status.phase)] $msg"
+            }
+            $lastMessage = $msg
+        }
+        switch ($status.phase) {
+            "done"   { Write-Host "Dashboard ready."; return }
+            "error"  { Write-Host "Initial load failed: $($status.error)"; return }
+        }
+        Start-Sleep -Seconds 2
+    }
 }
 
 function Stop-Dashboard {

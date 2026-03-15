@@ -29,3 +29,12 @@ Same behavior as the PowerShell script.
 ```
 
 Startup logs are appended to `.mcp-dashboard.log` in the project root.
+
+After the server is up, the script waits for the **initial data load** to finish and prints progress (base data → 24h metrics → extra KPIs). The server exposes `GET /api/refresh-status` with `phase`, `message`, `current`/`total`, and `error` so the UI or other tools can show the same loading state.
+
+**If the process runs but port 8000 is not listening (Linux/macOS):**
+
+1. Check the log: `tail -50 .mcp-dashboard.log` — look for errors (e.g. missing `TE_TOKEN`, import errors, or "Address already in use").
+2. Confirm the port in use: `ss -tlnp | grep 8000` or `netstat -tlnp | grep 8000`. If you set `PORT` in `.env`, the server listens on that port instead of 8000.
+3. Run from project root with the venv activated so dependencies and `server.py` are found:  
+   `source .venv/bin/activate` (or your venv path), then `./scripts/start-stop.sh --startup`.
