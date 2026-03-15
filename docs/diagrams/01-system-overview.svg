@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 380" width="720" height="380">
+  <defs>
+    <style>
+      .title { font: 600 14px 'Segoe UI', system-ui, sans-serif; fill: #E8ECF4; }
+      .label { font: 11px 'Segoe UI', system-ui, sans-serif; fill: #E8ECF4; }
+      .muted { font: 10px 'Segoe UI', system-ui, sans-serif; fill: #7B8FAD; }
+      .box { fill: #1A2332; stroke: #049FD9; stroke-width: 1.5; rx: 8; }
+      .box-api { fill: #111827; stroke: rgba(4,159,217,0.6); stroke-width: 1.5; rx: 8; }
+      .arrow { stroke: #049FD9; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .arrow-data { stroke: #00D68F; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead-green); }
+    </style>
+    <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0, 8 4, 0 8" fill="#049FD9"/></marker>
+    <marker id="arrowhead-green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0, 8 4, 0 8" fill="#00D68F"/></marker>
+  </defs>
+  <rect width="720" height="380" fill="#0B1120"/>
+  <text x="360" y="28" text-anchor="middle" class="title">MCP Dashboard  System Overview</text>
+
+  <!-- Browser -->
+  <rect x="24" y="50" width="160" height="120" class="box"/>
+  <text x="104" y="78" text-anchor="middle" class="label">Browser (Customer)</text>
+  <text x="104" y="98" text-anchor="middle" class="muted">noc_dashboard.html</text>
+  <text x="104" y="118" text-anchor="middle" class="muted">Leaflet map, KPIs,</text>
+  <text x="104" y="133" text-anchor="middle" class="muted">tabs, modals</text>
+  <text x="104" y="153" text-anchor="middle" class="muted">Poll /api/data every</text>
+  <text x="104" y="168" text-anchor="middle" class="muted">refresh_interval_min</text>
+
+  <!-- Flask Server -->
+  <rect x="240" y="50" width="240" height="200" class="box"/>
+  <text x="360" y="78" text-anchor="middle" class="label">Flask Server (server.py)</text>
+  <text x="360" y="98" text-anchor="middle" class="muted">Host 0.0.0.0 :5051</text>
+  <rect x="256" y="108" width="208" height="58" class="box-api"/>
+  <text x="360" y="128" text-anchor="middle" class="muted">In-memory caches</text>
+  <text x="360" y="143" text-anchor="middle" class="muted">base_cache, metrics_cache,</text>
+  <text x="360" y="158" text-anchor="middle" class="muted">extra_kpi_cache (TTL = 1 cycle)</text>
+  <rect x="256" y="174" width="208" height="64" class="box-api"/>
+  <text x="360" y="194" text-anchor="middle" class="muted">APScheduler</text>
+  <text x="360" y="209" text-anchor="middle" class="muted">scheduled_refresh() every</text>
+  <text x="360" y="224" text-anchor="middle" class="muted">REFRESH_MINUTES (base ’ 24h metrics)</text>
+  <text x="360" y="239" text-anchor="middle" class="muted">POST /api/refresh triggers same</text>
+
+  <!-- ThousandEyes MCP -->
+  <rect x="520" y="50" width="176" height="200" class="box"/>
+  <text x="608" y="78" text-anchor="middle" class="label">ThousandEyes MCP</text>
+  <text x="608" y="98" text-anchor="middle" class="muted">api.thousandeyes.com/mcp</text>
+  <text x="608" y="123" text-anchor="middle" class="muted">Streamable HTTP</text>
+  <text x="608" y="143" text-anchor="middle" class="muted">Bearer TE_TOKEN</text>
+  <text x="608" y="168" text-anchor="middle" class="muted">Tools: list tests,</text>
+  <text x="608" y="183" text-anchor="middle" class="muted">agents, alerts, events,</text>
+  <text x="608" y="198" text-anchor="middle" class="muted">outages, get_*_metrics</text>
+  <text x="608" y="218" text-anchor="middle" class="muted">(batched, parallel where</text>
+  <text x="608" y="233" text-anchor="middle" class="muted">merge order preserved)</text>
+
+  <!-- Arrows -->
+  <path class="arrow" d="M 184 110 L 232 110"/>
+  <text x="208" y="102" class="muted" font-size="9">GET /, /api/data</text>
+  <path class="arrow" d="M 232 130 L 184 130"/>
+  <text x="208" y="140" class="muted" font-size="9">JSON</text>
+  <path class="arrow-data" d="M 480 150 L 512 150"/>
+  <text x="496" y="142" class="muted" font-size="9">MCP tool calls</text>
+  <path class="arrow-data" d="M 512 180 L 480 180"/>
+  <text x="496" y="172" class="muted" font-size="9">JSON/CSV</text>
+
+  <!-- Legend -->
+  <rect x="24" y="280" width="672" height="88" fill="#111827" stroke="rgba(255,255,255,0.08)" rx="6"/>
+  <text x="40" y="305" class="label">Key points for demos</text>
+  <text x="40" y="325" class="muted">" All ThousandEyes data is fetched by the server via MCP; the browser never talks to ThousandEyes directly.</text>
+  <text x="40" y="342" class="muted">" The server caches base data (tests, agents, alerts, events, outages) and per-window metrics; UI polls /api/data on a configurable interval.</text>
+  <text x="40" y="359" class="muted">" One scheduler job runs base refresh then 24h metrics so test IDs and KPIs stay in sync. POST /api/refresh runs the same sequence on demand.</text>
+</svg>

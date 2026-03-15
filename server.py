@@ -1,6 +1,9 @@
 """
-Global Demo SE NOC Dashboard Server
-Fetches live data from ThousandEyes via MCP protocol and serves the NOC dashboard.
+NOC dashboard server: ThousandEyes MCP (streamable HTTP) + Flask.
+
+MCP collection practices: batched test filters, bounded retries with backoff on 429,
+stagger between batches to avoid rate limits, parallel independent calls only where
+merge order stays deterministic; cache TTL aligned to refresh interval.
 """
 
 import asyncio
@@ -9,6 +12,7 @@ import io
 import json
 import logging
 import os
+import re
 import threading
 import time
 from collections import defaultdict
@@ -25,9 +29,14 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-MCP_URL = "https://api.thousandeyes.com/mcp"
-MCP_TOKEN = os.getenv("TE_TOKEN_GLOBAL_DEMO", "")
-REFRESH_MINUTES = int(os.getenv("REFRESH_MINUTES", "5"))
+# --- Config (env); no secrets logged ---
+MCP_URL = os.getenv("MCP_URL", "https://api.thousandeyes.com/mcp").strip()
+MCP_TOKEN = (os.getenv("TE_TOKEN") or "").strip()
+REFRESH_MINUTES = max(1, min(120, int(os.getenv("REFRESH_MINUTES", "15"))))
+MCP_BATCH_SIZE = max(5, min(50, int(os.getenv("MCP_BATCH_SIZE", "20"))))
+MCP_INTER_BATCH_DELAY = float(os.getenv("MCP_INTER_BATCH_DELAY_SEC", "0.35"))
+# Cache window metrics at least one refresh cycle (capped)
+METRICS_TTL_SECONDS = max(300, min(3600, REFRESH_MINUTES * 60))
 
 WINDOWS = {
     "1h": 1,
@@ -37,7 +46,6 @@ WINDOWS = {
     "2d": 48,
     "7d": 168,
 }
-METRICS_TTL_SECONDS = 900
 
 COORD_LOOKUP = {
     "toronto, canada": (43.65, -79.38),
@@ -206,6 +214,32 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
     raise RuntimeError(f"Failed after {retries} retries on {tool_name}: {last_err}")
 
 
+async def _mcp_synth_metrics_batch(
+    metric_ids: list[str], batch: list[str], start: str, end: str
+) -> list[dict | None]:
+    """One MCP call per metric_id, same batch (parallel). Returns list aligned to metric_ids."""
+
+    async def _one(mid: str):
+        try:
+            return await call_mcp_tool(
+                "get_network_app_synthetics_metrics",
+                {
+                    "metric_id": mid,
+                    "start_date": start,
+                    "end_date": end,
+                    "aggregation_type": "MEAN",
+                    "group_by": "TEST",
+                    "filter_dimension": "TEST",
+                    "filter_values": batch,
+                },
+            )
+        except Exception as e:
+            log.warning("MCP synth metric %s: %s", mid, e)
+            return None
+
+    return list(await asyncio.gather(*[_one(mid) for mid in metric_ids]))
+
+
 async def safe_call(tool_name, args=None):
     try:
         return await call_mcp_tool(tool_name, args)
@@ -254,6 +288,18 @@ def parse_csv_metrics(data: dict) -> dict[str, float]:
         name = names_map.get(tid, tid)
         result[name] = round(sums[tid] / cnts[tid], 2)
     return result
+
+
+def _merge_parsed_first_wins(responses_in_order: list[dict | None]) -> dict[str, float]:
+    """Same test name: first non-empty metric in list order wins (deterministic)."""
+    out: dict[str, float] = {}
+    for resp in responses_in_order:
+        if not resp:
+            continue
+        for name, val in parse_csv_metrics(resp).items():
+            if name not in out:
+                out[name] = val
+    return out
 
 
 def classify_agent_type(agent_type_str: str) -> str:
@@ -725,28 +771,19 @@ async def fetch_metrics_async(hours: int) -> dict[str, float]:
     all_synth_tids = list(synth_ids.values())
     log.info("Fetching metrics for %dh window (%d synth tests)...", hours, len(synth_ids))
     test_availability = {}
-    batch_size = 20
+    batch_size = MCP_BATCH_SIZE
+    delay = MCP_INTER_BATCH_DELAY
 
-    for metric_id in ["WEB_AVAILABILITY", "DNS_TRACE_AVAILABILITY"]:
-        for i in range(0, len(all_synth_tids), batch_size):
-            batch = all_synth_tids[i : i + batch_size]
-            try:
-                resp = await call_mcp_tool("get_network_app_synthetics_metrics", {
-                    "metric_id": metric_id,
-                    "start_date": start,
-                    "end_date": end,
-                    "aggregation_type": "MEAN",
-                    "group_by": "TEST",
-                    "filter_dimension": "TEST",
-                    "filter_values": batch,
-                })
-                parsed = parse_csv_metrics(resp)
-                for name, val in parsed.items():
-                    if name not in test_availability:
-                        test_availability[name] = val
-            except Exception as e:
-                log.warning("Metrics fetch error for %s batch %d: %s", metric_id, i, e)
-            await asyncio.sleep(0.5)
+    for i in range(0, len(all_synth_tids), batch_size):
+        batch = all_synth_tids[i : i + batch_size]
+        resps = await _mcp_synth_metrics_batch(
+            ["WEB_AVAILABILITY", "DNS_TRACE_AVAILABILITY"], batch, start, end
+        )
+        merged = _merge_parsed_first_wins(resps)
+        for name, val in merged.items():
+            if name not in test_availability:
+                test_availability[name] = val
+        await asyncio.sleep(delay)
 
     loss_metrics = ["NET_LOSS", "ONE_WAY_NET_LOSS_TO_TARGET"]
     for loss_metric in loss_metrics:
@@ -772,7 +809,7 @@ async def fetch_metrics_async(hours: int) -> dict[str, float]:
                         test_availability[name] = round(100.0 - val, 2)
             except Exception as e:
                 log.warning("%s fetch error batch %d: %s", loss_metric, i, e)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(delay)
 
     log.info("Metrics for %dh: %d tests with availability", hours, len(test_availability))
     return test_availability
@@ -820,29 +857,19 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         test_ids_by_name = dict(_base_cache.get("TEST_IDS") or {})
 
     synth_ids = [tid for n, tid in test_ids_by_name.items() if not tid.startswith("ep-")]
-    batch_size = 20
+    batch_size = MCP_BATCH_SIZE
+    delay = MCP_INTER_BATCH_DELAY
     extra = {"avg_response_ms": None, "p95_response_ms": None,
              "avg_packet_loss": None, "loss_affected_paths": 0}
 
     resp_by_test = {}
-    for metric_id in ["WEB_TTFB", "DNS_SERVER_TIME", "DNS_TRACE_QUERY_TIME"]:
-        for i in range(0, len(synth_ids), batch_size):
-            batch = synth_ids[i : i + batch_size]
-            try:
-                resp = await call_mcp_tool("get_network_app_synthetics_metrics", {
-                    "metric_id": metric_id,
-                    "start_date": start, "end_date": end,
-                    "aggregation_type": "MEAN",
-                    "group_by": "TEST",
-                    "filter_dimension": "TEST", "filter_values": batch,
-                })
-                parsed = parse_csv_metrics(resp)
-                for name, val in parsed.items():
-                    if name not in resp_by_test:
-                        resp_by_test[name] = val
-            except Exception as e:
-                log.warning("%s fetch error batch %d: %s", metric_id, i, e)
-            await asyncio.sleep(0.5)
+    resp_metric_order = ["WEB_TTFB", "DNS_SERVER_TIME", "DNS_TRACE_QUERY_TIME"]
+    for i in range(0, len(synth_ids), batch_size):
+        batch = synth_ids[i : i + batch_size]
+        resps = await _mcp_synth_metrics_batch(resp_metric_order, batch, start, end)
+        merged = _merge_parsed_first_wins(resps)
+        resp_by_test.update({k: v for k, v in merged.items() if k not in resp_by_test})
+        await asyncio.sleep(delay)
 
     if resp_by_test:
         vals = list(resp_by_test.values())
@@ -861,24 +888,13 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         extra["resp_by_test"] = resp_detail
 
     loss_by_test = {}
-    for metric_id in ["NET_LOSS", "ONE_WAY_NET_LOSS_BIDIRECTIONAL", "ONE_WAY_NET_LOSS_TO_TARGET"]:
-        for i in range(0, len(synth_ids), batch_size):
-            batch = synth_ids[i : i + batch_size]
-            try:
-                resp = await call_mcp_tool("get_network_app_synthetics_metrics", {
-                    "metric_id": metric_id,
-                    "start_date": start, "end_date": end,
-                    "aggregation_type": "MEAN",
-                    "group_by": "TEST",
-                    "filter_dimension": "TEST", "filter_values": batch,
-                })
-                parsed = parse_csv_metrics(resp)
-                for name, val in parsed.items():
-                    if name not in loss_by_test:
-                        loss_by_test[name] = val
-            except Exception as e:
-                log.warning("%s fetch error batch %d: %s", metric_id, i, e)
-            await asyncio.sleep(0.5)
+    loss_metric_order = ["NET_LOSS", "ONE_WAY_NET_LOSS_BIDIRECTIONAL", "ONE_WAY_NET_LOSS_TO_TARGET"]
+    for i in range(0, len(synth_ids), batch_size):
+        batch = synth_ids[i : i + batch_size]
+        resps = await _mcp_synth_metrics_batch(loss_metric_order, batch, start, end)
+        merged = _merge_parsed_first_wins(resps)
+        loss_by_test.update({k: v for k, v in merged.items() if k not in loss_by_test})
+        await asyncio.sleep(delay)
 
     if loss_by_test:
         vals = list(loss_by_test.values())
@@ -897,26 +913,15 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         loss_detail.sort(key=lambda x: x["loss"], reverse=True)
         extra["loss_by_test"] = loss_detail
 
-    # --- Jitter by test (NET_JITTER + ONE_WAY bidirectional) ---
+    # --- Jitter by test ---
     jitter_by_test = {}
-    for metric_id in ["NET_JITTER", "ONE_WAY_NET_JITTER_BIDIRECTIONAL", "ONE_WAY_NET_JITTER_TO_TARGET"]:
-        for i in range(0, len(synth_ids), batch_size):
-            batch = synth_ids[i : i + batch_size]
-            try:
-                resp = await call_mcp_tool("get_network_app_synthetics_metrics", {
-                    "metric_id": metric_id,
-                    "start_date": start, "end_date": end,
-                    "aggregation_type": "MEAN",
-                    "group_by": "TEST",
-                    "filter_dimension": "TEST", "filter_values": batch,
-                })
-                parsed = parse_csv_metrics(resp)
-                for name, val in parsed.items():
-                    if name not in jitter_by_test:
-                        jitter_by_test[name] = val
-            except Exception as e:
-                log.warning("%s fetch error batch %d: %s", metric_id, i, e)
-            await asyncio.sleep(0.5)
+    jitter_order = ["NET_JITTER", "ONE_WAY_NET_JITTER_BIDIRECTIONAL", "ONE_WAY_NET_JITTER_TO_TARGET"]
+    for i in range(0, len(synth_ids), batch_size):
+        batch = synth_ids[i : i + batch_size]
+        resps = await _mcp_synth_metrics_batch(jitter_order, batch, start, end)
+        merged = _merge_parsed_first_wins(resps)
+        jitter_by_test.update({k: v for k, v in merged.items() if k not in jitter_by_test})
+        await asyncio.sleep(delay)
 
     if jitter_by_test:
         jitter_detail = []
@@ -926,26 +931,14 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         jitter_detail.sort(key=lambda x: x["jitter"], reverse=True)
         extra["jitter_by_test"] = jitter_detail
 
-    # --- Network latency by test (NET_LATENCY + ONE_WAY bidirectional) ---
     latency_by_test = {}
-    for metric_id in ["NET_LATENCY", "ONE_WAY_NET_LATENCY_BIDIRECTIONAL", "ONE_WAY_NET_LATENCY_TO_TARGET"]:
-        for i in range(0, len(synth_ids), batch_size):
-            batch = synth_ids[i : i + batch_size]
-            try:
-                resp = await call_mcp_tool("get_network_app_synthetics_metrics", {
-                    "metric_id": metric_id,
-                    "start_date": start, "end_date": end,
-                    "aggregation_type": "MEAN",
-                    "group_by": "TEST",
-                    "filter_dimension": "TEST", "filter_values": batch,
-                })
-                parsed = parse_csv_metrics(resp)
-                for name, val in parsed.items():
-                    if name not in latency_by_test:
-                        latency_by_test[name] = val
-            except Exception as e:
-                log.warning("%s fetch error batch %d: %s", metric_id, i, e)
-            await asyncio.sleep(0.5)
+    lat_order = ["NET_LATENCY", "ONE_WAY_NET_LATENCY_BIDIRECTIONAL", "ONE_WAY_NET_LATENCY_TO_TARGET"]
+    for i in range(0, len(synth_ids), batch_size):
+        batch = synth_ids[i : i + batch_size]
+        resps = await _mcp_synth_metrics_batch(lat_order, batch, start, end)
+        merged = _merge_parsed_first_wins(resps)
+        latency_by_test.update({k: v for k, v in merged.items() if k not in latency_by_test})
+        await asyncio.sleep(delay)
 
     if latency_by_test:
         lat_detail = []
@@ -974,11 +967,10 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                     "group_by": "TEST",
                     "filter_dimension": "TEST", "filter_values": batch,
                 })
-                parsed = parse_csv_metrics(resp)
-                by_test.update(parsed)
+                by_test.update(parse_csv_metrics(resp))
             except Exception as e:
                 log.warning("%s fetch error batch %d: %s", metric_id, i, e)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(delay)
         if by_test:
             detail = []
             for test_name, val in by_test.items():
@@ -1007,11 +999,10 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                     "group_by": "TEST",
                     "filter_dimension": "TEST", "filter_values": batch,
                 })
-                parsed = parse_csv_metrics(resp)
-                by_test.update(parsed)
+                by_test.update(parse_csv_metrics(resp))
             except Exception as e:
                 log.warning("%s fetch error batch %d: %s", metric_id, i, e)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(delay)
         if by_test:
             detail = []
             for test_name, val in by_test.items():
@@ -1165,13 +1156,44 @@ def refresh_default_metrics():
     get_or_fetch_extra_kpis("24h")
 
 
+def scheduled_refresh():
+    """One scheduler tick: base first (defines test IDs), then default-window metrics."""
+    refresh_base()
+    refresh_default_metrics()
+
+
 # ---------------------------------------------------------------------------
 # Flask routes
 # ---------------------------------------------------------------------------
 
+_TEST_ID_RE = re.compile(r"^(\d{1,12}|ep-[\w-]{1,64})$")
+
+
+@app.after_request
+def _security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route("/")
 def index():
     return send_file("noc_dashboard.html")
+
+
+@app.route("/api/health")
+def api_health():
+    """Liveness + whether MCP base cache has been populated."""
+    with _cache_lock:
+        ready = bool(_base_cache)
+        last = (_base_cache.get("lastRefresh") or "") if _base_cache else ""
+    return jsonify({
+        "status": "ok",
+        "base_cache_ready": ready,
+        "last_base_refresh": last,
+        "refresh_interval_minutes": REFRESH_MINUTES,
+    })
 
 
 @app.route("/api/data")
@@ -1196,6 +1218,8 @@ def api_data():
     base["EXTRA_KPI"] = extra_kpis
     base["window"] = window
     base["metrics_ready"] = bool(metrics)
+    base["refresh_interval_minutes"] = REFRESH_MINUTES
+    base["metrics_ttl_seconds"] = METRICS_TTL_SECONDS
     return jsonify(base)
 
 
@@ -1292,6 +1316,8 @@ def _parse_agent_csv(data: dict) -> list[dict]:
 
 @app.route("/api/agent_perf/<test_id>")
 def api_agent_perf(test_id):
+    if not _TEST_ID_RE.match(test_id or ""):
+        return jsonify({"error": "Invalid test id"}), 400
     with _cache_lock:
         base = dict(_base_cache) if _base_cache else {}
     test_types = base.get("TEST_TYPES", {})
@@ -1337,7 +1363,7 @@ def api_agent_perf(test_id):
 
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
-    threading.Thread(target=refresh_base, daemon=True).start()
+    threading.Thread(target=scheduled_refresh, daemon=True).start()
     return jsonify({"status": "refresh started"})
 
 
@@ -1347,7 +1373,7 @@ def api_refresh():
 
 if __name__ == "__main__":
     if not MCP_TOKEN:
-        log.error("TE_TOKEN_GLOBAL_DEMO environment variable is not set!")
+        log.error("TE_TOKEN environment variable is not set!")
         raise SystemExit(1)
 
     log.info("Performing initial data fetch via MCP...")
@@ -1355,8 +1381,7 @@ if __name__ == "__main__":
     refresh_default_metrics()
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(refresh_base, "interval", minutes=REFRESH_MINUTES)
-    scheduler.add_job(refresh_default_metrics, "interval", minutes=REFRESH_MINUTES)
+    scheduler.add_job(scheduled_refresh, "interval", minutes=REFRESH_MINUTES)
     scheduler.start()
     log.info("Scheduler started: refreshing every %d minutes", REFRESH_MINUTES)
 

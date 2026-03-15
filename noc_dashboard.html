@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="NOC performance overview — live ThousandEyes synthetics, endpoints, and Internet Insights via MCP.">
 <title>ThousandEyes — NOC Performance Overview</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
@@ -27,12 +28,17 @@
     --te-red-dim: rgba(239,68,68,0.15);
     --te-orange: #F97316;
     --te-purple: #A78BFA;
+    --te-cyan: #58A6FF;
+    --te-surface: rgba(4,159,217,0.10);
+    --te-surface-border: rgba(4,159,217,0.28);
     --radius: 10px;
-    --font-body: 'DM Sans', -apple-system, sans-serif;
+    --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background: var(--te-dark); color: var(--te-text); font-family: var(--font-body); overflow-x: hidden; min-height: 100vh; }
+  body { background: var(--te-dark); color: var(--te-text); font-family: var(--font-body); overflow-x: hidden; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  button.tab, button.map-toggle { font: inherit; }
+  button.tab:focus-visible, button.map-toggle:focus-visible, .modal-close:focus-visible, .kpi-card:focus-visible { outline: 2px solid var(--te-blue); outline-offset: 2px; }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: var(--te-dark); }
   ::-webkit-scrollbar-thumb { background: var(--te-dark-4); border-radius: 3px; }
@@ -81,7 +87,7 @@
   .leaflet-control-attribution { display: none !important; }
   .leaflet-popup-content-wrapper { background: rgba(11,17,32,0.96) !important; color: var(--te-text) !important; border: 1px solid var(--te-blue) !important; border-radius: 8px !important; box-shadow: 0 12px 40px rgba(0,0,0,0.6) !important; padding: 0 !important; }
   .leaflet-popup-content { margin: 0 !important; min-width: 200px !important; font-size: 12px !important; padding: 0 !important; }
-  .agent-popup { padding: 18px 20px; font-family: 'DM Sans', -apple-system, sans-serif; min-width: 280px; }
+  .agent-popup { padding: 18px 20px; font-family: var(--font-body); min-width: 280px; }
   .agent-popup-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .agent-popup-name { font-weight: 700; font-size: 14px; color: #fff; }
   .agent-popup-health { font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
@@ -91,8 +97,8 @@
   .agent-popup-row:last-child { border-bottom: none; }
   .agent-popup-label { font-size: 12px; color: var(--te-text-dim); }
   .agent-popup-val { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
-  .agent-popup-btn { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; background: rgba(88,166,255,0.10); border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; color: var(--te-blue); font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
-  .agent-popup-btn:hover { background: rgba(88,166,255,0.20); border-color: var(--te-blue); }
+  .agent-popup-btn { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; background: var(--te-surface); border: 1px solid var(--te-surface-border); border-radius: 8px; color: var(--te-blue); font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
+  .agent-popup-btn:hover { background: var(--te-blue-dim); border-color: var(--te-blue); }
   .leaflet-popup-tip { background: rgba(11,17,32,0.96) !important; border: 1px solid var(--te-blue) !important; }
   .leaflet-popup-close-button { color: var(--te-text-dim) !important; font-size: 18px !important; }
   .leaflet-popup-close-button:hover { color: var(--te-blue) !important; }
@@ -202,8 +208,8 @@
   .epa-detail-row:last-child { border-bottom: none; }
   .epa-detail-key { font-size: 11px; color: var(--te-text-dim); }
   .epa-detail-val { font-size: 11px; font-family: var(--font-mono); font-weight: 600; color: #fff; }
-  .epa-drill-btn { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.25); border-radius: 8px; color: var(--te-blue); font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
-  .epa-drill-btn:hover { background: rgba(88,166,255,0.18); border-color: var(--te-blue); }
+  .epa-drill-btn { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; background: var(--te-surface); border: 1px solid var(--te-surface-border); border-radius: 8px; color: var(--te-blue); font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
+  .epa-drill-btn:hover { background: var(--te-blue-dim); border-color: var(--te-blue); }
 
   .rssi-cell { position: relative; }
   .rssi-tip { display: none; position: absolute; right: 0; top: 100%; margin-top: 6px; z-index: 100; background: var(--te-dark); border: 1px solid var(--te-border); border-radius: 8px; padding: 12px 14px; width: 230px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); pointer-events: none; }
@@ -268,8 +274,8 @@
   .cea-agent-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
   .cea-agents-loading { text-align: center; padding: 12px 0; font-size: 11px; color: var(--te-text-dim); }
   .cea-agents-loading .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--te-border); border-top-color: var(--te-cyan); border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px; vertical-align: middle; }
-  .cea-drill-btn { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.25); border-radius: 8px; color: var(--te-blue); font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
-  .cea-drill-btn:hover { background: rgba(88,166,255,0.18); border-color: var(--te-blue); }
+  .cea-drill-btn { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; background: var(--te-surface); border: 1px solid var(--te-surface-border); border-radius: 8px; color: var(--te-blue); font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
+  .cea-drill-btn:hover { background: var(--te-blue-dim); border-color: var(--te-blue); }
 
   .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--te-dark); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; transition: opacity 0.5s; }
   .loading-overlay.hidden { opacity: 0; pointer-events: none; }
@@ -376,7 +382,7 @@
     <span class="header-subtitle">NOC Performance Overview</span>
   </div>
   <div class="header-right">
-    <div class="live-indicator"><div class="live-dot"></div> LIVE DATA &middot; 15 min refresh</div>
+    <div class="live-indicator"><div class="live-dot"></div> LIVE DATA &middot; <span id="liveRefreshLabel">15 min refresh</span></div>
     <div class="clock" id="clock"></div>
   </div>
 </header>
@@ -457,7 +463,8 @@
 let DATA = null;
 let leafletMap = null;
 let currentWindow = '24h';
-const AUTO_REFRESH_MS = 15 * 60 * 1000;
+const DEFAULT_REFRESH_MIN = 15;
+let refreshIntervalMs = DEFAULT_REFRESH_MIN * 60 * 1000;
 
 const TYPE_LABELS = {
   'http-server': 'HTTP Server', 'page-load': 'Page Load', 'dns-server': 'DNS Server',
@@ -496,6 +503,12 @@ async function fetchData(win) {
 async function loadData() {
   try {
     DATA = await fetchData(currentWindow);
+    var rm = parseInt(DATA.refresh_interval_minutes, 10);
+    if (rm >= 1 && rm <= 120) {
+      refreshIntervalMs = rm * 60 * 1000;
+      var lr = document.getElementById('liveRefreshLabel');
+      if (lr) lr.textContent = rm + ' min refresh';
+    }
     renderAll();
     document.getElementById('loadingOverlay').classList.add('hidden');
   } catch (e) {
@@ -2092,8 +2105,14 @@ function buildOutagesModal() {
   return html;
 }
 
-loadData();
-setInterval(loadData, AUTO_REFRESH_MS);
+function scheduleRefresh() {
+  setTimeout(function() {
+    loadData().finally(function() {
+      scheduleRefresh();
+    });
+  }, refreshIntervalMs);
+}
+loadData().finally(scheduleRefresh);
 </script>
 </body>
 </html>
