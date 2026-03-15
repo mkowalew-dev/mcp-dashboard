@@ -735,6 +735,7 @@ async def refresh_base_data_async():
                 "severity": severity,
                 "affected": affected_str,
                 "start": start_str,
+                "start_iso": start if isinstance(start, str) else "",
                 "duration": duration_min,
                 "impact": impact,
             })

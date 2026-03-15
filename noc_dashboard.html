@@ -55,10 +55,6 @@
   .live-indicator { display:flex; align-items:center; gap:7px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--te-green); font-weight: 600; }
   .live-dot { width:7px; height:7px; border-radius:50%; background: var(--te-green); animation: pulse 2s ease-in-out infinite; box-shadow: 0 0 8px var(--te-green); }
   @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
-  .clock { font-family: var(--font-mono); font-size: 13px; color: var(--te-text-dim); font-weight: 500; }
-  .clock.countdown { color: var(--te-blue); }
-  
-
   .kpi-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--te-border); border-bottom: 1px solid var(--te-border); }
   .kpi-card { background: var(--te-dark-2); padding: 16px 20px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; }
   .kpi-card:hover { background: var(--te-dark-3); }
@@ -384,7 +380,6 @@
   </div>
   <div class="header-right">
     <div class="live-indicator"><div class="live-dot"></div> LIVE DATA &middot; <span id="liveRefreshLabel">15 min refresh</span></div>
-    <div class="clock" id="clock" title="Countdown to next data refresh">Next refresh in --:--</div>
   </div>
 </header>
 
@@ -436,7 +431,7 @@
       </div>
       <div class="bottom-card">
         <div class="bottom-card-title"><span style="color:var(--te-orange)">&bull;</span> Endpoint Agent &mdash; Worst Performers</div>
-        <table class="endpoint-table" id="endpointTable"><thead><tr><th>Agent</th><th>Location</th><th>Latency</th><th>WiFi</th></tr></thead><tbody></tbody></table>
+        <table class="endpoint-table" id="endpointTable"><thead><tr><th>Agent</th><th>Location</th><th>Latency</th><th>WiFi RSSI</th></tr></thead><tbody></tbody></table>
       </div>
       <div class="bottom-card">
         <div class="bottom-card-title" id="gaugeTitle"><span style="color:var(--te-green)">&bull;</span> Service Health Gauges</div>
@@ -466,7 +461,6 @@ let leafletMap = null;
 let currentWindow = '24h';
 const DEFAULT_REFRESH_MIN = 15;
 let refreshIntervalMs = DEFAULT_REFRESH_MIN * 60 * 1000;
-var lastRefreshAt = 0;
 
 const TYPE_LABELS = {
   'http-server': 'HTTP Server', 'page-load': 'Page Load', 'dns-server': 'DNS Server',
@@ -483,35 +477,6 @@ const TYPE_BADGE = {
   'ftp-server': 'type-http', 'Dnssec': 'type-dns',
 };
 
-function formatCountdown(ms) {
-  if (ms <= 0) return '0:00';
-  var totalSec = Math.floor(ms / 1000);
-  var min = Math.floor(totalSec / 60);
-  var sec = totalSec % 60;
-  return min + ':' + (sec < 10 ? '0' : '') + sec;
-}
-
-function updateCountdown() {
-  var el = document.getElementById('clock');
-  if (!el) return;
-  if (!lastRefreshAt) {
-    el.textContent = 'Next refresh in ' + (refreshIntervalMs / 60000 | 0) + ':00';
-    el.classList.remove('countdown');
-    return;
-  }
-  var nextAt = lastRefreshAt + refreshIntervalMs;
-  var remaining = nextAt - Date.now();
-  if (remaining <= 0) {
-    el.textContent = 'Refreshing...';
-    el.classList.add('countdown');
-    return;
-  }
-  el.textContent = 'Next refresh in ' + formatCountdown(remaining);
-  el.classList.add('countdown');
-}
-setInterval(updateCountdown, 1000);
-updateCountdown();
-
 function escHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
@@ -527,7 +492,6 @@ async function fetchData(win) {
 async function loadData() {
   try {
     DATA = await fetchData(currentWindow);
-    lastRefreshAt = Date.now();
     var rm = parseInt(DATA.refresh_interval_minutes, 10);
     if (rm >= 1 && rm <= 120) {
       refreshIntervalMs = rm * 60 * 1000;
@@ -536,7 +500,6 @@ async function loadData() {
     }
     renderAll();
     document.getElementById('loadingOverlay').classList.add('hidden');
-    updateCountdown();
   } catch (e) {
     console.error('Failed to load data:', e);
     document.querySelector('.loading-text').textContent = 'Connection error';
@@ -2099,6 +2062,13 @@ function buildOutagesModal() {
   if (outages.length === 0) {
     html += '<div class="modal-chart-area"><div style="padding:20px;text-align:center;color:var(--te-green);font-size:12px;">\u2713 No outages detected in the 24 Hour window</div></div>';
   } else {
+    outages = outages.slice().sort(function(a, b) {
+      var sa = a.start_iso || '';
+      var sb = b.start_iso || '';
+      if (!sa) return 1;
+      if (!sb) return -1;
+      return sa > sb ? -1 : sa < sb ? 1 : 0;
+    });
     outages.forEach(function(o) {
       var barColor = o.severity === 'high' ? 'var(--te-red)' : o.severity === 'medium' ? 'var(--te-yellow)' : 'var(--te-green)';
       var sevClass = o.severity === 'high' ? 'sev-high' : o.severity === 'medium' ? 'sev-medium' : 'sev-low';
