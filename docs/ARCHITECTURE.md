@@ -18,7 +18,7 @@ This guide is for **sales engineers** who install, run, and demonstrate the NOC 
 
 The system has three main parts: the **customer’s browser**, the **Flask server** (this app), and the **ThousandEyes MCP API**.
 
-![System overview](diagrams/01-system-overview.svg)
+![System overview](diagrams/01-system-overview.png)
 
 | Component | Role |
 |-----------|------|
@@ -79,7 +79,7 @@ This order ensures metric fetches always use the latest test/agent IDs from the 
 
 The following diagram shows the two-phase refresh: first base (parallel tool groups), then metrics (batched, with parallel metric calls per batch).
 
-![MCP collection flow](diagrams/02-mcp-collection-flow.svg)
+![MCP collection flow](diagrams/02-mcp-collection-flow.png)
 
 **Phase 1 — Base (all async, parallel within groups):**
 
@@ -146,7 +146,7 @@ All `/api/*` responses send **X-Content-Type-Options: nosniff** and **Cache-Cont
 
 The following diagram shows how a user loads the dashboard and how the browser polls for data.
 
-![Request flow](diagrams/03-request-flow.svg)
+![Request flow](diagrams/03-request-flow.png)
 
 1. User opens `http://<host>:8000/` (or the port set by `PORT`).
 2. Server responds with `noc_dashboard.html`.
@@ -163,7 +163,7 @@ Optional: If the user changes the time window and the server does not have fresh
 
 ### 7.1 Deployment Topology
 
-![Deployment](diagrams/04-deployment.svg)
+![Deployment](diagrams/04-deployment.png)
 
 - **Host:** Any OS where Python 3.10+ and the dependencies run (Windows, macOS, Linux).
 - **Network:** Server must have **outbound HTTPS** to `api.thousandeyes.com`. No inbound rules required if only local browser access; for remote demos, open port 8000 (or `PORT`) or put the app behind a reverse proxy (HTTPS, optional auth).
@@ -214,16 +214,16 @@ See the project **README** for exact venv and run commands per platform.
 
 ---
 
-## 10. Diagram Files (SVG)
+## 10. Diagram Files (PNG)
 
-All diagrams are in **docs/diagrams/** and can be opened in a browser or embedded in presentations. Export to PNG if needed (e.g. via browser “Save as” or a converter).
+All diagrams are in **docs/diagrams/** as PNGs and render reliably on GitHub and in docs.
 
 | File | Description |
 |------|-------------|
-| **01-system-overview.svg** | Browser, Flask server (caches, scheduler), ThousandEyes MCP; data flow. |
-| **02-mcp-collection-flow.svg** | Phase 1 (base tools, parallel groups); Phase 2 (batched metrics, parallel per batch); Phase 3 (endpoint metrics, cache write). |
-| **03-request-flow.svg** | User → browser → Flask → caches; polling loop; other API endpoints. |
-| **04-deployment.svg** | Host, venv, env vars, server bind and health check. |
+| **01-system-overview.png** | Browser, Flask server (caches, scheduler), ThousandEyes MCP; data flow. |
+| **02-mcp-collection-flow.png** | Phase 1 (base tools, parallel groups); Phase 2 (batched metrics, parallel per batch); Phase 3 (endpoint metrics, cache write). |
+| **03-request-flow.png** | User → browser → Flask → caches; polling loop; other API endpoints. |
+| **04-deployment.png** | Host, venv, env vars, server bind and health check. |
 
 ---
 
