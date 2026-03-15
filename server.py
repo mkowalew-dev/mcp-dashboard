@@ -1235,12 +1235,16 @@ def refresh_default_metrics():
 
 def scheduled_refresh():
     """One scheduler tick: base first (defines test IDs), then default-window metrics."""
+    start = time.perf_counter()
     refresh_base()
     refresh_default_metrics()
+    elapsed = time.perf_counter() - start
+    log.info("Scheduled refresh complete in %.2fs", elapsed)
 
 
 def run_initial_load():
     """Run initial data load in background; updates _refresh_status for /api/refresh-status."""
+    start = time.perf_counter()
     try:
         _set_refresh_status(phase="base", message="Fetching base data (tests, agents, alerts)...")
         refresh_base()
@@ -1258,9 +1262,11 @@ def run_initial_load():
             with _cache_lock:
                 _extra_kpi_cache["24h"] = {"data": extra, "ts": time.time()}
         _set_refresh_status(phase="done", message="Ready")
-        log.info("Initial data load complete.")
+        elapsed = time.perf_counter() - start
+        log.info("Initial data load complete in %.2fs", elapsed)
     except Exception as e:
-        log.exception("Initial load failed: %s", e)
+        elapsed = time.perf_counter() - start
+        log.exception("Initial load failed after %.2fs: %s", elapsed, e)
         _set_refresh_status(error=str(e))
 
 
