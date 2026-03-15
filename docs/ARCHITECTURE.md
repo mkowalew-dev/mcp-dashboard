@@ -81,13 +81,15 @@ The following diagram shows the two-phase refresh: first base (parallel tool gro
 
 ![MCP collection flow](diagrams/02-mcp-collection-flow.png)
 
-**Phase 1 — Base (all async, parallel within groups):**
+**Phase 1 — Base (single parallel batch for minimum wall time):**
 
-| Group | Tools | Purpose |
-|-------|--------|---------|
-| 1 | `list_network_app_synthetics_tests`, `list_endpoint_agent_tests`, `get_account_groups` | Test catalog, endpoint test list, account group name. |
-| 2 | `list_cloud_enterprise_agents`, `list_endpoint_agents` | Cloud + enterprise agents; endpoint agents. |
-| 3 | `list_alerts` (state=TRIGGER), `list_events`, `search_outages` (window=24h) | Active alerts, events, outages. |
+All 8 base tools are run in one `asyncio.gather` so the server waits only for the slowest call:
+
+| Tools | Purpose |
+|-------|---------|
+| `list_network_app_synthetics_tests`, `list_endpoint_agent_tests`, `get_account_groups` | Test catalog, endpoint test list, account group name. |
+| `list_cloud_enterprise_agents`, `list_endpoint_agents` | Cloud + enterprise agents; endpoint agents. |
+| `list_alerts` (state=TRIGGER), `list_events`, `search_outages` (window=24h) | Active alerts, events, outages. |
 
 The server then builds in-memory structures: test IDs by name, agent lists with coordinates (using a built-in location lookup), alert feed, live events, parsed outages, test-type gauges, and account group name. Result is written to **base_cache**.
 
@@ -113,6 +115,8 @@ The server then builds in-memory structures: test IDs by name, agent lists with 
 - **Endpoint agents:** Single `asyncio.gather` of two `get_endpoint_agent_metrics` calls (ENDPOINT_TEST_NET_LATENCY, ENDPOINT_GATEWAY_WIRELESS_RSSI) by `ENDPOINT_AGENT_MACHINE_ID`.
 
 Results are written to **metrics_cache** and **extra_kpi_cache** for the corresponding window (e.g. `"24h"`).
+
+**Initial load performance:** On startup, the server runs base first, then runs **24h metrics** and **24h extra KPIs in parallel** (`asyncio.gather`). That reduces initial load time compared to running metrics then extra KPIs sequentially.
 
 ### 4.4 On-Demand Metrics
 
@@ -177,8 +181,8 @@ Optional: If the user changes the time window and the server does not have fresh
 | **TE_TOKEN** | Yes | — | ThousandEyes API token (Bearer) for MCP. Do not commit. |
 | **REFRESH_MINUTES** | No | 15 | Scheduler interval (1–120). UI uses same value from `/api/data`. |
 | **MCP_URL** | No | `https://api.thousandeyes.com/mcp` | Override only if directed. |
-| **MCP_BATCH_SIZE** | No | 20 | Test IDs per synthetics metrics batch (5–50). |
-| **MCP_INTER_BATCH_DELAY_SEC** | No | 0.35 | Delay between batch rounds to limit API load. |
+| **MCP_BATCH_SIZE** | No | 20 | Test IDs per synthetics metrics batch (5–50). Larger = fewer round-trips, faster load; may increase 429 risk. |
+| **MCP_INTER_BATCH_DELAY_SEC** | No | 0.35 | Delay (seconds) between batch rounds. Lower = faster; increase if you see 429s. |
 
 Use a `.env` file in the project root (loaded by `python-dotenv`) and keep it out of version control. Copy from `.env.example`.
 

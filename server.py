@@ -24,7 +24,11 @@ from flask import Flask, jsonify, request, send_file
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -228,10 +232,13 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                         err_text = "\n".join(texts)
                         if "429" in err_text or "Too Many Requests" in err_text:
                             wait = 2 ** (attempt + 1)
-                            log.warning("Rate limited on %s, retrying in %ds (attempt %d/%d)",
-                                        tool_name, wait, attempt + 1, retries)
+                            log.error(
+                                "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%ds",
+                                tool_name, attempt + 1, retries, wait,
+                            )
                             await asyncio.sleep(wait)
                             continue
+                        log.error("MCP tool error: tool=%s, error=%s", tool_name, err_text[:500])
                         raise RuntimeError(f"MCP tool error: {err_text[:200]}")
                     texts = [c.text for c in result.content if hasattr(c, "text")]
                     combined = "\n".join(texts)
@@ -244,10 +251,13 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
         except Exception as e:
             last_err = e
             wait = min(2 ** (attempt + 1), 10)
-            log.warning("Transient error on %s (attempt %d/%d), retrying in %ds: %s",
-                        tool_name, attempt + 1, retries, wait, e)
+            log.error(
+                "MCP transient error: tool=%s, attempt=%d/%d, retry_in=%ds, error=%s",
+                tool_name, attempt + 1, retries, wait, e,
+            )
             await asyncio.sleep(wait)
             continue
+    log.error("MCP failed after %d retries: tool=%s, last_error=%s", retries, tool_name, last_err)
     raise RuntimeError(f"Failed after {retries} retries on {tool_name}: {last_err}")
 
 
@@ -271,7 +281,7 @@ async def _mcp_synth_metrics_batch(
                 },
             )
         except Exception as e:
-            log.warning("MCP synth metric %s: %s", mid, e)
+            log.error("MCP synth metric failed: metric_id=%s, error=%s", mid, e)
             return None
 
     return list(await asyncio.gather(*[_one(mid) for mid in metric_ids]))
@@ -281,7 +291,7 @@ async def safe_call(tool_name, args=None):
     try:
         return await call_mcp_tool(tool_name, args)
     except Exception as e:
-        log.warning("MCP call %s failed: %s", tool_name, e)
+        log.error("MCP call failed: tool=%s, error=%s", tool_name, e)
         return None
 
 
@@ -392,16 +402,22 @@ async def refresh_base_data_async():
     log.info("Refreshing base data via MCP...")
     _set_refresh_status(phase="base", message="Fetching base data (tests, agents, alerts)...")
 
-    tests_resp, ep_tests_resp, acct_groups_resp = await asyncio.gather(
+    # Single gather for all base calls to minimize wall time
+    (
+        tests_resp,
+        ep_tests_resp,
+        acct_groups_resp,
+        ce_agents_resp,
+        ep_agents_resp,
+        alerts_resp,
+        events_resp,
+        outages_resp,
+    ) = await asyncio.gather(
         safe_call("list_network_app_synthetics_tests"),
         safe_call("list_endpoint_agent_tests"),
         safe_call("get_account_groups"),
-    )
-    ce_agents_resp, ep_agents_resp = await asyncio.gather(
         safe_call("list_cloud_enterprise_agents"),
         safe_call("list_endpoint_agents"),
-    )
-    alerts_resp, events_resp, outages_resp = await asyncio.gather(
         safe_call("list_alerts", {"state": "TRIGGER"}),
         safe_call("list_events"),
         safe_call("search_outages", {"window": "24h"}),
@@ -855,7 +871,7 @@ async def fetch_metrics_async(hours: int) -> dict[str, float]:
                     if name not in test_availability:
                         test_availability[name] = round(100.0 - val, 2)
             except Exception as e:
-                log.warning("%s fetch error batch %d: %s", loss_metric, i, e)
+                log.error("MCP metrics batch error: metric=%s, batch_index=%s, error=%s", loss_metric, i, e)
             await asyncio.sleep(delay)
 
     _set_refresh_status(message=f"24h availability loaded ({len(test_availability)} tests)")
@@ -876,7 +892,7 @@ def get_or_fetch_metrics(window_key: str) -> dict[str, float] | None:
     try:
         metrics = asyncio.run(fetch_metrics_async(hours))
     except Exception as e:
-        log.warning("Metrics fetch failed for %s: %s", window_key, e)
+        log.error("Metrics fetch failed: window=%s, error=%s", window_key, e)
         metrics = {}
 
     if metrics:
@@ -1021,7 +1037,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                 })
                 by_test.update(parse_csv_metrics(resp))
             except Exception as e:
-                log.warning("%s fetch error batch %d: %s", metric_id, i, e)
+                log.error("MCP extra KPI batch error: metric_id=%s, batch_index=%s, error=%s", metric_id, i, e)
             await asyncio.sleep(delay)
         if by_test:
             detail = []
@@ -1053,7 +1069,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                 })
                 by_test.update(parse_csv_metrics(resp))
             except Exception as e:
-                log.warning("%s fetch error batch %d: %s", metric_id, i, e)
+                log.error("MCP extra KPI batch error: metric_id=%s, batch_index=%s, error=%s", metric_id, i, e)
             await asyncio.sleep(delay)
         if by_test:
             detail = []
@@ -1080,7 +1096,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
             }),
         )
     except Exception as e:
-        log.warning("Endpoint metrics fetch error: %s", e)
+        log.error("Endpoint metrics fetch error: %s", e)
         ep_latency_resp = None
         ep_rssi_resp = None
 
@@ -1166,6 +1182,16 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
     return extra
 
 
+async def _fetch_24h_metrics_and_extra_parallel() -> tuple[dict[str, float], dict]:
+    """Run 24h metrics and extra KPIs in parallel to reduce initial load time."""
+    hours = 24
+    metrics_task = asyncio.create_task(fetch_metrics_async(hours))
+    extra_task = asyncio.create_task(fetch_extra_kpis_async(hours))
+    metrics = await metrics_task
+    extra = await extra_task
+    return metrics, extra
+
+
 def get_or_fetch_extra_kpis(window_key: str) -> dict:
     hours = WINDOWS.get(window_key, 24)
 
@@ -1177,7 +1203,7 @@ def get_or_fetch_extra_kpis(window_key: str) -> dict:
     try:
         data = asyncio.run(fetch_extra_kpis_async(hours))
     except Exception as e:
-        log.warning("Extra KPIs fetch failed for %s: %s", window_key, e)
+        log.error("Extra KPIs fetch failed: window=%s, error=%s", window_key, e)
         data = {}
 
     has_data = data and (data.get("avg_response_ms") is not None or data.get("avg_packet_loss") is not None)
@@ -1218,10 +1244,19 @@ def run_initial_load():
     try:
         _set_refresh_status(phase="base", message="Fetching base data (tests, agents, alerts)...")
         refresh_base()
-        _set_refresh_status(phase="metrics", message="Fetching 24h metrics...")
-        get_or_fetch_metrics("24h")
-        _set_refresh_status(phase="extra_kpis", message="Fetching extra KPIs...")
-        get_or_fetch_extra_kpis("24h")
+        _set_refresh_status(
+            phase="metrics",
+            message="Fetching 24h metrics and extra KPIs in parallel...",
+        )
+        metrics, extra = asyncio.run(_fetch_24h_metrics_and_extra_parallel())
+        if metrics:
+            with _cache_lock:
+                _metrics_cache["24h"] = {"data": metrics, "ts": time.time()}
+        if extra and (
+            extra.get("avg_response_ms") is not None or extra.get("avg_packet_loss") is not None
+        ):
+            with _cache_lock:
+                _extra_kpi_cache["24h"] = {"data": extra, "ts": time.time()}
         _set_refresh_status(phase="done", message="Ready")
         log.info("Initial data load complete.")
     except Exception as e:
@@ -1320,7 +1355,7 @@ def api_fetch_window():
             with _cache_lock:
                 _metrics_cache[window] = {"data": metrics, "ts": time.time()}
     except Exception as e:
-        log.warning("On-demand metrics fetch for %s failed: %s", window, e)
+        log.error("On-demand metrics fetch failed: window=%s, error=%s", window, e)
 
     try:
         extra = asyncio.run(fetch_extra_kpis_async(hours))
@@ -1329,7 +1364,7 @@ def api_fetch_window():
             with _cache_lock:
                 _extra_kpi_cache[window] = {"data": extra, "ts": time.time()}
     except Exception as e:
-        log.warning("On-demand extra KPIs fetch for %s failed: %s", window, e)
+        log.error("On-demand extra KPIs fetch failed: window=%s, error=%s", window, e)
 
     return jsonify({"status": "fetched", "window": window})
 
@@ -1419,7 +1454,7 @@ def api_agent_perf(test_id):
         }))
         agents = _parse_agent_csv(resp)
     except Exception as e:
-        log.warning("agent_perf fetch failed for test %s: %s", test_id, e)
+        log.error("agent_perf fetch failed: test_id=%s, error=%s", test_id, e)
         agents = []
 
     higher_is_worse = test_type in ("agent-to-server", "agent-to-agent")
@@ -1461,4 +1496,5 @@ if __name__ == "__main__":
     threading.Thread(target=run_initial_load, daemon=True).start()
 
     log.info("Listening on http://0.0.0.0:%s/", port)
+    log.info("MCP errors (e.g. 429 rate limits) are logged at ERROR level to this console / .mcp-dashboard.log")
     app.run(host="0.0.0.0", port=port, debug=False)
