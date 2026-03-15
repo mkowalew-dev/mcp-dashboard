@@ -47,27 +47,34 @@ MCP_SYNTH_CONCURRENCY = max(1, min(10, int(os.getenv("MCP_SYNTH_CONCURRENCY", "1
 # Global MCP rate limit: max requests per minute (e.g. 240 rpm = 4 req/s); min interval between calls
 MCP_MAX_RPM = max(10, min(500, int(os.getenv("MCP_MAX_RPM", "240"))))
 _mcp_min_interval_sec = 60.0 / MCP_MAX_RPM
-_mcp_rate_limit_lock = asyncio.Lock()
-_mcp_last_call_time: float = 0.0
-
-_synth_semaphore: asyncio.Semaphore | None = None
-
-def _synth_sem() -> asyncio.Semaphore:
-    global _synth_semaphore
-    if _synth_semaphore is None:
-        _synth_semaphore = asyncio.Semaphore(MCP_SYNTH_CONCURRENCY)
-    return _synth_semaphore
+# Per-event-loop primitives (avoids "bound to a different event loop" when asyncio.run() is used from multiple threads)
+_mcp_rate_limit_locks: dict[int, asyncio.Lock] = {}
+_mcp_last_call_times: dict[int, float] = {}
+_synth_semaphores: dict[int, asyncio.Semaphore] = {}
 
 
 async def _mcp_rate_limit_wait() -> None:
     """Enforce global MCP request rate (MCP_MAX_RPM). Call once before each MCP request."""
-    global _mcp_last_call_time
-    async with _mcp_rate_limit_lock:
+    loop = asyncio.get_running_loop()
+    lid = id(loop)
+    if lid not in _mcp_rate_limit_locks:
+        _mcp_rate_limit_locks[lid] = asyncio.Lock()
+        _mcp_last_call_times[lid] = 0.0
+    async with _mcp_rate_limit_locks[lid]:
         now = time.monotonic()
-        wait = max(0.0, _mcp_min_interval_sec - (now - _mcp_last_call_time))
+        wait = max(0.0, _mcp_min_interval_sec - (now - _mcp_last_call_times[lid]))
         if wait > 0:
             await asyncio.sleep(wait)
-        _mcp_last_call_time = time.monotonic()
+        _mcp_last_call_times[lid] = time.monotonic()
+
+
+async def _get_synth_sem() -> asyncio.Semaphore:
+    """Return semaphore for current event loop (created on first use in that loop)."""
+    loop = asyncio.get_running_loop()
+    lid = id(loop)
+    if lid not in _synth_semaphores:
+        _synth_semaphores[lid] = asyncio.Semaphore(MCP_SYNTH_CONCURRENCY)
+    return _synth_semaphores[lid]
 
 # Cache window metrics at least one refresh cycle (capped)
 METRICS_TTL_SECONDS = max(300, min(3600, REFRESH_MINUTES * 60))
@@ -322,7 +329,7 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
         raise RuntimeError(f"Failed after {retries} retries on {tool_name}: {err_str}")
 
     if tool_name == "get_network_app_synthetics_metrics":
-        async with _synth_sem():
+        async with await _get_synth_sem():
             return await _do()
     return await _do()
 
