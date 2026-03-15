@@ -42,6 +42,16 @@ MCP_BATCH_SIZE = max(5, min(50, int(os.getenv("MCP_BATCH_SIZE", "15"))))
 # Delay between batch requests; higher reduces 429s (default 1.0s; min 0.5s when set)
 _raw_delay = float(os.getenv("MCP_INTER_BATCH_DELAY_SEC", "1.0"))
 MCP_INTER_BATCH_DELAY = max(0.5, _raw_delay)
+# Max concurrent get_network_app_synthetics_metrics calls (1 = sequential, reduces 429s)
+MCP_SYNTH_CONCURRENCY = max(1, min(10, int(os.getenv("MCP_SYNTH_CONCURRENCY", "1"))))
+_synth_semaphore: asyncio.Semaphore | None = None
+
+def _synth_sem() -> asyncio.Semaphore:
+    global _synth_semaphore
+    if _synth_semaphore is None:
+        _synth_semaphore = asyncio.Semaphore(MCP_SYNTH_CONCURRENCY)
+    return _synth_semaphore
+
 # Cache window metrics at least one refresh cycle (capped)
 METRICS_TTL_SECONDS = max(300, min(3600, REFRESH_MINUTES * 60))
 
@@ -265,40 +275,53 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
         except Exception as e:
             root = _unwrap_exception(e)
             last_err = root
-            wait = min(30, 2 ** (attempt + 2))
-            jitter = random.uniform(0, min(3, wait * 0.2))
-            log.error(
-                "MCP transient error: tool=%s, attempt=%d/%d, retry_in=%.1fs, error=%s",
-                tool_name, attempt + 1, retries, wait + jitter, root,
-            )
+            err_str = str(root).strip() or repr(root)
+            is_429 = "429" in str(e) or "Too Many Requests" in str(e)
+            if is_429:
+                wait = min(60, 2 ** (attempt + 2))
+                jitter = random.uniform(0, min(5, wait * 0.2))
+                log.error(
+                    "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%.1fs",
+                    tool_name, attempt + 1, retries, wait + jitter,
+                )
+            else:
+                wait = min(30, 2 ** (attempt + 2))
+                jitter = random.uniform(0, min(3, wait * 0.2))
+                log.error(
+                    "MCP transient error: tool=%s, attempt=%d/%d, retry_in=%.1fs, error=%s",
+                    tool_name, attempt + 1, retries, wait + jitter, err_str,
+                )
             await asyncio.sleep(wait + jitter)
             continue
     root = _unwrap_exception(last_err) if last_err else last_err
-    log.error("MCP failed after %d retries: tool=%s, last_error=%s", retries, tool_name, root)
-    raise RuntimeError(f"Failed after {retries} retries on {tool_name}: {root}")
+    err_str = str(root).strip() or repr(root)
+    log.error("MCP failed after %d retries: tool=%s, last_error=%s", retries, tool_name, err_str)
+    raise RuntimeError(f"Failed after {retries} retries on {tool_name}: {err_str}")
 
 
 async def _mcp_synth_metrics_batch(
     metric_ids: list[str], batch: list[str], start: str, end: str
 ) -> list[dict | None]:
-    """One MCP call per metric_id, same batch (parallel). Returns list aligned to metric_ids."""
+    """One MCP call per metric_id, same batch; concurrency limited by _synth_sem() to reduce 429s."""
 
     async def _one(mid: str):
         try:
-            return await call_mcp_tool(
-                "get_network_app_synthetics_metrics",
-                {
-                    "metric_id": mid,
-                    "start_date": start,
-                    "end_date": end,
-                    "aggregation_type": "MEAN",
-                    "group_by": "TEST",
-                    "filter_dimension": "TEST",
-                    "filter_values": batch,
-                },
-            )
+            async with _synth_sem():
+                return await call_mcp_tool(
+                    "get_network_app_synthetics_metrics",
+                    {
+                        "metric_id": mid,
+                        "start_date": start,
+                        "end_date": end,
+                        "aggregation_type": "MEAN",
+                        "group_by": "TEST",
+                        "filter_dimension": "TEST",
+                        "filter_values": batch,
+                    },
+                )
         except Exception as e:
-            log.error("MCP synth metric failed: metric_id=%s, error=%s", mid, e)
+            err_str = str(e).strip() or repr(e)
+            log.error("MCP synth metric failed: metric_id=%s, error=%s", mid, err_str)
             return None
 
     return list(await asyncio.gather(*[_one(mid) for mid in metric_ids]))

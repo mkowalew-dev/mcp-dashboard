@@ -97,6 +97,7 @@ The server then builds in-memory structures: test IDs by name, agent lists with 
 
 - **Input:** Synthetic test IDs from `base_cache` (excluding endpoint test IDs). Split into batches of **MCP_BATCH_SIZE** (default 15).
 - **Between batches:** Sleep **MCP_INTER_BATCH_DELAY_SEC** (default 1.0s; min 0.5s) plus small random jitter to reduce rate-limit (429) risk.
+- **Synth concurrency:** Within each batch, at most **MCP_SYNTH_CONCURRENCY** (default 1) concurrent `get_network_app_synthetics_metrics` calls run at once, so multiple metric_ids are requested sequentially to avoid 429s.
 - **Within a batch:** For some metric groups, the server issues **multiple MCP metric calls in parallel** (e.g. `WEB_AVAILABILITY` and `DNS_TRACE_AVAILABILITY` together). Results are merged with a **first-wins** rule so that the same test never gets two different values for the same logical metric (merge order is deterministic).
 
 **Availability (24h default):**
@@ -185,6 +186,7 @@ Optional: If the user changes the time window and the server does not have fresh
 | **MCP_URL** | No | `https://api.thousandeyes.com/mcp` | Override only if directed. |
 | **MCP_BATCH_SIZE** | No | 15 | Test IDs per synthetics metrics batch (5–50). Smaller = less load per request; increase if 429s are rare. |
 | **MCP_INTER_BATCH_DELAY_SEC** | No | 1.0 | Delay (seconds) between batch rounds; min 0.5. Increase (e.g. 1.5–2.0) if you see 429s or transient errors. |
+| **MCP_SYNTH_CONCURRENCY** | No | 1 | Max concurrent `get_network_app_synthetics_metrics` calls (1 = sequential). Keeps 429s low; increase only if API allows. |
 
 Use a `.env` file in the project root (loaded by `python-dotenv`) and keep it out of version control. Copy from `.env.example`.
 
@@ -214,7 +216,7 @@ See the project **README** for exact venv and run commands per platform.
 | **503 on /api/data** | Base cache not yet loaded. Wait for first scheduler run or call POST /api/refresh and wait. Check logs for MCP errors. |
 | **Empty or stale data** | Confirm `TE_TOKEN` is set and valid. Check outbound HTTPS to api.thousandeyes.com. Review logs for 429/retries or tool errors. |
 | **Slow first load** | First base + 24h metrics run can take tens of seconds depending on account size. Subsequent loads are served from cache. |
-| **Rate limits (429)** | Increase `MCP_INTER_BATCH_DELAY_SEC` or decrease `MCP_BATCH_SIZE`. Ensure only one instance is running. |
+| **Rate limits (429)** | Keep `MCP_SYNTH_CONCURRENCY=1` (default). Increase `MCP_INTER_BATCH_DELAY_SEC` or decrease `MCP_BATCH_SIZE` if needed. Ensure only one instance is running. |
 | **Wrong refresh interval in UI** | UI reads `refresh_interval_minutes` from `/api/data`. Ensure server was started with desired `REFRESH_MINUTES`. |
 | **Health check fails** | GET /api/health; if `base_cache_ready` is false, base refresh has not completed yet or failed (check logs). |
 
