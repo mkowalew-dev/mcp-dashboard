@@ -81,7 +81,7 @@ METRICS_TTL_SECONDS = max(300, min(3600, REFRESH_MINUTES * 60))
 
 # Metrics filter: only pull metrics for tests that pass these filters (reduces load and 429s)
 # Excluded test types (e.g. SFTP, BGP); comma-separated, case-insensitive
-_excluded_types_raw = (os.getenv("METRICS_EXCLUDED_TEST_TYPES") or "bgp,ftp-server,sftp").strip()
+_excluded_types_raw = (os.getenv("METRICS_EXCLUDED_TEST_TYPES") or "bgp,ftp-server,sftp,agent-to-agent").strip()
 METRICS_EXCLUDED_TEST_TYPES = {t.strip().lower() for t in _excluded_types_raw.split(",") if t.strip()}
 # Excluded business service groupings (app-defined from test name patterns; same as UI). Pipe-separated; case-insensitive.
 _excluded_bs_raw = (os.getenv("METRICS_EXCLUDED_BUSINESS_SERVICES") or "Other Services|Demo & Monitoring|Facebook & Social|Data Center Management").strip()
