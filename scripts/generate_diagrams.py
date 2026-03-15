@@ -66,45 +66,71 @@ def draw_arrow(draw, x1, y1, x2, y2, color=BOX_BORDER, width=2):
         draw.line([(x2, y2), (ax, ay)], fill=color, width=width)
 
 
-def draw_box(draw, x, y, w, h, label: str, lines: list[str], font, font_small):
-    """Draw rounded rect and text."""
+def _text_bbox(draw, text: str, font) -> tuple[int, int, int, int]:
+    """Return (left, top, right, bottom) for text."""
+    return draw.textbbox((0, 0), text, font=font)
+
+
+def draw_box(draw, x, y, w, h, label: str, lines: list[str], font, font_small, line_height: int = 16):
+    """Draw rounded rect and text; center label, stack lines with spacing."""
     draw.rectangle([x, y, x + w, y + h], outline=BOX_BORDER, fill=BOX_BG, width=2)
-    draw.text((x + w // 2 - len(label) * 3, y + 8), label, fill=TEXT, font=font)
-    yy = y + 28
+    # Center the label
+    lb = _text_bbox(draw, label, font)
+    label_w = lb[2] - lb[0]
+    draw.text((x + (w - label_w) // 2, y + 10), label, fill=TEXT, font=font)
+    # Body lines with consistent spacing
+    yy = y + 36
     for line in lines[:8]:
-        draw.text((x + 10, yy), line[:40], fill=MUTED, font=font_small)
-        yy += 14
+        draw.text((x + 12, yy), line[:38], fill=MUTED, font=font_small)
+        yy += line_height
 
 
 def diagram_01_system_overview(draw, font, font_small, w, h):
     """System overview: Browser, Flask, ThousandEyes MCP."""
     draw.rectangle([0, 0, w, h], fill=BG)
-    draw.text((w // 2 - 120, 12), "MCP Dashboard - System Overview", fill=TEXT, font=font)
+    title = "MCP Dashboard - System Overview"
+    tb = _text_bbox(draw, title, font)
+    draw.text((w // 2 - (tb[2] - tb[0]) // 2, 14), title, fill=TEXT, font=font)
+    # Three boxes with clear gaps: Browser | gap | Flask | gap | MCP
+    bw, bh = 172, 132
+    bx1, bx2, bx3 = 32, 224, 488
     # Browser
-    draw_box(draw, 24, 44, 160, 120, "Browser (Customer)", [
-        "noc_dashboard.html", "Leaflet map, KPIs,", "tabs, modals",
-        "Poll /api/data every", "refresh_interval_min"
+    draw_box(draw, bx1, 48, bw, bh, "Browser (Customer)", [
+        "noc_dashboard.html",
+        "Leaflet map, KPIs, tabs",
+        "Poll /api/data every",
+        "refresh_interval_min",
     ], font, font_small)
     # Flask
-    draw_box(draw, 220, 44, 240, 200, "Flask Server (server.py)", [
-        "Host 0.0.0.0 :8000", "In-memory caches:",
-        "base_cache, metrics_cache,", "extra_kpi_cache",
-        "APScheduler:", "scheduled_refresh() every", "REFRESH_MINUTES"
+    draw_box(draw, bx2, 48, 248, 232, "Flask Server (server.py)", [
+        "Host 0.0.0.0 :8000",
+        "In-memory caches:",
+        "base_cache, metrics_cache,",
+        "extra_kpi_cache",
+        "APScheduler:",
+        "scheduled_refresh() every",
+        "REFRESH_MINUTES",
     ], font, font_small)
     # MCP
-    draw_box(draw, 496, 44, 200, 200, "ThousandEyes MCP", [
-        "api.thousandeyes.com/mcp", "Streamable HTTP", "Bearer TE_TOKEN",
-        "Tools: list tests,", "agents, alerts, events,", "outages, get_*_metrics"
+    draw_box(draw, bx3, 48, 200, 232, "ThousandEyes MCP", [
+        "api.thousandeyes.com/mcp",
+        "Streamable HTTP",
+        "Bearer TE_TOKEN",
+        "Tools: list tests,",
+        "agents, alerts, events,",
+        "outages, get_*_metrics",
     ], font, font_small)
-    # Arrows
-    draw_arrow(draw, 184, 100, 212, 100)
-    draw.text((192, 88), "GET /, /api/data", fill=MUTED, font=font_small)
-    draw_arrow(draw, 460, 140, 490, 140, GREEN)
-    draw.text((465, 128), "MCP tool calls", fill=MUTED, font=font_small)
-    # Legend
-    draw.rectangle([24, 278, w - 24, h - 12], fill=(17, 24, 39), outline=MUTED)
-    draw.text((40, 292), "All data is fetched by the server via MCP; browser only talks to the server.", fill=MUTED, font=font_small)
-    draw.text((40, 308), "One scheduler job: base refresh then 24h metrics. POST /api/refresh runs same.", fill=MUTED, font=font_small)
+    # Arrows between boxes (centered vertically in box)
+    mid_y = 48 + 232 // 2
+    draw_arrow(draw, bx1 + bw + 4, mid_y, bx2 - 8, mid_y)
+    draw.text((bx1 + bw + 12, mid_y - 22), "GET /, /api/data", fill=MUTED, font=font_small)
+    draw_arrow(draw, bx2 + 248 + 4, mid_y, bx3 - 8, mid_y, GREEN)
+    draw.text((bx2 + 248 + 12, mid_y - 22), "MCP tool calls", fill=MUTED, font=font_small)
+    # Legend below boxes with padding
+    leg_y = 48 + 232 + 24
+    draw.rectangle([32, leg_y, w - 32, h - 16], fill=(17, 24, 39), outline=MUTED)
+    draw.text((48, leg_y + 14), "All data is fetched by the server via MCP; browser only talks to the server.", fill=MUTED, font=font_small)
+    draw.text((48, leg_y + 14 + 18), "One scheduler job: base refresh then 24h metrics. POST /api/refresh runs same.", fill=MUTED, font=font_small)
 
 
 def diagram_02_mcp_flow(draw, font, font_small, w, h):

@@ -2,6 +2,10 @@
 .mcp-dashboard.pid
 .mcp-dashboard.log
 
+# Diagram generation (not needed for sharing)
+requirements-diagrams.txt
+scripts/generate_diagrams.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
