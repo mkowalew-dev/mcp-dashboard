@@ -48,37 +48,24 @@ Optional: copy `.env` in the project root (loaded by `python-dotenv`); keep `.en
 
 ## Deploy with a Python virtual environment (venv)
 
-### Windows (PowerShell)
+Configure the environment **before** starting the server. Either set variables in your shell or use a `.env` file in the project root (see below). The startup script checks that `TE_TOKEN` is set and loads `.env` when you run it.
+
+### 1. Create venv and install dependencies
+
+**Windows (PowerShell):**
 
 ```powershell
 cd path\to\mcp-dashboard
 
-# Create venv
 python -m venv .venv
-
-# Activate (PowerShell)
 .\.venv\Scripts\Activate.ps1
+# If execution policy blocks: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
-# If execution policy blocks activation:
-# Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-
-# Install dependencies (use ci-style install when you have a lockfile; here pip install is fine)
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-
-# Token: set for this session or use a .env file (not committed)
-$env:TE_TOKEN = "your-thousandeyes-token"
-# optional:
-$env:REFRESH_MINUTES = "15"
-
-python server.py
 ```
 
-Open **http://127.0.0.1:8000/** (or from another machine: `http://<host>:8000/`).
-
-Deactivate when done: `deactivate`.
-
-### macOS / Linux
+**macOS / Linux:**
 
 ```bash
 cd /path/to/mcp-dashboard
@@ -88,22 +75,48 @@ source .venv/bin/activate
 
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-
-export TE_TOKEN="your-thousandeyes-token"
-# optional:
-export REFRESH_MINUTES=15
-
-python server.py
 ```
 
-### `.env` example (local only; do not commit)
+### 2. Configure environment (before startup)
+
+Set **TE_TOKEN** (required) and any optional variables. Do this **before** running the startup script.
+
+**Option A — `.env` file (recommended):** Copy `.env.example` to `.env` in the project root, edit it, and do not commit it. The startup script loads `.env` automatically.
 
 ```env
 TE_TOKEN=your-thousandeyes-token
 REFRESH_MINUTES=15
 ```
 
-**Optional start/stop scripts:** Use `scripts/start-stop.ps1` (Windows) or `scripts/start-stop.sh` (macOS/Linux) with `--startup` to check env and run the server in the background, and `--shutdown` to stop it. See `scripts/README.md`.
+**Option B — Shell:**
+
+- **PowerShell:** `$env:TE_TOKEN = "your-token"` (and optionally `$env:REFRESH_MINUTES = "15"`, `$env:PORT = "8000"`).
+- **Bash:** `export TE_TOKEN="your-token"` (and optionally `export REFRESH_MINUTES=15`, `export PORT=8000`).
+
+### 3. Start and stop the server
+
+From the project root, with the venv activated and environment configured:
+
+**Windows:**
+
+```powershell
+.\scripts\start-stop.ps1 --startup
+```
+
+**macOS / Linux:**
+
+```bash
+./scripts/start-stop.sh --startup
+```
+
+The script checks that `TE_TOKEN` is set, then starts the server in the background. Open **http://127.0.0.1:8000/** (or `http://<host>:8000/` from another machine; port is from `PORT` or 8000).
+
+To stop the server:
+
+**Windows:** `.\scripts\start-stop.ps1 --shutdown`  
+**macOS / Linux:** `./scripts/start-stop.sh --shutdown`
+
+See **scripts/README.md** for more detail.
 
 ### Production notes
 

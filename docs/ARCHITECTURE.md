@@ -216,7 +216,7 @@ See the project **README** for exact venv and run commands per platform.
 
 ## 10. Diagram Files (PNG)
 
-All diagrams are in **docs/diagrams/** as PNGs and render reliably on GitHub and in docs.
+All diagrams are in **docs/diagrams/** as PNGs and render reliably on GitHub and in docs. To regenerate them, run `pip install -r requirements-diagrams.txt` and `python scripts/generate_diagrams.py` from the project root.
 
 | File | Description |
 |------|-------------|

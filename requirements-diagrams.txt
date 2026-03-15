@@ -1,0 +1,2 @@
+# Only needed to generate docs/diagrams/*.png. Run: pip install -r requirements-diagrams.txt && python scripts/generate_diagrams.py
+Pillow>=10.0.0
