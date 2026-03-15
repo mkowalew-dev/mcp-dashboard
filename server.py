@@ -44,6 +44,12 @@ _raw_delay = float(os.getenv("MCP_INTER_BATCH_DELAY_SEC", "1.0"))
 MCP_INTER_BATCH_DELAY = max(0.5, _raw_delay)
 # Max concurrent get_network_app_synthetics_metrics calls (1 = sequential, reduces 429s)
 MCP_SYNTH_CONCURRENCY = max(1, min(10, int(os.getenv("MCP_SYNTH_CONCURRENCY", "1"))))
+# Global MCP rate limit: max requests per minute (e.g. 240 rpm = 4 req/s); min interval between calls
+MCP_MAX_RPM = max(10, min(500, int(os.getenv("MCP_MAX_RPM", "240"))))
+_mcp_min_interval_sec = 60.0 / MCP_MAX_RPM
+_mcp_rate_limit_lock = asyncio.Lock()
+_mcp_last_call_time: float = 0.0
+
 _synth_semaphore: asyncio.Semaphore | None = None
 
 def _synth_sem() -> asyncio.Semaphore:
@@ -51,6 +57,17 @@ def _synth_sem() -> asyncio.Semaphore:
     if _synth_semaphore is None:
         _synth_semaphore = asyncio.Semaphore(MCP_SYNTH_CONCURRENCY)
     return _synth_semaphore
+
+
+async def _mcp_rate_limit_wait() -> None:
+    """Enforce global MCP request rate (MCP_MAX_RPM). Call once before each MCP request."""
+    global _mcp_last_call_time
+    async with _mcp_rate_limit_lock:
+        now = time.monotonic()
+        wait = max(0.0, _mcp_min_interval_sec - (now - _mcp_last_call_time))
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _mcp_last_call_time = time.monotonic()
 
 # Cache window metrics at least one refresh cycle (capped)
 METRICS_TTL_SECONDS = max(300, min(3600, REFRESH_MINUTES * 60))
@@ -242,85 +259,96 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
     from mcp.client.streamable_http import streamablehttp_client
     from mcp import ClientSession
 
-    headers = {"Authorization": f"Bearer {MCP_TOKEN}"}
-    last_err = None
-    for attempt in range(retries):
-        try:
-            async with streamablehttp_client(url=MCP_URL, headers=headers) as (read, write, _):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    result = await session.call_tool(tool_name, arguments or {})
-                    if getattr(result, "isError", False):
+    async def _do() -> dict | list:
+        headers = {"Authorization": f"Bearer {MCP_TOKEN}"}
+        last_err = None
+        for attempt in range(retries):
+            await _mcp_rate_limit_wait()
+            try:
+                async with streamablehttp_client(url=MCP_URL, headers=headers) as (read, write, _):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        result = await session.call_tool(tool_name, arguments or {})
+                        if getattr(result, "isError", False):
+                            texts = [c.text for c in result.content if hasattr(c, "text")]
+                            err_text = "\n".join(texts)
+                            if "429" in err_text or "Too Many Requests" in err_text:
+                                wait = min(60, 2 ** (attempt + 2))
+                                jitter = random.uniform(0, min(5, wait * 0.2))
+                                log.error(
+                                    "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%.1fs",
+                                    tool_name, attempt + 1, retries, wait + jitter,
+                                )
+                                await asyncio.sleep(wait + jitter)
+                                continue
+                            log.error("MCP tool error: tool=%s, error=%s", tool_name, err_text[:500])
+                            raise RuntimeError(f"MCP tool error: {err_text[:200]}")
                         texts = [c.text for c in result.content if hasattr(c, "text")]
-                        err_text = "\n".join(texts)
-                        if "429" in err_text or "Too Many Requests" in err_text:
-                            wait = min(60, 2 ** (attempt + 2))
-                            jitter = random.uniform(0, min(5, wait * 0.2))
-                            log.error(
-                                "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%.1fs",
-                                tool_name, attempt + 1, retries, wait + jitter,
-                            )
-                            await asyncio.sleep(wait + jitter)
-                            continue
-                        log.error("MCP tool error: tool=%s, error=%s", tool_name, err_text[:500])
-                        raise RuntimeError(f"MCP tool error: {err_text[:200]}")
-                    texts = [c.text for c in result.content if hasattr(c, "text")]
-                    combined = "\n".join(texts)
-                    try:
-                        return json.loads(combined)
-                    except json.JSONDecodeError:
-                        return {"raw": combined}
-        except RuntimeError:
-            raise
-        except Exception as e:
-            root = _unwrap_exception(e)
-            last_err = root
-            err_str = str(root).strip() or repr(root)
-            is_429 = "429" in str(e) or "Too Many Requests" in str(e)
-            if is_429:
-                wait = min(60, 2 ** (attempt + 2))
-                jitter = random.uniform(0, min(5, wait * 0.2))
-                log.error(
-                    "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%.1fs",
-                    tool_name, attempt + 1, retries, wait + jitter,
+                        combined = "\n".join(texts)
+                        try:
+                            return json.loads(combined)
+                        except json.JSONDecodeError:
+                            return {"raw": combined}
+            except RuntimeError:
+                raise
+            except Exception as e:
+                root = _unwrap_exception(e)
+                last_err = root
+                err_str = (str(root) or repr(root) or type(root).__name__).strip()
+                err_str = err_str or type(root).__name__
+                is_429 = (
+                    "429" in str(e) or "Too Many Requests" in str(e)
+                    or "429" in str(root) or "Too Many Requests" in str(root)
                 )
-            else:
-                wait = min(30, 2 ** (attempt + 2))
-                jitter = random.uniform(0, min(3, wait * 0.2))
-                log.error(
-                    "MCP transient error: tool=%s, attempt=%d/%d, retry_in=%.1fs, error=%s",
-                    tool_name, attempt + 1, retries, wait + jitter, err_str,
-                )
-            await asyncio.sleep(wait + jitter)
-            continue
-    root = _unwrap_exception(last_err) if last_err else last_err
-    err_str = str(root).strip() or repr(root)
-    log.error("MCP failed after %d retries: tool=%s, last_error=%s", retries, tool_name, err_str)
-    raise RuntimeError(f"Failed after {retries} retries on {tool_name}: {err_str}")
+                if is_429:
+                    wait = min(60, 2 ** (attempt + 2))
+                    jitter = random.uniform(0, min(5, wait * 0.2))
+                    log.error(
+                        "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%.1fs",
+                        tool_name, attempt + 1, retries, wait + jitter,
+                    )
+                else:
+                    wait = min(30, 2 ** (attempt + 2))
+                    jitter = random.uniform(0, min(3, wait * 0.2))
+                    log.error(
+                        "MCP transient error: tool=%s, attempt=%d/%d, retry_in=%.1fs, error=%s",
+                        tool_name, attempt + 1, retries, wait + jitter, err_str,
+                    )
+                await asyncio.sleep(wait + jitter)
+                continue
+        root = _unwrap_exception(last_err) if last_err else last_err
+        err_str = (str(root) or repr(root) or type(root).__name__).strip() or type(root).__name__
+        log.error("MCP failed after %d retries: tool=%s, last_error=%s", retries, tool_name, err_str)
+        raise RuntimeError(f"Failed after {retries} retries on {tool_name}: {err_str}")
+
+    if tool_name == "get_network_app_synthetics_metrics":
+        async with _synth_sem():
+            return await _do()
+    return await _do()
 
 
 async def _mcp_synth_metrics_batch(
     metric_ids: list[str], batch: list[str], start: str, end: str
 ) -> list[dict | None]:
-    """One MCP call per metric_id, same batch; concurrency limited by _synth_sem() to reduce 429s."""
+    """One MCP call per metric_id, same batch. Semaphore + rate limit applied inside call_mcp_tool."""
 
     async def _one(mid: str):
         try:
-            async with _synth_sem():
-                return await call_mcp_tool(
-                    "get_network_app_synthetics_metrics",
-                    {
-                        "metric_id": mid,
-                        "start_date": start,
-                        "end_date": end,
-                        "aggregation_type": "MEAN",
-                        "group_by": "TEST",
-                        "filter_dimension": "TEST",
-                        "filter_values": batch,
-                    },
-                )
+            return await call_mcp_tool(
+                "get_network_app_synthetics_metrics",
+                {
+                    "metric_id": mid,
+                    "start_date": start,
+                    "end_date": end,
+                    "aggregation_type": "MEAN",
+                    "group_by": "TEST",
+                    "filter_dimension": "TEST",
+                    "filter_values": batch,
+                },
+            )
         except Exception as e:
-            err_str = str(e).strip() or repr(e)
+            root = _unwrap_exception(e) if isinstance(e, Exception) else e
+            err_str = (str(root) or repr(root) or type(root).__name__).strip() or type(root).__name__
             log.error("MCP synth metric failed: metric_id=%s, error=%s", mid, err_str)
             return None
 

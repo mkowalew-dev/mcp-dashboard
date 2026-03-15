@@ -96,8 +96,9 @@ The server then builds in-memory structures: test IDs by name, agent lists with 
 ### 4.3 Metrics Refresh — Batched and Parallel Per Batch
 
 - **Input:** Synthetic test IDs from `base_cache` (excluding endpoint test IDs). Split into batches of **MCP_BATCH_SIZE** (default 15).
-- **Between batches:** Sleep **MCP_INTER_BATCH_DELAY_SEC** (default 1.0s; min 0.5s) plus small random jitter to reduce rate-limit (429) risk.
-- **Synth concurrency:** Within each batch, at most **MCP_SYNTH_CONCURRENCY** (default 1) concurrent `get_network_app_synthetics_metrics` calls run at once, so multiple metric_ids are requested sequentially to avoid 429s.
+- **Global rate limit:** All MCP requests are throttled to **MCP_MAX_RPM** (default 240) requests per minute (4/sec) so the client stays under the API’s 240 rpm limit.
+- **Between batches:** Sleep **MCP_INTER_BATCH_DELAY_SEC** (default 1.0s; min 0.5s) plus small random jitter to further smooth load.
+- **Synth concurrency:** At most **MCP_SYNTH_CONCURRENCY** (default 1) concurrent `get_network_app_synthetics_metrics` calls; all callers (batch and direct) are serialized via a semaphore inside `call_mcp_tool`.
 - **Within a batch:** For some metric groups, the server issues **multiple MCP metric calls in parallel** (e.g. `WEB_AVAILABILITY` and `DNS_TRACE_AVAILABILITY` together). Results are merged with a **first-wins** rule so that the same test never gets two different values for the same logical metric (merge order is deterministic).
 
 **Availability (24h default):**
@@ -129,7 +130,7 @@ Results are written to **metrics_cache** and **extra_kpi_cache** for the corresp
 - Each MCP tool call is retried up to **4 times** on transient errors.
 - **429 (rate limit):** Backoff is 2^(attempt+2) seconds with jitter (capped at 60s), then retry.
 - **Other errors:** Same exponential backoff (capped at 30s) with jitter.
-- If you still see 429s, increase **MCP_INTER_BATCH_DELAY_SEC** (e.g. 1.5 or 2.0) or decrease **MCP_BATCH_SIZE** (e.g. 10).
+- If you still see 429s, set **MCP_MAX_RPM** to the API limit (e.g. 240) or lower; increase **MCP_INTER_BATCH_DELAY_SEC** or decrease **MCP_BATCH_SIZE** as needed.
 - Logs mention tool name and attempt; **no tokens or raw response bodies** are logged.
 
 ---
@@ -184,9 +185,10 @@ Optional: If the user changes the time window and the server does not have fresh
 | **TE_TOKEN** | Yes | — | ThousandEyes API token (Bearer) for MCP. Do not commit. |
 | **REFRESH_MINUTES** | No | 15 | Scheduler interval (1–120). UI uses same value from `/api/data`. |
 | **MCP_URL** | No | `https://api.thousandeyes.com/mcp` | Override only if directed. |
+| **MCP_MAX_RPM** | No | 240 | Max MCP requests per minute (global throttle). Set to API limit (e.g. 240 rpm) or lower to avoid 429s. |
 | **MCP_BATCH_SIZE** | No | 15 | Test IDs per synthetics metrics batch (5–50). Smaller = less load per request; increase if 429s are rare. |
 | **MCP_INTER_BATCH_DELAY_SEC** | No | 1.0 | Delay (seconds) between batch rounds; min 0.5. Increase (e.g. 1.5–2.0) if you see 429s or transient errors. |
-| **MCP_SYNTH_CONCURRENCY** | No | 1 | Max concurrent `get_network_app_synthetics_metrics` calls (1 = sequential). Keeps 429s low; increase only if API allows. |
+| **MCP_SYNTH_CONCURRENCY** | No | 1 | Max concurrent `get_network_app_synthetics_metrics` calls (1 = sequential). All callers serialized in call_mcp_tool. |
 
 Use a `.env` file in the project root (loaded by `python-dotenv`) and keep it out of version control. Copy from `.env.example`.
 
@@ -216,7 +218,7 @@ See the project **README** for exact venv and run commands per platform.
 | **503 on /api/data** | Base cache not yet loaded. Wait for first scheduler run or call POST /api/refresh and wait. Check logs for MCP errors. |
 | **Empty or stale data** | Confirm `TE_TOKEN` is set and valid. Check outbound HTTPS to api.thousandeyes.com. Review logs for 429/retries or tool errors. |
 | **Slow first load** | First base + 24h metrics run can take tens of seconds depending on account size. Subsequent loads are served from cache. |
-| **Rate limits (429)** | Keep `MCP_SYNTH_CONCURRENCY=1` (default). Increase `MCP_INTER_BATCH_DELAY_SEC` or decrease `MCP_BATCH_SIZE` if needed. Ensure only one instance is running. |
+| **Rate limits (429)** | Defaults enforce 240 rpm and serialized synth calls. If 429s persist, set `MCP_MAX_RPM` to API limit or lower; ensure only one instance is running. |
 | **Wrong refresh interval in UI** | UI reads `refresh_interval_minutes` from `/api/data`. Ensure server was started with desired `REFRESH_MINUTES`. |
 | **Health check fails** | GET /api/health; if `base_cache_ready` is false, base refresh has not completed yet or failed (check logs). |
 
