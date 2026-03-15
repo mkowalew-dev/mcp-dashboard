@@ -103,6 +103,8 @@ TE_TOKEN=your-thousandeyes-token
 REFRESH_MINUTES=15
 ```
 
+**Optional start/stop scripts:** Use `scripts/start-stop.ps1` (Windows) or `scripts/start-stop.sh` (macOS/Linux) with `--startup` to check env and run the server in the background, and `--shutdown` to stop it. See `scripts/README.md`.
+
 ### Production notes
 
 - Run behind a reverse proxy (TLS termination, access control) if exposed beyond a lab; the app is **not** hardened as a public multi-tenant service.

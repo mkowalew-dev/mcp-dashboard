@@ -1,3 +1,7 @@
+# Dashboard PID and log (scripts/start-stop)
+.mcp-dashboard.pid
+.mcp-dashboard.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
