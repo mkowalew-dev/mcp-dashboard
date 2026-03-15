@@ -924,6 +924,24 @@ async def refresh_base_data_async():
 # Metrics: availability per time window
 # ---------------------------------------------------------------------------
 
+def _get_filtered_tests(all_tests: list[dict]) -> list[dict]:
+    """
+    Return test objects that pass the same filter as metrics (excluded types + excluded business services).
+    Used so the UI only shows tests we pull metrics for; excluded tests are hidden entirely.
+    """
+    out = []
+    for t in all_tests:
+        ttype = (t.get("type") or "").strip().lower()
+        if ttype in METRICS_EXCLUDED_TEST_TYPES:
+            continue
+        name = t.get("name") or ""
+        business_svc = get_business_service(name)
+        if business_svc.strip().lower() in METRICS_EXCLUDED_BUSINESS_SERVICES:
+            continue
+        out.append(t)
+    return out
+
+
 def _get_metrics_synth_tests() -> dict[str, str]:
     """
     Return name -> test_id for synthetic tests that should get metrics.
@@ -1462,6 +1480,8 @@ def api_data():
     base["metrics_ready"] = bool(metrics)
     base["refresh_interval_minutes"] = REFRESH_MINUTES
     base["metrics_ttl_seconds"] = METRICS_TTL_SECONDS
+    # Filter tests for UI: exclude by type and business service (same as metrics filter)
+    base["FILTERED_TESTS"] = _get_filtered_tests(base.get("ALL_TESTS") or [])
     return jsonify(base)
 
 

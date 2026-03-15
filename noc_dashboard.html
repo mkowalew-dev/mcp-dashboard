@@ -818,7 +818,7 @@ function toggleBsvc(id) { document.getElementById(id).classList.toggle('expanded
 
 function renderCEATests() {
   var container = document.getElementById('tab-cea');
-  var tests = DATA.ALL_TESTS || [];
+  var tests = DATA.FILTERED_TESTS || DATA.ALL_TESTS || [];
   var availability = DATA.TEST_AVAILABILITY || {};
   var issues = DATA.KNOWN_ISSUES || {};
   var extra = DATA.EXTRA_KPI || {};
@@ -1428,7 +1428,7 @@ function renderEndpointTable() {
 }
 
 function renderGauges() {
-  var tests = DATA.ALL_TESTS || [];
+  var tests = DATA.FILTERED_TESTS || DATA.ALL_TESTS || [];
   var availability = DATA.TEST_AVAILABILITY || {};
   var extra = DATA.EXTRA_KPI || {};
   if (tests.length === 0) return;
@@ -1656,7 +1656,7 @@ document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close
 function buildAvailabilityModal() {
   var rawAvail = DATA.TEST_AVAILABILITY || {};
   var testTypes = DATA.TEST_TYPES || {};
-  var tests = DATA.ALL_TESTS || [];
+  var tests = DATA.FILTERED_TESTS || DATA.ALL_TESTS || [];
   var idLookup = {};
   tests.forEach(function(t) { if (t.name && t.id) idLookup[t.name] = t.id; });
 
