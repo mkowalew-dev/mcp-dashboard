@@ -79,6 +79,43 @@ async def _get_synth_sem() -> asyncio.Semaphore:
 # Cache window metrics at least one refresh cycle (capped)
 METRICS_TTL_SECONDS = max(300, min(3600, REFRESH_MINUTES * 60))
 
+# Metrics filter: only pull metrics for tests that pass these filters (reduces load and 429s)
+# Excluded test types (e.g. SFTP, BGP); comma-separated, case-insensitive
+_excluded_types_raw = (os.getenv("METRICS_EXCLUDED_TEST_TYPES") or "bgp,ftp-server,sftp").strip()
+METRICS_EXCLUDED_TEST_TYPES = {t.strip().lower() for t in _excluded_types_raw.split(",") if t.strip()}
+# Excluded business service groupings (app-defined from test name patterns; same as UI). Pipe-separated; case-insensitive.
+_excluded_bs_raw = (os.getenv("METRICS_EXCLUDED_BUSINESS_SERVICES") or "Other Services|Demo & Monitoring|Facebook & Social|Data Center Management").strip()
+METRICS_EXCLUDED_BUSINESS_SERVICES = {s.strip().lower() for s in _excluded_bs_raw.split("|") if s.strip()}
+
+# Business service groupings: must match noc_dashboard.html BUSINESS_SERVICES order and patterns (test name -> grouping)
+BUSINESS_SERVICE_PATTERNS: list[tuple[str, list[re.Pattern]]] = [
+    ("Collaboration - Microsoft", [re.compile(r"^MSTeams(?!.*RetailDemo)", re.I)]),
+    ("Collaboration - Webex", [re.compile(r"^Webex", re.I)]),
+    ("Microsoft O365", [re.compile(r"^MSO365", re.I), re.compile(r"^MS O365", re.I), re.compile(r"^SD-WAN DIA.*O365", re.I)]),
+    ("Retail Operations", [re.compile(r"^RetailDemo", re.I), re.compile(r"^RetailSite", re.I), re.compile(r"^Public_Sector", re.I)]),
+    ("Pseudoco Platform", [re.compile(r"^Pseudoco", re.I), re.compile(r"^Psuedoco", re.I), re.compile(r"pseudoco\.", re.I)]),
+    ("AI Services", [re.compile(r"Bedrock", re.I)]),
+    ("AWS Cloud Services", [re.compile(r"^AWS", re.I)]),
+    ("Azure Cloud Services", [re.compile(r"^Azure", re.I)]),
+    ("Salesforce & CRM", [re.compile(r"^Salesforce", re.I), re.compile(r"^SAP", re.I), re.compile(r"salesforce\.com", re.I), re.compile(r"lightning\.force", re.I)]),
+    ("Workday HR", [re.compile(r"^Workday", re.I), re.compile(r"^RetailDemo_Workday", re.I)]),
+    ("Facebook & Social", [re.compile(r"^Facebook", re.I), re.compile(r"Facebook.*Traffic", re.I)]),
+    ("Network Infrastructure", [re.compile(r"^SD-WAN", re.I), re.compile(r"^DataCenter", re.I), re.compile(r"^Site-DC", re.I), re.compile(r"^Stores", re.I), re.compile(r"^TOR-NYC", re.I), re.compile(r"^SIP", re.I), re.compile(r"^SFTP", re.I)]),
+    ("Data Center Management", [re.compile(r"ESXi", re.I), re.compile(r"TrueNAS", re.I), re.compile(r"Xen Management", re.I), re.compile(r"Splunk", re.I)]),
+    ("Demo & Monitoring", [re.compile(r"^Mar Demo", re.I), re.compile(r"^Boutique", re.I), re.compile(r"^Internet Test", re.I), re.compile(r"^ThousandEyes", re.I), re.compile(r"thousandeyes\.com", re.I)]),
+]
+
+
+def get_business_service(test_name: str) -> str:
+    """Return the business service grouping for a test (matches noc_dashboard.html getBusinessService)."""
+    if not test_name:
+        return "Other Services"
+    for name, patterns in BUSINESS_SERVICE_PATTERNS:
+        for pat in patterns:
+            if pat.search(test_name):
+                return name
+    return "Other Services"
+
 WINDOWS = {
     "1h": 1,
     "6h": 6,
@@ -887,15 +924,41 @@ async def refresh_base_data_async():
 # Metrics: availability per time window
 # ---------------------------------------------------------------------------
 
+def _get_metrics_synth_tests() -> dict[str, str]:
+    """
+    Return name -> test_id for synthetic tests that should get metrics.
+    Excludes: endpoint tests (ep-), excluded test types (e.g. BGP, SFTP),
+    and tests in excluded business service groupings (Other Services, Demo & Monitoring, etc.).
+    """
+    with _cache_lock:
+        test_ids_by_name = dict(_base_cache.get("TEST_IDS") or {})
+        test_types = dict(_base_cache.get("TEST_TYPES") or {})
+
+    all_synth = {n: tid for n, tid in test_ids_by_name.items() if not tid.startswith("ep-")}
+    out = {}
+    for name, tid in all_synth.items():
+        ttype = (test_types.get(name) or "").strip().lower()
+        if ttype in METRICS_EXCLUDED_TEST_TYPES:
+            continue
+        business_svc = get_business_service(name)
+        if business_svc.strip().lower() in METRICS_EXCLUDED_BUSINESS_SERVICES:
+            continue
+        out[name] = tid
+    excluded_count = len(all_synth) - len(out)
+    if excluded_count > 0:
+        log.info(
+            "Metrics filter: %d tests excluded (by type or business service), %d tests included",
+            excluded_count, len(out),
+        )
+    return out
+
+
 async def fetch_metrics_async(hours: int) -> dict[str, float]:
     now = datetime.now(timezone.utc)
     start = (now - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
     end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    with _cache_lock:
-        test_ids_by_name = dict(_base_cache.get("TEST_IDS") or {})
-
-    synth_ids = {n: tid for n, tid in test_ids_by_name.items() if not tid.startswith("ep-")}
+    synth_ids = _get_metrics_synth_tests()
     if not synth_ids:
         return {}
 
@@ -993,10 +1056,11 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
     start = (now - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
     end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    with _cache_lock:
-        test_ids_by_name = dict(_base_cache.get("TEST_IDS") or {})
-
-    synth_ids = [tid for n, tid in test_ids_by_name.items() if not tid.startswith("ep-")]
+    synth_ids_dict = _get_metrics_synth_tests()
+    if not synth_ids_dict:
+        return {"avg_response_ms": None, "p95_response_ms": None, "avg_packet_loss": None, "loss_affected_paths": 0}
+    synth_ids = list(synth_ids_dict.values())
+    test_ids_by_name = synth_ids_dict
     batch_size = MCP_BATCH_SIZE
     delay = MCP_INTER_BATCH_DELAY
     _set_refresh_status(

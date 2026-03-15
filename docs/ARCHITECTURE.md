@@ -95,7 +95,8 @@ The server then builds in-memory structures: test IDs by name, agent lists with 
 
 ### 4.3 Metrics Refresh — Batched and Parallel Per Batch
 
-- **Input:** Synthetic test IDs from `base_cache` (excluding endpoint test IDs). Split into batches of **MCP_BATCH_SIZE** (default 15).
+- **Input:** Synthetic test IDs from `base_cache`, filtered by **metrics filter** (see below), then split into batches of **MCP_BATCH_SIZE** (default 15). Endpoint tests (`ep-`) are always excluded.
+- **Metrics filter:** Only tests that pass the filter get metrics pulled. Excluded by **test type** (e.g. BGP, SFTP / ftp-server) via **METRICS_EXCLUDED_TEST_TYPES** (comma-separated, default `bgp,ftp-server,sftp`). Excluded by **business service grouping** (app-defined from test names, same as UI) via **METRICS_EXCLUDED_BUSINESS_SERVICES** (pipe-separated, e.g. `Other Services|Demo and Monitoring|Facebook & Social|Datacenter Management`), Tests in those groupings are skipped so only critical business services get metrics; reduces test count (e.g. from 145 to only “Critical Business Service” tests) and lowers API load.
 - **Global rate limit:** All MCP requests are throttled to **MCP_MAX_RPM** (default 240) requests per minute (4/sec) so the client stays under the API’s 240 rpm limit.
 - **Between batches:** Sleep **MCP_INTER_BATCH_DELAY_SEC** (default 1.0s; min 0.5s) plus small random jitter to further smooth load.
 - **Synth concurrency:** At most **MCP_SYNTH_CONCURRENCY** (default 1) concurrent `get_network_app_synthetics_metrics` calls; all callers (batch and direct) are serialized via a semaphore inside `call_mcp_tool`.
@@ -189,6 +190,8 @@ Optional: If the user changes the time window and the server does not have fresh
 | **MCP_BATCH_SIZE** | No | 15 | Test IDs per synthetics metrics batch (5–50). Smaller = less load per request; increase if 429s are rare. |
 | **MCP_INTER_BATCH_DELAY_SEC** | No | 1.0 | Delay (seconds) between batch rounds; min 0.5. Increase (e.g. 1.5–2.0) if you see 429s or transient errors. |
 | **MCP_SYNTH_CONCURRENCY** | No | 1 | Max concurrent `get_network_app_synthetics_metrics` calls (1 = sequential). All callers serialized in call_mcp_tool. |
+| **METRICS_EXCLUDED_TEST_TYPES** | No | `bgp,ftp-server,sftp` | Comma-separated test types to exclude from metrics (e.g. BGP, SFTP). Case-insensitive. |
+| **METRICS_EXCLUDED_BUSINESS_SERVICES** | No | See .env.example | Pipe-separated business service grouping names (app-defined from test names, same as UI). Tests in these groupings are excluded from metrics. Case-insensitive. Use to pull metrics only for “Critical Business Service” (or similar). |
 
 Use a `.env` file in the project root (loaded by `python-dotenv`) and keep it out of version control. Copy from `.env.example`.
 
