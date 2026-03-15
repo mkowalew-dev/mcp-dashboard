@@ -1236,10 +1236,15 @@ def refresh_default_metrics():
 def scheduled_refresh():
     """One scheduler tick: base first (defines test IDs), then default-window metrics."""
     start = time.perf_counter()
-    refresh_base()
-    refresh_default_metrics()
-    elapsed = time.perf_counter() - start
-    log.info("Scheduled refresh complete in %.2fs", elapsed)
+    log.info("Scheduled refresh started")
+    try:
+        refresh_base()
+        refresh_default_metrics()
+        elapsed = time.perf_counter() - start
+        log.info("Scheduled refresh complete in %.2fs", elapsed)
+    except Exception as e:
+        elapsed = time.perf_counter() - start
+        log.exception("Scheduled refresh failed after %.2fs: %s", elapsed, e)
 
 
 def run_initial_load():
@@ -1484,7 +1489,43 @@ def api_refresh():
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Background scheduler and initial load (start once at import so gunicorn/wsgi also get refresh)
+# ---------------------------------------------------------------------------
+
+_scheduler = None
+_background_tasks_started = False
+
+
+def start_background_tasks():
+    """Start the refresh scheduler and initial data load. Safe to call multiple times (no-op after first)."""
+    global _scheduler, _background_tasks_started
+    if _background_tasks_started:
+        return
+    if not MCP_TOKEN:
+        log.warning("TE_TOKEN not set; scheduler and initial load not started")
+        return
+    _background_tasks_started = True
+    _scheduler = BackgroundScheduler()
+    _scheduler.add_job(scheduled_refresh, "interval", minutes=REFRESH_MINUTES, id="interval_refresh")
+    # First refresh 1 minute after start so data updates soon; then every REFRESH_MINUTES
+    _scheduler.add_job(
+        scheduled_refresh,
+        "date",
+        run_date=datetime.now(timezone.utc) + timedelta(minutes=1),
+        id="first_refresh",
+    )
+    _scheduler.start()
+    log.info("Scheduler started: first refresh in 1 min, then every %d minutes", REFRESH_MINUTES)
+    threading.Thread(target=run_initial_load, daemon=True).start()
+    log.info("Initial data load thread started (status at GET /api/refresh-status)")
+
+
+# Start when module is loaded so refresh works with "python server.py", gunicorn, or "flask run"
+start_background_tasks()
+
+
+# ---------------------------------------------------------------------------
+# Main (only for direct run; scheduler already started above)
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -1493,14 +1534,6 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     port = int(os.getenv("PORT", "8000"))
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(scheduled_refresh, "interval", minutes=REFRESH_MINUTES)
-    scheduler.start()
-    log.info("Scheduler started: refreshing every %d minutes", REFRESH_MINUTES)
-
-    log.info("Starting initial data load in background (status at GET /api/refresh-status)...")
-    threading.Thread(target=run_initial_load, daemon=True).start()
-
     log.info("Listening on http://0.0.0.0:%s/", port)
     log.info("MCP errors (e.g. 429 rate limits) are logged at ERROR level to this console / .mcp-dashboard.log")
     app.run(host="0.0.0.0", port=port, debug=False)
