@@ -37,6 +37,13 @@
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background: var(--te-dark); color: var(--te-text); font-family: var(--font-body); overflow-x: hidden; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  .app-layout { display: flex; min-height: 100vh; }
+  .nav-sidebar { width: 56px; flex-shrink: 0; background: var(--te-dark-2); border-right: 1px solid var(--te-border); display: flex; flex-direction: column; align-items: center; padding: 16px 0; gap: 4px; }
+  .nav-link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; padding: 10px 0; color: var(--te-text-dim); text-decoration: none; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; transition: color 0.2s, background 0.2s; }
+  .nav-link:hover { color: var(--te-text); background: var(--te-dark-3); }
+  .nav-link.active { color: var(--te-blue); background: var(--te-blue-dim); }
+  .nav-link svg { width: 22px; height: 22px; flex-shrink: 0; }
+  .app-content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   button.tab, button.map-toggle { font: inherit; }
   button.tab:focus-visible, button.map-toggle:focus-visible, .modal-close:focus-visible, .kpi-card:focus-visible { outline: 2px solid var(--te-blue); outline-offset: 2px; }
   ::-webkit-scrollbar { width: 6px; }
@@ -361,7 +368,18 @@
 </style>
 </head>
 <body>
-
+<div class="app-layout">
+<nav class="nav-sidebar" aria-label="Dashboard navigation">
+  <a href="/" class="nav-link active" title="NOC Performance Overview">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    <span>NOC</span>
+  </a>
+  <a href="/site-health" class="nav-link" title="Site Health Overview">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+    <span>Site Health</span>
+  </a>
+</nav>
+<div class="app-content">
 <div class="loading-overlay" id="loadingOverlay">
   <div class="loading-spinner"></div>
   <div class="loading-text">Connecting to ThousandEyes MCP</div>
@@ -455,6 +473,8 @@
   </div>
 </div>
 
+</div><!-- .app-content -->
+</div><!-- .app-layout -->
 <script>
 let DATA = null;
 let leafletMap = null;
@@ -829,7 +849,7 @@ function toggleBsvc(id) { document.getElementById(id).classList.toggle('expanded
 
 function renderCEATests() {
   var container = document.getElementById('tab-cea');
-  var tests = DATA.FILTERED_TESTS || DATA.ALL_TESTS || [];
+  var tests = DATA.ALL_TESTS || [];
   var availability = DATA.TEST_AVAILABILITY || {};
   var issues = DATA.KNOWN_ISSUES || {};
   var extra = DATA.EXTRA_KPI || {};
@@ -1439,7 +1459,7 @@ function renderEndpointTable() {
 }
 
 function renderGauges() {
-  var tests = DATA.FILTERED_TESTS || DATA.ALL_TESTS || [];
+  var tests = DATA.ALL_TESTS || [];
   var availability = DATA.TEST_AVAILABILITY || {};
   var extra = DATA.EXTRA_KPI || {};
   if (tests.length === 0) return;
@@ -1667,7 +1687,7 @@ document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close
 function buildAvailabilityModal() {
   var rawAvail = DATA.TEST_AVAILABILITY || {};
   var testTypes = DATA.TEST_TYPES || {};
-  var tests = DATA.FILTERED_TESTS || DATA.ALL_TESTS || [];
+  var tests = DATA.ALL_TESTS || [];
   var idLookup = {};
   tests.forEach(function(t) { if (t.name && t.id) idLookup[t.name] = t.id; });
 

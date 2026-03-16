@@ -37,6 +37,13 @@
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background: var(--te-dark); color: var(--te-text); font-family: var(--font-body); overflow-x: hidden; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  .app-layout { display: flex; min-height: 100vh; }
+  .nav-sidebar { width: 56px; flex-shrink: 0; background: var(--te-dark-2); border-right: 1px solid var(--te-border); display: flex; flex-direction: column; align-items: center; padding: 16px 0; gap: 4px; }
+  .nav-link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; padding: 10px 0; color: var(--te-text-dim); text-decoration: none; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; transition: color 0.2s, background 0.2s; }
+  .nav-link:hover { color: var(--te-text); background: var(--te-dark-3); }
+  .nav-link.active { color: var(--te-blue); background: var(--te-blue-dim); }
+  .nav-link svg { width: 22px; height: 22px; flex-shrink: 0; }
+  .app-content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   button:focus-visible, select:focus-visible { outline: 2px solid var(--te-blue); outline-offset: 2px; }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: var(--te-dark); }
@@ -153,7 +160,18 @@
 </style>
 </head>
 <body>
-
+<div class="app-layout">
+<nav class="nav-sidebar" aria-label="Dashboard navigation">
+  <a href="/" class="nav-link" title="NOC Performance Overview">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    <span>NOC</span>
+  </a>
+  <a href="/site-health" class="nav-link active" title="Site Health Overview">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+    <span>Site Health</span>
+  </a>
+</nav>
+<div class="app-content">
 <div class="loading-overlay" id="loadingOverlay">
   <div class="loading-spinner"></div>
   <div class="loading-text">Connecting to ThousandEyes MCP</div>
@@ -224,6 +242,8 @@
   <strong>Powered by <a href="https://www.thousandeyes.com" target="_blank" rel="noopener noreferrer">Cisco ThousandEyes</a></strong> &mdash; <span id="footerOrg"></span> &middot; Live Data via MCP
 </div>
 
+</div><!-- .app-content -->
+</div><!-- .app-layout -->
 <script>
 var DATA = null;
 var siteMap = null;
@@ -276,7 +296,7 @@ function buildSites(data) {
 function getSiteTests(site, data) {
   var agentTests = data.AGENT_TESTS || {};
   var allTestsMap = {};
-  (data.FILTERED_TESTS || data.ALL_TESTS || []).forEach(function(t) { allTestsMap[t.name] = t; });
+  (data.ALL_TESTS || []).forEach(function(t) { allTestsMap[t.name] = t; });
 
   var testNames = {};
   site.agents.forEach(function(a) {

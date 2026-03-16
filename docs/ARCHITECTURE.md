@@ -77,7 +77,7 @@ Both dashboards are standalone HTML files with embedded CSS and JavaScript; no b
 - **Map:** Leaflet map zoomed to the selected site location with agent markers.
 - **Agents at Site:** List of enterprise agents at the selected location.
 - **Test categories:** Tests are grouped into service categories — DNS Services, Web & Application, Network Connectivity, Voice & Collaboration, Other Monitoring — each showing a status dot, healthy/total count, health label, availability bar, and per-test tiles with availability percentage and type label. Test tiles link to ThousandEyes drill-down views.
-- **Data:** Uses the same `GET /api/data?window=…` endpoint. Site derivation, test grouping, and category classification are done client-side using `ALL_AGENTS`, `AGENT_TESTS`, `FILTERED_TESTS`, `TEST_AVAILABILITY`, and `EXTRA_KPI` from the API response.
+- **Data:** Uses the same `GET /api/data?window=…` endpoint. Site derivation, test grouping, and category classification are done client-side using `ALL_AGENTS`, `AGENT_TESTS`, `ALL_TESTS`, `TEST_AVAILABILITY`, and `EXTRA_KPI` from the API response.
 
 ---
 
@@ -205,7 +205,6 @@ Optional: If the user changes the time window and the server does not have fresh
 | **MCP_BATCH_SIZE** | No | 15 | Test IDs per synthetics metrics batch (5–50). Smaller = less load per request; increase if 429s are rare. |
 | **MCP_INTER_BATCH_DELAY_SEC** | No | 1.0 | Delay (seconds) between batch rounds; min 0.5. Increase (e.g. 1.5–2.0) if you see 429s or transient errors. |
 | **MCP_SYNTH_CONCURRENCY** | No | 1 | Max concurrent `get_network_app_synthetics_metrics` calls (1 = sequential). All callers serialized in call_mcp_tool. |
-| **METRICS_EXCLUDED_TEST_TYPES** | No | `bgp,ftp-server,sftp,agent-to-agent` | Comma-separated test types to exclude from metrics (e.g. BGP, SFTP, Agent-to-Agent). Case-insensitive. |
 | **METRICS_EXCLUDED_BUSINESS_SERVICES** | No | See .env.example | Pipe-separated business service grouping names (app-defined from test names, same as UI). Tests in these groupings are excluded from metrics. Case-insensitive. Use to pull metrics only for “Critical Business Service” (or similar). |
 
 Use a `.env` file in the project root (loaded by `python-dotenv`) and keep it out of version control. Copy from `.env.example`.
