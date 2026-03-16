@@ -485,8 +485,13 @@ function escHtml(s) {
 
 async function fetchData(win) {
   const resp = await fetch('/api/data?window=' + encodeURIComponent(win));
-  if (!resp.ok) throw new Error('API returned ' + resp.status);
-  return await resp.json();
+  const data = await resp.json().catch(function() { return {}; });
+  if (!resp.ok) {
+    var err = new Error(data.error || 'API returned ' + resp.status);
+    err.status = resp.status;
+    throw err;
+  }
+  return data;
 }
 
 async function loadData() {
@@ -502,9 +507,15 @@ async function loadData() {
     document.getElementById('loadingOverlay').classList.add('hidden');
   } catch (e) {
     console.error('Failed to load data:', e);
-    document.querySelector('.loading-text').textContent = 'Connection error';
-    document.querySelector('.loading-sub').textContent = 'Retrying in 5 seconds...';
-    setTimeout(loadData, 5000);
+    if (e.status === 503) {
+      document.querySelector('.loading-text').textContent = 'Waiting for first data load…';
+      document.querySelector('.loading-sub').textContent = 'Retrying in 3 seconds…';
+      setTimeout(loadData, 3000);
+    } else {
+      document.querySelector('.loading-text').textContent = 'Connection error';
+      document.querySelector('.loading-sub').textContent = 'Retrying in 5 seconds…';
+      setTimeout(loadData, 5000);
+    }
   }
 }
 
