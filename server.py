@@ -25,8 +25,13 @@ from flask import Flask, jsonify, request, send_file
 
 load_dotenv()
 
+# Log level: ERROR (default) = only errors/traces; WARNING, INFO, DEBUG for more verbosity
+_LOG_LEVEL_NAME = (os.getenv("LOG_LEVEL") or "ERROR").strip().upper()
+_LOG_LEVEL = getattr(logging, _LOG_LEVEL_NAME, logging.ERROR)
+if _LOG_LEVEL_NAME == "TRACE":
+    _LOG_LEVEL = logging.DEBUG
 logging.basicConfig(
-    level=logging.INFO,
+    level=_LOG_LEVEL,
     format="%(asctime)s %(levelname)s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -1602,5 +1607,5 @@ if __name__ == "__main__":
 
     port = int(os.getenv("PORT", "8000"))
     log.info("Listening on http://0.0.0.0:%s/", port)
-    log.info("MCP errors (e.g. 429 rate limits) are logged at ERROR level to this console / .mcp-dashboard.log")
+    log.info("Log level=%s (set LOG_LEVEL=ERROR|WARNING|INFO|DEBUG|TRACE to change)", _LOG_LEVEL_NAME)
     app.run(host="0.0.0.0", port=port, debug=False)
