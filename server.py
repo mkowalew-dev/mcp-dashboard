@@ -1434,6 +1434,11 @@ def index():
     return send_file("noc_dashboard.html")
 
 
+@app.route("/site-health")
+def site_health():
+    return send_file("site_health.html")
+
+
 @app.route("/api/health")
 def api_health():
     """Liveness + whether MCP base cache has been populated."""

@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Site Health Overview — per-site monitoring health from ThousandEyes via MCP.">
+<title>ThousandEyes — Site Health Overview</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --te-blue: #049FD9;
+    --te-blue-dark: #037BAA;
+    --te-blue-dim: rgba(4,159,217,0.12);
+    --te-dark: #0B1120;
+    --te-dark-2: #111827;
+    --te-dark-3: #1A2332;
+    --te-dark-4: #243044;
+    --te-border: rgba(255,255,255,0.08);
+    --te-text: #E8ECF4;
+    --te-text-dim: #7B8FAD;
+    --te-green: #00D68F;
+    --te-green-dim: rgba(0,214,143,0.15);
+    --te-yellow: #F7B500;
+    --te-yellow-dim: rgba(247,181,0,0.15);
+    --te-red: #EF4444;
+    --te-red-dim: rgba(239,68,68,0.15);
+    --te-orange: #F97316;
+    --te-purple: #A78BFA;
+    --te-cyan: #58A6FF;
+    --te-surface: rgba(4,159,217,0.10);
+    --te-surface-border: rgba(4,159,217,0.28);
+    --radius: 10px;
+    --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background: var(--te-dark); color: var(--te-text); font-family: var(--font-body); overflow-x: hidden; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--te-blue); outline-offset: 2px; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--te-dark); }
+  ::-webkit-scrollbar-thumb { background: var(--te-dark-4); border-radius: 3px; }
+
+  .header { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; height: 58px; background: rgba(11,17,32,0.94); backdrop-filter: blur(20px); border-bottom: 1px solid var(--te-border); }
+  .header-left { display:flex; align-items:center; gap:16px; }
+  .te-logo { display:flex; align-items:center; gap:8px; }
+  .te-logo-icon { display: flex; align-items: center; justify-content: center; }
+  .te-logo-icon svg { height: 28px; width: auto; }
+  .header-brand { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--te-text-dim); margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--te-dark-4); }
+  .header-subtitle { font-size: 11px; color: var(--te-text-dim); letter-spacing: 2px; text-transform: uppercase; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--te-dark-4); }
+  .header-right { display:flex; align-items:center; gap: 20px; }
+  .live-indicator { display:flex; align-items:center; gap:7px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--te-green); font-weight: 600; }
+  .live-dot { width:7px; height:7px; border-radius:50%; background: var(--te-green); animation: pulse 2s ease-in-out infinite; box-shadow: 0 0 8px var(--te-green); }
+  @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
+
+  .controls-bar { display: flex; align-items: center; justify-content: space-between; padding: 14px 28px; border-bottom: 1px solid var(--te-border); background: var(--te-dark-2); flex-wrap: wrap; gap: 12px; }
+  .controls-left { display: flex; align-items: center; gap: 16px; }
+  .controls-right { display: flex; align-items: center; gap: 16px; }
+
+  .site-label { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--te-text-dim); }
+  .site-select { background: var(--te-dark-3); border: 1px solid var(--te-border); color: var(--te-text); font-family: var(--font-body); font-size: 13px; font-weight: 600; padding: 8px 32px 8px 14px; border-radius: 8px; cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237B8FAD' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; min-width: 200px; transition: border-color 0.2s; }
+  .site-select:hover { border-color: var(--te-blue); }
+
+  .window-buttons { display: flex; gap: 2px; background: var(--te-dark-3); border-radius: 8px; padding: 3px; border: 1px solid var(--te-border); }
+  .window-label { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--te-text-dim); margin-right: 4px; align-self: center; }
+  .win-btn { font-family: var(--font-mono); font-size: 11px; font-weight: 600; padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; background: transparent; color: var(--te-text-dim); transition: all 0.2s; }
+  .win-btn:hover { color: var(--te-text); background: var(--te-dark-4); }
+  .win-btn.active { background: var(--te-blue); color: #fff; }
+
+  .updated-label { font-size: 11px; color: var(--te-text-dim); font-family: var(--font-mono); }
+  .refresh-btn { font-family: var(--font-body); font-size: 11px; font-weight: 600; padding: 7px 16px; border: 1px solid var(--te-border); border-radius: 8px; background: var(--te-dark-3); color: var(--te-text-dim); cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+  .refresh-btn:hover { border-color: var(--te-blue); color: var(--te-text); }
+  .refresh-btn svg { width: 14px; height: 14px; }
+
+  .kpi-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--te-border); border-bottom: 1px solid var(--te-border); }
+  .kpi-card { background: var(--te-dark-2); padding: 16px 20px; position: relative; overflow: hidden; }
+  .kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); margin-bottom: 6px; font-weight: 600; }
+  .kpi-value { font-size: 26px; font-weight: 700; color: #fff; font-family: var(--font-mono); }
+  .kpi-value.green { color: var(--te-green); }
+  .kpi-value.yellow { color: var(--te-yellow); }
+  .kpi-value.red { color: var(--te-red); }
+  .kpi-value.blue { color: var(--te-blue); }
+  .kpi-sub { font-size: 11px; color: var(--te-text-dim); margin-top: 4px; font-family: var(--font-mono); }
+
+  .main-grid { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 200px); }
+
+  .left-panel { padding: 20px; border-right: 1px solid var(--te-border); display: flex; flex-direction: column; gap: 20px; }
+  .map-container { background: var(--te-dark-2); border-radius: var(--radius); border: 1px solid var(--te-border); position: relative; overflow: hidden; height: 320px; }
+  #siteMap { width: 100%; height: 100%; background: var(--te-dark-2); }
+  .leaflet-container { background: var(--te-dark-2) !important; font-family: var(--font-body) !important; }
+  .leaflet-control-zoom { border: 1px solid var(--te-border) !important; }
+  .leaflet-control-zoom a { background: var(--te-dark-3) !important; color: var(--te-text-dim) !important; border-color: var(--te-border) !important; width: 28px !important; height: 28px !important; line-height: 28px !important; font-size: 14px !important; }
+  .leaflet-control-zoom a:hover { background: var(--te-dark-4) !important; color: #fff !important; }
+  .leaflet-control-attribution { display: none !important; }
+  .facility-marker { border-radius: 50%; border: 2px solid rgba(0,0,0,0.4); cursor: pointer; transition: transform 0.2s; box-shadow: 0 0 12px currentColor; }
+  .facility-marker:hover { transform: scale(1.4); }
+
+  .agents-section { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 16px; }
+  .agents-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .agent-at-site { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--te-border); }
+  .agent-at-site:last-child { border-bottom: none; }
+  .agent-site-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .agent-site-name { font-size: 13px; font-weight: 600; color: #fff; }
+  .agent-site-type { font-size: 10px; color: var(--te-text-dim); font-weight: 500; margin-left: auto; padding: 2px 8px; border-radius: 4px; background: var(--te-dark-3); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .right-panel { padding: 20px 28px; overflow-y: auto; max-height: calc(100vh - 200px); display: flex; flex-direction: column; gap: 20px; }
+
+  .category-section { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); overflow: hidden; }
+  .category-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; }
+  .category-header-left { display: flex; align-items: center; gap: 10px; }
+  .category-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .category-name { font-size: 14px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; }
+  .category-header-right { display: flex; align-items: center; gap: 14px; }
+  .category-count { font-size: 12px; font-family: var(--font-mono); font-weight: 600; }
+  .category-health-label { font-size: 11px; font-weight: 600; }
+  .category-bar { width: 120px; height: 6px; background: var(--te-dark-4); border-radius: 3px; overflow: hidden; }
+  .category-bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
+  .category-avail { font-family: var(--font-mono); font-size: 13px; font-weight: 700; }
+
+  .category-body { padding: 0 20px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+  .test-tile { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: 8px; padding: 14px; transition: border-color 0.2s; cursor: default; }
+  .test-tile:hover { border-color: rgba(255,255,255,0.15); }
+  .test-tile-status { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .test-tile-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .test-tile-name { font-size: 12px; font-weight: 600; color: #fff; line-height: 1.3; word-break: break-word; }
+  .test-tile-avail { font-family: var(--font-mono); font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .test-tile-type { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--te-text-dim); }
+
+  .footer { text-align: center; padding: 20px 0; border-top: 1px solid var(--te-border); font-size: 12px; color: var(--te-text-dim); }
+  .footer a { color: var(--te-blue); text-decoration: none; }
+
+  .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--te-dark); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; transition: opacity 0.5s; }
+  .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+  .loading-spinner { width: 48px; height: 48px; border: 3px solid var(--te-dark-4); border-top-color: var(--te-blue); border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { margin-top: 20px; font-size: 14px; color: var(--te-text-dim); letter-spacing: 1px; }
+  .loading-sub { margin-top: 8px; font-size: 11px; color: var(--te-text-dim); opacity: 0.6; }
+
+  .no-site { display: flex; align-items: center; justify-content: center; height: 300px; font-size: 14px; color: var(--te-text-dim); text-align: center; }
+
+  @media (max-width: 1100px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .right-panel { max-height: none; }
+    .kpi-strip { grid-template-columns: repeat(4, 1fr); }
+    .left-panel { border-right: none; border-bottom: 1px solid var(--te-border); }
+  }
+  @media (max-width: 700px) {
+    .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+    .controls-bar { flex-direction: column; align-items: flex-start; }
+    .category-body { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Connecting to ThousandEyes MCP</div>
+  <div class="loading-sub" id="loadingSub">Fetching live data...</div>
+</div>
+
+<header class="header">
+  <div class="header-left">
+    <div class="te-logo">
+      <div class="te-logo-icon">
+        <svg viewBox="0 0 251 55" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.84 2.78h-2.586v10.629h2.587V2.779ZM38.794 5.822c-.087-.044-.964-.573-2.191-.573-1.666 0-2.85 1.19-2.85 2.823 0 1.632 1.096 2.823 2.85 2.823 1.227 0 2.06-.486 2.191-.574v2.867c-.307.088-1.227.397-2.367.397-2.937 0-5.48-2.073-5.48-5.513 0-3.176 2.324-5.513 5.48-5.513 1.227 0 2.104.308 2.367.397v2.866ZM11.704 5.822c-.088-.044-.92-.573-2.192-.573-1.666 0-2.85 1.19-2.85 2.823 0 1.632 1.097 2.823 2.85 2.823 1.227 0 2.06-.486 2.192-.574v2.867c-.307.088-1.228.397-2.367.397-2.937 0-5.48-2.073-5.48-5.513 0-3.176 2.324-5.513 5.48-5.513 1.227 0 2.104.308 2.367.397v2.866ZM52.383 8.072c0 3.043-2.28 5.513-5.436 5.513s-5.435-2.47-5.435-5.513c0-3.043 2.28-5.513 5.435-5.513 3.2 0 5.436 2.47 5.436 5.513Zm-5.436-2.779c-1.534 0-2.674 1.235-2.674 2.779 0 1.544 1.14 2.779 2.674 2.779s2.674-1.235 2.674-2.78c.044-1.543-1.096-2.778-2.674-2.778ZM27.704 5.16c-.044 0-1.14-.308-2.017-.308-1.052 0-1.622.353-1.622.882 0 .662.746.882 1.184 1.015l.701.22c1.666.574 2.455 1.764 2.455 3.043 0 2.69-2.28 3.573-4.252 3.573-1.403 0-2.674-.265-2.805-.309v-2.425c.219.044 1.315.396 2.454.396 1.272 0 1.885-.396 1.885-1.014 0-.53-.526-.838-1.14-1.059-.175-.044-.394-.132-.57-.176-1.446-.485-2.63-1.367-2.63-3.131 0-1.985 1.447-3.308 3.814-3.308 1.271 0 2.455.308 2.543.352v2.25Z" fill="#E8ECF4"/><path d="M8.898 25.934H3.507c-.702 0-1.008-.529-1.008-1.72v-1.058c0-1.191.306-1.72 1.008-1.72h16.087c.702 0 1.008.529 1.008 1.72v1.058c0 1.191-.306 1.72-1.008 1.72H14.16v18.437c0 .705-.614 1.102-2.06 1.102h-1.184c-1.447 0-2.06-.397-2.06-1.102l.043-18.437ZM22.444 20.73c0-.706.613-1.103 2.06-1.103h.964c1.447 0 2.06.397 2.06 1.103v8.82c1.053-1.278 2.762-2.337 4.822-2.337 3.42 0 5.13 1.764 5.13 5.557v11.556c0 .706-.614 1.103-2.061 1.103h-.964c-1.447 0-2.06-.397-2.06-1.103V33.52c0-1.323-.702-2.117-2.192-2.117-1.403 0-2.324 1.191-2.718 1.985v10.938c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103l.044-23.596ZM50.805 36.431c0-3.44-.964-5.204-3.112-5.204s-3.157 1.764-3.157 5.204c0 3.44 1.009 5.249 3.157 5.249s3.112-1.809 3.112-5.249Zm-3.112-9.218c5.435 0 8.24 3.264 8.24 9.218 0 5.954-2.805 9.262-8.24 9.262-5.436 0-8.241-3.308-8.241-9.262 0-5.954 2.849-9.218 8.24-9.218ZM58.695 28.536c0-.706.614-1.102 2.06-1.102h.965c1.447 0 2.06.396 2.06 1.102v10.806c0 1.323.526 2.117 2.06 2.117 1.403 0 2.324-1.19 2.718-1.985V28.536c0-.706.614-1.102 2.06-1.102h.965c1.446 0 2.06.396 2.06 1.102v10.806c0 3.529.395 4.234.395 4.984 0 .838-2.981 1.103-3.814 1.103-1.096 0-1.14-1.456-1.359-2.382-1.008 1.28-2.85 2.602-5.085 2.602-3.419 0-4.997-1.764-4.997-5.557V28.536h-.088ZM77.763 40.71c.438 0 1.753.97 3.331.97 1.447 0 2.06-.53 2.06-1.544 0-3-6.794-1.235-6.794-7.366 0-3.44 2.411-5.557 6.269-5.557 1.14 0 5.04.22 5.04 2.161 0 .441-.788 2.558-1.446 2.558-.35 0-1.359-.705-2.893-.705-1.14 0-1.841.396-1.841 1.235 0 2.513 6.794 1.19 6.794 7.321 0 3.617-2.542 5.954-6.356 5.954-2.98 0-5.961-.794-5.961-2.425 0-.75 1.096-2.603 1.797-2.603ZM97.094 41.68c1.272 0 2.5-.927 3.069-2.162v-1.896c-3.244 0-4.778.882-4.778 2.558 0 .838.57 1.5 1.71 1.5Zm3.069-7.366v-1.147c0-1.323-.79-1.94-2.674-1.94-2.499 0-3.945 1.102-4.34 1.102-.701 0-1.753-2.029-1.753-2.734 0-1.147 2.718-2.382 6.487-2.382 5.392 0 7.321 2.382 7.321 5.734v6.44c0 3.528.394 4.233.394 4.983 0 .838-2.98 1.103-3.813 1.103-1.096 0-1.14-1.456-1.359-2.382-.219.441-1.885 2.602-4.997 2.602-3.682 0-5.041-2.205-5.041-4.984 0-2.778 1.096-6.395 9.775-6.395ZM108.887 33.52c0-3.44-.395-4.146-.395-4.852 0-.837 2.981-1.102 3.814-1.102 1.096 0 1.14 1.367 1.359 2.205 1.008-1.323 2.849-2.602 5.085-2.602 3.419 0 4.997 1.764 4.997 5.557v11.556c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103V33.52c0-1.323-.526-2.117-2.06-2.117-1.403 0-2.324 1.191-2.718 1.985v10.938c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103V33.52h.088ZM136.458 39.519v-7.63a4.595 4.595 0 0 0-2.367-.662c-2.148 0-3.156 1.764-3.156 5.204 0 3.44.877 5.117 2.762 5.117 1.227 0 2.148-.97 2.761-2.03Zm-10.695-3.088c0-5.601 2.586-9.218 7.189-9.218 1.622 0 2.761.53 3.463 1.059V20.73c0-.706.613-1.103 2.06-1.103h.964c1.447 0 2.061.397 2.061 1.103v18.656c0 3.529.394 4.234.394 4.984 0 .838-2.981 1.103-3.814 1.103-1.096 0-1.139-1.456-1.359-2.338-.789 1.456-2.454 2.559-4.558 2.559-3.683-.045-6.4-3.264-6.4-9.263Z" fill="#E8ECF4"/><path d="M145.226 22.803c0-.97.394-1.367 1.358-1.367h12.406c.701 0 1.008.529 1.008 1.72v1.058c0 1.191-.307 1.72-1.008 1.72h-8.592v4.984h7.671c.702 0 1.008.53 1.008 1.72v1.059c0 1.19-.306 1.72-1.008 1.72h-7.671v5.557h8.636c.701 0 1.008.53 1.008 1.72v.97c0 1.192-.307 1.721-1.008 1.721h-12.45c-.964 0-1.358-.397-1.358-1.367V22.803ZM161.269 28.8a1.754 1.754 0 0 1-.131-.617c0-.485.657-.75 2.06-.75h1.096c1.008 0 1.753.177 1.929.706l2.016 6.351c.219.794.658 2.691.964 4.146h.132c.307-1.455.701-3.396.964-4.146l2.017-6.35c.175-.53.92-.706 1.928-.706h.833c1.447 0 2.061.264 2.061.75 0 .176-.044.396-.088.617l-7.803 22.935c-.219.53-.92.706-1.929.706h-.569c-1.403 0-2.061-.265-2.061-.706 0-.176.044-.397.132-.618l2.148-5.733-5.699-16.584ZM187.877 34.71c0-1.984-.745-3.483-2.455-3.483-1.446 0-2.674.838-3.068 3.484h5.523Zm-2.455-7.497c5.348 0 7.365 4.058 7.365 8.821 0 .573-1.315 2.029-1.754 2.029h-8.679c.219 2.734 1.71 3.617 3.901 3.617 2.192 0 3.639-1.059 4.121-1.059.745 0 1.753 1.897 1.753 2.602 0 1.72-4.208 2.47-6.137 2.47-6.18 0-8.898-3.616-8.898-9.13.087-6.748 3.507-9.35 8.328-9.35ZM195.592 40.71c.439 0 1.754.97 3.332.97 1.446 0 2.06-.53 2.06-1.544 0-3-6.794-1.235-6.794-7.366 0-3.44 2.411-5.557 6.268-5.557 1.14 0 5.041.22 5.041 2.161 0 .441-.789 2.558-1.446 2.558-.351 0-1.359-.705-2.893-.705-1.14 0-1.842.396-1.842 1.235 0 2.513 6.795 1.19 6.795 7.321 0 3.617-2.543 5.954-6.356 5.954-2.981 0-5.962-.794-5.962-2.425-.044-.75 1.052-2.603 1.797-2.603Z" fill="#FF682E"/><path d="M217.422 33.168c1.797 2.426 6.882 8.248 13.238 8.248 4.428 0 8.855-2.779 13.063-8.248-4.296-5.337-8.679-8.072-13.063-8.072-6.356.045-11.397 5.734-13.238 8.072Zm13.282 11.997c-10.082 0-16.876-10.542-17.139-10.983l-.658-1.014.658-1.015c.263-.44 7.057-10.761 17.139-10.761 5.962 0 11.66 3.572 16.964 10.63l.833 1.102-.833 1.146c-5.304 7.278-11.002 10.895-16.964 10.895Z" fill="#FF682E"/><path d="M222.989 45.165c-9.862-.31-16.219-10.63-16.482-11.07l-.526-1.015.614-1.015c.263-.44 6.532-10.32 16.307-10.673-7.628 3.528-12.888 11.864-12.888 11.864s4.428 7.498 12.975 11.909ZM229.214 39.386c2.455-1.367 5.348-3.175 7.759-6.218-2.367-2.956-5.655-4.676-8.066-5.999 5.83-1.279 10.871 4.499 10.871 4.499l1.359 1.5-1.359 1.543c-5.26 5.822-10.564 4.675-10.564 4.675Z" fill="#FF682E"/><path d="M226.935 36.035a2.726 2.726 0 0 0 2.717-2.735 2.726 2.726 0 0 0-2.717-2.735 2.726 2.726 0 0 0-2.718 2.735 2.726 2.726 0 0 0 2.718 2.735Z" fill="#FF682E"/></svg>
+      </div>
+    </div>
+    <span class="header-subtitle">Site Health Overview</span>
+  </div>
+  <div class="header-right">
+    <div class="live-indicator"><div class="live-dot"></div> LIVE DATA &middot; <span id="liveRefreshLabel">AUTO-REFRESH 15M</span></div>
+  </div>
+</header>
+
+<div class="controls-bar">
+  <div class="controls-left">
+    <span class="site-label">Site</span>
+    <select class="site-select" id="siteSelect" onchange="onSiteChange()"></select>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="window-label">Window</span>
+      <div class="window-buttons" id="windowButtons">
+        <button class="win-btn" data-win="1h">1H</button>
+        <button class="win-btn" data-win="6h">6H</button>
+        <button class="win-btn" data-win="12h">12H</button>
+        <button class="win-btn active" data-win="24h">24H</button>
+        <button class="win-btn" data-win="2d">2D</button>
+        <button class="win-btn" data-win="7d">7D</button>
+      </div>
+    </div>
+  </div>
+  <div class="controls-right">
+    <span class="updated-label" id="updatedLabel">Updated --</span>
+    <button class="refresh-btn" onclick="doRefresh()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Refresh
+    </button>
+  </div>
+</div>
+
+<div class="kpi-strip" id="kpiStrip">
+  <div class="kpi-card"><div class="kpi-label">Overall Avail.</div><div class="kpi-value green" id="kpiOverall">--</div><div class="kpi-sub" id="kpiOverallSub">loading...</div></div>
+  <div class="kpi-card"><div class="kpi-label">Total Tests</div><div class="kpi-value blue" id="kpiTests">--</div><div class="kpi-sub" id="kpiTestsSub">loading...</div></div>
+  <div class="kpi-card"><div class="kpi-label">Healthy</div><div class="kpi-value green" id="kpiHealthy">--</div><div class="kpi-sub" id="kpiHealthySub">loading...</div></div>
+  <div class="kpi-card"><div class="kpi-label">Degraded</div><div class="kpi-value yellow" id="kpiDegraded">--</div><div class="kpi-sub" id="kpiDegradedSub">loading...</div></div>
+  <div class="kpi-card"><div class="kpi-label">Critical</div><div class="kpi-value" id="kpiCritical">--</div><div class="kpi-sub" id="kpiCriticalSub">loading...</div></div>
+  <div class="kpi-card"><div class="kpi-label">Active Alerts</div><div class="kpi-value" id="kpiAlerts">--</div><div class="kpi-sub" id="kpiAlertsSub">loading...</div></div>
+  <div class="kpi-card"><div class="kpi-label">Agents</div><div class="kpi-value" id="kpiAgents">--</div><div class="kpi-sub" id="kpiAgentsSub">loading...</div></div>
+</div>
+
+<div class="main-grid">
+  <div class="left-panel">
+    <div class="map-container"><div id="siteMap"></div></div>
+    <div class="agents-section">
+      <div class="agents-section-title">Agents at Site</div>
+      <div id="agentsList"></div>
+    </div>
+  </div>
+  <div class="right-panel" id="rightPanel"></div>
+</div>
+
+<div class="footer" id="footer">
+  <strong>Powered by <a href="https://www.thousandeyes.com" target="_blank" rel="noopener noreferrer">Cisco ThousandEyes</a></strong> &mdash; <span id="footerOrg"></span> &middot; Live Data via MCP
+</div>
+
+<script>
+var DATA = null;
+var siteMap = null;
+var currentWindow = '24h';
+var currentSiteKey = null;
+
+var TEST_CATEGORIES = [
+  { key: 'dns', name: 'DNS Services', icon: '\u26A0', types: ['dns-server', 'dnstrace', 'dnssec'] },
+  { key: 'web', name: 'Web & Application', icon: '\u26A0', types: ['http-server', 'page-load', 'web-transactions', 'api', 'ftp-server'] },
+  { key: 'net', name: 'Network Connectivity', icon: '\u26A0', types: ['agent-to-server', 'agent-to-agent'] },
+  { key: 'voice', name: 'Voice & Collaboration', icon: '\u26A0', types: ['voice', 'sip-server'] },
+  { key: 'other', name: 'Other Monitoring', icon: '\u26A0', types: ['bgp'] },
+];
+
+var TYPE_LABELS = {
+  'http-server': 'HTTP Server', 'page-load': 'Page Load', 'dns-server': 'DNS Server',
+  'agent-to-server': 'Agent\u2192Server', 'agent-to-agent': 'Agent\u2192Agent',
+  'web-transactions': 'Web Txn', 'api': 'API', 'voice': 'Voice/RTP',
+  'bgp': 'BGP', 'DnsTrace': 'DNS Trace', 'sip-server': 'SIP Server',
+  'ftp-server': 'FTP Server', 'Dnssec': 'DNSSEC', 'dnstrace': 'DNS Trace', 'dnssec': 'DNSSEC',
+};
+
+function escHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function getSiteKey(agent) {
+  return agent.city || agent.name || agent.id;
+}
+
+function buildSites(data) {
+  var agents = (data.ALL_AGENTS || []).filter(function(a) { return a.type === 'enterprise'; });
+  var sites = {};
+  agents.forEach(function(a) {
+    var key = getSiteKey(a);
+    if (!sites[key]) {
+      sites[key] = { name: key, agents: [], lat: a.lat, lng: a.lng, loc: a.loc || a.city || '' };
+    }
+    sites[key].agents.push(a);
+    if (a.lat != null && sites[key].lat == null) {
+      sites[key].lat = a.lat;
+      sites[key].lng = a.lng;
+    }
+  });
+  return sites;
+}
+
+function getSiteTests(site, data) {
+  var agentTests = data.AGENT_TESTS || {};
+  var allTestsMap = {};
+  (data.FILTERED_TESTS || data.ALL_TESTS || []).forEach(function(t) { allTestsMap[t.name] = t; });
+
+  var testNames = {};
+  site.agents.forEach(function(a) {
+    (agentTests[a.id] || []).forEach(function(tn) {
+      if (allTestsMap[tn]) testNames[tn] = allTestsMap[tn];
+    });
+  });
+  return Object.values(testNames);
+}
+
+function getTestAvail(test, data) {
+  var avail = data.TEST_AVAILABILITY || {};
+  var extra = data.EXTRA_KPI || {};
+  var tp = (test.type || '').toLowerCase();
+
+  if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
+    var lossMap = {};
+    (extra.loss_by_test || []).forEach(function(r) { lossMap[r.test] = r.loss; });
+    var l = lossMap[test.name];
+    if (l != null) return Math.max(0, 100 - l);
+    return avail[test.name] != null ? avail[test.name] : null;
+  }
+  return avail[test.name] != null ? avail[test.name] : null;
+}
+
+function getTestStatus(test, data) {
+  var v = getTestAvail(test, data);
+  if (v == null) return 'unknown';
+  if (v < 80) return 'critical';
+  if (v < 95) return 'degraded';
+  return 'healthy';
+}
+
+function statusColor(status) {
+  if (status === 'critical') return 'var(--te-red)';
+  if (status === 'degraded') return 'var(--te-yellow)';
+  if (status === 'healthy') return 'var(--te-green)';
+  return 'var(--te-text-dim)';
+}
+
+async function fetchData(win) {
+  var resp = await fetch('/api/data?window=' + encodeURIComponent(win));
+  if (!resp.ok) throw new Error('API returned ' + resp.status);
+  return await resp.json();
+}
+
+async function loadData() {
+  try {
+    DATA = await fetchData(currentWindow);
+    var rm = parseInt(DATA.refresh_interval_minutes, 10);
+    if (rm >= 1 && rm <= 120) {
+      var lr = document.getElementById('liveRefreshLabel');
+      if (lr) lr.textContent = 'AUTO-REFRESH ' + rm + 'M';
+    }
+    populateSiteSelect();
+    renderSite();
+    document.getElementById('loadingOverlay').classList.add('hidden');
+  } catch (e) {
+    console.error('Failed to load data:', e);
+    document.querySelector('.loading-text').textContent = 'Connection error';
+    document.querySelector('.loading-sub').textContent = 'Retrying in 5 seconds...';
+    setTimeout(loadData, 5000);
+  }
+}
+
+function populateSiteSelect() {
+  var sel = document.getElementById('siteSelect');
+  var sites = buildSites(DATA);
+  var keys = Object.keys(sites).sort(function(a, b) {
+    return sites[b].agents.length - sites[a].agents.length || a.localeCompare(b);
+  });
+
+  sel.innerHTML = '';
+  keys.forEach(function(k) {
+    var opt = document.createElement('option');
+    var agentCount = sites[k].agents.length;
+    opt.value = k;
+    opt.textContent = k + ' (' + agentCount + ' agent' + (agentCount !== 1 ? 's' : '') + ')';
+    sel.appendChild(opt);
+  });
+
+  if (keys.length === 0) {
+    var opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No enterprise agent sites found';
+    sel.appendChild(opt);
+  }
+
+  if (currentSiteKey && keys.indexOf(currentSiteKey) >= 0) {
+    sel.value = currentSiteKey;
+  } else if (keys.length > 0) {
+    currentSiteKey = keys[0];
+    sel.value = currentSiteKey;
+  }
+}
+
+function onSiteChange() {
+  currentSiteKey = document.getElementById('siteSelect').value;
+  renderSite();
+}
+
+function renderSite() {
+  if (!DATA) return;
+  var orgName = DATA.ACCOUNT_GROUP || 'ThousandEyes';
+  document.getElementById('footerOrg').textContent = orgName;
+
+  var sites = buildSites(DATA);
+  var site = sites[currentSiteKey];
+  if (!site) {
+    document.getElementById('rightPanel').innerHTML = '<div class="no-site">No site selected or no enterprise agents found.</div>';
+    return;
+  }
+
+  var tests = getSiteTests(site, DATA);
+  renderKPIs(site, tests);
+  renderMap(site);
+  renderAgentsList(site);
+  renderCategories(site, tests);
+  renderUpdatedLabel();
+}
+
+function renderKPIs(site, tests) {
+  var healthy = 0, degraded = 0, critical = 0, unknown = 0;
+  var availVals = [];
+
+  tests.forEach(function(t) {
+    var s = getTestStatus(t, DATA);
+    if (s === 'healthy') healthy++;
+    else if (s === 'degraded') degraded++;
+    else if (s === 'critical') critical++;
+    else unknown++;
+
+    var v = getTestAvail(t, DATA);
+    if (v != null) availVals.push(v);
+  });
+
+  var overallAvail = availVals.length > 0 ? availVals.reduce(function(a, b) { return a + b; }, 0) / availVals.length : null;
+  var siteAlerts = 0;
+  var issues = DATA.KNOWN_ISSUES || {};
+  tests.forEach(function(t) { if (issues[t.name]) siteAlerts++; });
+
+  var uniqueCategories = {};
+  tests.forEach(function(t) {
+    var tp = (t.type || '').toLowerCase();
+    TEST_CATEGORIES.forEach(function(cat) {
+      if (cat.types.indexOf(tp) >= 0) uniqueCategories[cat.key] = true;
+    });
+  });
+  var serviceCount = Object.keys(uniqueCategories).length;
+
+  var el = document.getElementById('kpiOverall');
+  if (overallAvail != null) {
+    el.textContent = overallAvail.toFixed(1) + '%';
+    el.className = 'kpi-value ' + (overallAvail >= 99 ? 'green' : overallAvail >= 95 ? 'yellow' : 'red');
+  } else {
+    el.textContent = '--';
+    el.className = 'kpi-value blue';
+  }
+  document.getElementById('kpiOverallSub').textContent = currentWindow + ' window';
+
+  var testsEl = document.getElementById('kpiTests');
+  testsEl.textContent = tests.length;
+  testsEl.className = 'kpi-value blue';
+  document.getElementById('kpiTestsSub').textContent = serviceCount + ' service' + (serviceCount !== 1 ? 's' : '');
+
+  var healthyEl = document.getElementById('kpiHealthy');
+  healthyEl.textContent = healthy;
+  healthyEl.className = 'kpi-value green';
+  document.getElementById('kpiHealthySub').textContent = '\u2265 95% avail.';
+
+  var degEl = document.getElementById('kpiDegraded');
+  degEl.textContent = degraded;
+  degEl.className = 'kpi-value ' + (degraded > 0 ? 'yellow' : 'green');
+  document.getElementById('kpiDegradedSub').textContent = '80\u201395% avail.';
+
+  var critEl = document.getElementById('kpiCritical');
+  critEl.textContent = critical;
+  critEl.className = 'kpi-value ' + (critical > 0 ? 'red' : 'green');
+  document.getElementById('kpiCriticalSub').textContent = '< 80% avail.';
+
+  var alertEl = document.getElementById('kpiAlerts');
+  alertEl.textContent = siteAlerts;
+  alertEl.className = 'kpi-value ' + (siteAlerts > 0 ? 'red' : 'green');
+  document.getElementById('kpiAlertsSub').textContent = siteAlerts > 0 ? 'firing now' : 'all clear';
+
+  var agEl = document.getElementById('kpiAgents');
+  agEl.textContent = site.agents.length;
+  agEl.className = 'kpi-value blue';
+  var epCount = (DATA.ALL_AGENTS || []).filter(function(a) { return a.type === 'endpoint' && (a.city === site.name || a.loc === site.loc); }).length;
+  document.getElementById('kpiAgentsSub').textContent = site.agents.length + ' enterprise' + (epCount > 0 ? ', ' + epCount + ' endpoint' : '');
+}
+
+function renderMap(site) {
+  if (siteMap) siteMap.remove();
+  var lat = site.lat || 0;
+  var lng = site.lng || 0;
+  var hasCoords = site.lat != null;
+
+  siteMap = L.map('siteMap', {
+    center: hasCoords ? [lat, lng] : [20, 0],
+    zoom: hasCoords ? 10 : 2,
+    minZoom: 2, maxZoom: 16,
+    zoomControl: true, attributionControl: false,
+  });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 19,
+  }).addTo(siteMap);
+
+  if (hasCoords) {
+    site.agents.forEach(function(a) {
+      if (a.lat == null) return;
+      var icon = L.divIcon({
+        className: '',
+        html: '<div style="position:relative;width:14px;height:14px;"><div class="facility-marker" style="width:14px;height:14px;background:var(--te-green);color:var(--te-green);"></div></div>',
+        iconSize: [14, 14], iconAnchor: [7, 7],
+      });
+      L.marker([a.lat, a.lng], { icon: icon }).addTo(siteMap)
+        .bindPopup('<div style="padding:10px;font-family:DM Sans,sans-serif;"><strong>' + escHtml(a.name) + '</strong><br><span style="font-size:11px;color:#7B8FAD;">' + escHtml(a.loc || a.city || '') + '</span></div>');
+    });
+  }
+  setTimeout(function() { siteMap.invalidateSize(); }, 100);
+}
+
+function renderAgentsList(site) {
+  var el = document.getElementById('agentsList');
+  if (site.agents.length === 0) {
+    el.innerHTML = '<div style="color:var(--te-text-dim);font-size:12px;">No agents at this site</div>';
+    return;
+  }
+  el.innerHTML = site.agents.map(function(a) {
+    return '<div class="agent-at-site">' +
+      '<div class="agent-site-dot" style="background:var(--te-green);box-shadow:0 0 6px var(--te-green);"></div>' +
+      '<div class="agent-site-name">' + escHtml(a.name) + '</div>' +
+      '<div class="agent-site-type">EA</div>' +
+      '</div>';
+  }).join('');
+}
+
+function renderCategories(site, tests) {
+  var panel = document.getElementById('rightPanel');
+  var availability = DATA.TEST_AVAILABILITY || {};
+  var extra = DATA.EXTRA_KPI || {};
+  var lossMap = {};
+  (extra.loss_by_test || []).forEach(function(r) { lossMap[r.test] = r.loss; });
+
+  var categorized = {};
+  TEST_CATEGORIES.forEach(function(cat) { categorized[cat.key] = []; });
+
+  tests.forEach(function(t) {
+    var tp = (t.type || '').toLowerCase();
+    var placed = false;
+    TEST_CATEGORIES.forEach(function(cat) {
+      if (cat.types.indexOf(tp) >= 0) {
+        categorized[cat.key].push(t);
+        placed = true;
+      }
+    });
+    if (!placed) categorized['other'].push(t);
+  });
+
+  var html = '';
+  TEST_CATEGORIES.forEach(function(cat) {
+    var items = categorized[cat.key];
+    if (items.length === 0) return;
+
+    var healthy = 0, total = items.length;
+    var availVals = [];
+    items.forEach(function(t) {
+      var s = getTestStatus(t, DATA);
+      if (s === 'healthy') healthy++;
+      var v = getTestAvail(t, DATA);
+      if (v != null) availVals.push(v);
+    });
+
+    var catAvail = availVals.length > 0 ? availVals.reduce(function(a, b) { return a + b; }, 0) / availVals.length : null;
+    var catStatus = healthy === total ? 'healthy' : healthy >= total * 0.5 ? 'degraded' : 'critical';
+    if (catAvail != null && catAvail < 80) catStatus = 'critical';
+    else if (catAvail != null && catAvail < 95) catStatus = 'degraded';
+    else if (catAvail != null) catStatus = 'healthy';
+    var critCount = items.filter(function(t) { return getTestStatus(t, DATA) === 'critical'; }).length;
+    if (critCount > 0) catStatus = 'critical';
+
+    var dotColor = statusColor(catStatus);
+    var healthLabel = catStatus === 'critical' ? 'Critical' : catStatus === 'degraded' ? 'Degraded' : 'Healthy';
+    var barPct = catAvail != null ? Math.min(100, catAvail) : 0;
+    var barColor = catStatus === 'critical' ? 'var(--te-red)' : catStatus === 'degraded' ? 'var(--te-yellow)' : 'var(--te-green)';
+
+    html += '<div class="category-section">';
+    html += '<div class="category-header">';
+    html += '<div class="category-header-left">';
+    html += '<div class="category-dot" style="background:' + dotColor + ';box-shadow:0 0 6px ' + dotColor + ';"></div>';
+    html += '<div class="category-name">' + escHtml(cat.name) + '</div>';
+    html += '</div>';
+    html += '<div class="category-header-right">';
+    html += '<span class="category-count" style="color:var(--te-text-dim);">' + healthy + '/' + total + '</span>';
+    html += '<span class="category-health-label" style="color:' + dotColor + ';">' + healthLabel + '</span>';
+    html += '<div class="category-bar"><div class="category-bar-fill" style="width:' + barPct + '%;background:' + barColor + ';"></div></div>';
+    html += '<span class="category-avail" style="color:' + dotColor + ';">' + (catAvail != null ? catAvail.toFixed(1) + '%' : '--') + '</span>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div class="category-body">';
+    items.sort(function(a, b) {
+      var av = getTestAvail(a, DATA);
+      var bv = getTestAvail(b, DATA);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return av - bv;
+    });
+    items.forEach(function(t) {
+      var v = getTestAvail(t, DATA);
+      var status = getTestStatus(t, DATA);
+      var color = statusColor(status);
+      var tp = (t.type || '').toLowerCase();
+      var typeLabel = TYPE_LABELS[tp] || TYPE_LABELS[t.type] || t.type || '--';
+      var isLoss = (tp === 'agent-to-server' || tp === 'agent-to-agent');
+      var displayVal = v != null ? v.toFixed(1) + '%' : '--';
+
+      var teLink = t.id ? 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(t.id) : '#';
+
+      html += '<a href="' + teLink + '" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;">';
+      html += '<div class="test-tile">';
+      html += '<div class="test-tile-status">';
+      html += '<div class="test-tile-dot" style="background:' + color + ';box-shadow:0 0 6px ' + color + ';"></div>';
+      html += '<div class="test-tile-name">' + escHtml(t.name) + '</div>';
+      html += '</div>';
+      html += '<div class="test-tile-avail" style="color:' + color + ';">' + displayVal + '</div>';
+      html += '<div class="test-tile-type">' + escHtml(typeLabel) + '</div>';
+      html += '</div>';
+      html += '</a>';
+    });
+    html += '</div>';
+    html += '</div>';
+  });
+
+  if (html === '') {
+    html = '<div class="no-site">No tests assigned to agents at this site.</div>';
+  }
+
+  panel.innerHTML = html;
+}
+
+function renderUpdatedLabel() {
+  var ts = DATA.lastRefresh || '';
+  var el = document.getElementById('updatedLabel');
+  if (ts) {
+    try {
+      var d = new Date(ts);
+      var hh = d.getHours().toString().padStart(2, '0');
+      var mm = d.getMinutes().toString().padStart(2, '0');
+      el.textContent = 'Updated ' + hh + ':' + mm + ' PM';
+    } catch (e) {
+      el.textContent = 'Updated --';
+    }
+  }
+}
+
+document.querySelectorAll('.win-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.win-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    currentWindow = btn.getAttribute('data-win');
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+    document.querySelector('.loading-text').textContent = 'Fetching ' + currentWindow.toUpperCase() + ' data';
+    document.querySelector('.loading-sub').textContent = 'Please wait...';
+    fetch('/api/fetch_window?window=' + encodeURIComponent(currentWindow))
+      .then(function() { return loadData(); })
+      .catch(function() { loadData(); });
+  });
+});
+
+function doRefresh() {
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  document.querySelector('.loading-text').textContent = 'Refreshing data';
+  document.querySelector('.loading-sub').textContent = 'Please wait...';
+  fetch('/api/refresh', { method: 'POST' })
+    .then(function() { setTimeout(loadData, 3000); })
+    .catch(function() { setTimeout(loadData, 3000); });
+}
+
+function pollUntilReady() {
+  fetch('/api/refresh-status')
+    .then(function(r) { return r.json(); })
+    .then(function(status) {
+      var sub = document.getElementById('loadingSub');
+      if (status.phase === 'done' || status.phase === 'error') {
+        loadData();
+        return;
+      }
+      if (sub && status.message) sub.textContent = status.message;
+      setTimeout(pollUntilReady, 2000);
+    })
+    .catch(function() { setTimeout(pollUntilReady, 3000); });
+}
+
+fetch('/api/health')
+  .then(function(r) { return r.json(); })
+  .then(function(h) {
+    if (h.base_cache_ready) { loadData(); }
+    else { pollUntilReady(); }
+  })
+  .catch(function() { setTimeout(pollUntilReady, 3000); });
+
+setInterval(function() { loadData(); }, 15 * 60 * 1000);
+</script>
+</body>
+</html>

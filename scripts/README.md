@@ -10,7 +10,7 @@ Start or stop the MCP dashboard server in the background.
 .\scripts\start-stop.ps1 --shutdown   # Stops the server
 ```
 
-**Startup:** Loads `.env` from the project root (if present), verifies `TE_TOKEN` is set, then runs `python server.py` in the background and writes the process ID to `.mcp-dashboard.pid`.
+**Startup:** Loads `.env` from the project root (if present), verifies `TE_TOKEN` is set, then runs `python server.py` in the background and writes the process ID to `.mcp-dashboard.pid`. Once running, open `http://127.0.0.1:8000/` for the NOC Performance Overview or `http://127.0.0.1:8000/site-health` for the Site Health Overview.
 
 **Shutdown:** Reads the PID from `.mcp-dashboard.pid` and terminates that process.
 
