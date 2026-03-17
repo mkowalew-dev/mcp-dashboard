@@ -1143,9 +1143,6 @@ function openTestDetail(testId) {
     '<div class="test-drill-section"><div class="test-drill-section-title">Test path — ' + escHtml(siteName || 'Source') + ' \u2192 ' + escHtml(targetStr) + '</div>' +
     '<div class="test-drill-path-wrap">' + pathHtml + '</div></div>' +
     '<a href="' + teLink + '" target="_blank" rel="noopener noreferrer" class="test-modal-te-link">View in ThousandEyes <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>' +
-    '<div class="test-drill-section"><div class="test-drill-section-title">' + (isVoice ? 'Performance over time (MOS)' : 'Response time &amp; loss — 24 hour trend') + '</div>' +
-    '<div class="test-modal-heatmap-sub" id="testModalHeatmapSub">' + (isVoice ? 'MOS score' : 'Availability %') + ' \u2022 loading...</div>' +
-    '<div class="test-modal-heatmap-wrap" id="testModalHeatmapWrap"><div id="testModalHeatmap" class="test-modal-heatmap"></div></div></div>' +
     '<div class="test-drill-section"><div class="test-drill-section-title">Metrics breakdown</div>' +
     '<div class="test-drill-waterfall-wrap">' + waterfallHtml + '</div></div>';
 
@@ -1165,15 +1162,17 @@ function openTestDetail(testId) {
       if (!wrap) return;
       var results = pathData.results || [];
       var err = pathData.error || '';
+      var reason = pathData.reason || '';
       if (err && results.length === 0) {
         wrap.className = 'test-drill-path-loading';
-        wrap.innerHTML = escHtml(err) + '<div style="margin-top:12px;font-size:11px;">Showing summary path below.</div>' + pathFallbackHtml;
+        wrap.innerHTML = '<span class="path-fallback-msg">' + escHtml(err) + '</span><div style="margin-top:12px;font-size:11px;color:var(--te-text-dim);">Showing summary path below.</div>' + pathFallbackHtml;
         return;
       }
       var first = results[0];
       if (!first) {
-        wrap.className = '';
-        wrap.innerHTML = pathFallbackHtml;
+        var emptyMsg = reason || 'No path trace data for the selected 5-minute window. Try again after the next test round completes.';
+        wrap.className = 'test-drill-path-loading';
+        wrap.innerHTML = '<span class="path-fallback-msg">' + escHtml(emptyMsg) + '</span><div style="margin-top:12px;font-size:11px;color:var(--te-text-dim);">Showing summary path below.</div>' + pathFallbackHtml;
         return;
       }
       var hops = (first.hops && first.hops.length) ? first.hops : null;
@@ -1210,84 +1209,14 @@ function openTestDetail(testId) {
       wrap.className = '';
       wrap.innerHTML = svg + summary;
     })
-    .catch(function() {
+    .catch(function(e) {
       var wrap = document.getElementById('testModalPathContent');
       if (wrap) {
         wrap.className = 'test-drill-path-loading';
-        wrap.textContent = 'Path visualization unavailable.';
-        wrap.innerHTML += '<div style="margin-top:12px;">' + pathFallbackHtml + '</div>';
+        wrap.innerHTML = '<span class="path-fallback-msg">Could not load path (network or server error).</span><div style="margin-top:12px;font-size:11px;color:var(--te-text-dim);">Showing summary path below.</div>' + pathFallbackHtml;
       }
     });
 
-  fetch('/api/agent_perf/' + encodeURIComponent(testId))
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      var allAgents = d.agents || [];
-      var agents = allAgents;
-      if (site && site.agents && site.agents.length > 0) {
-        agents = allAgents.filter(function(ap) { return siteAgentIdSet[String(ap.id)]; });
-        if (agents.length === 0) {
-          var siteNames = {};
-          site.agents.forEach(function(a) { siteNames[String(a.name || '').toLowerCase()] = true; });
-          agents = allAgents.filter(function(ap) { return siteNames[String(ap.name || '').toLowerCase()]; });
-        }
-      }
-      var metricLabel = d.metric_label || 'Availability %';
-      var higherIsWorse = !!d.higher_is_worse;
-      var testType = (d.test_type || '').toLowerCase();
-      var isVoice = testType === 'voice' || testType === 'sip-server';
-      var subEl = document.getElementById('testModalHeatmapSub');
-      var wrapEl = document.getElementById('testModalHeatmapWrap');
-      var heatEl = document.getElementById('testModalHeatmap');
-      if (!subEl || !heatEl) return;
-      var errMsg = d.error || '';
-      var cachedMsg = d.cached_message || '';
-      var nLocations = agents.length;
-      subEl.textContent = metricLabel + (nLocations ? ' \u2022 ' + nLocations + ' location' + (nLocations !== 1 ? 's' : '') + ' \u2022 time \u2192' : '') + (cachedMsg ? ' \u2022 Cached' : '');
-      if (agents.length === 0) {
-        heatEl.innerHTML = '<div style="padding:20px;color:var(--te-text-dim);font-size:12px;">' + (errMsg ? escHtml(errMsg) : 'No per-agent data available. If rate limited, try again in a few minutes.') + '</div>';
-        return;
-      }
-      var numIntervals = 24;
-      heatEl.style.display = 'grid';
-      heatEl.style.gridTemplateColumns = 'minmax(100px, 140px) repeat(' + numIntervals + ', minmax(18px, 1fr))';
-      heatEl.style.gridTemplateRows = 'auto repeat(' + agents.length + ', 26px)';
-      heatEl.innerHTML = '';
-      var corner = document.createElement('div');
-      corner.style.background = 'var(--te-dark-3)';
-      corner.style.borderRadius = '8px 0 0 0';
-      heatEl.appendChild(corner);
-      for (var i = 0; i < numIntervals; i++) {
-        var topLabel = document.createElement('div');
-        topLabel.className = 'test-modal-heatmap-y-label';
-        topLabel.textContent = i + 1;
-        topLabel.style.textAlign = 'center';
-        heatEl.appendChild(topLabel);
-      }
-      for (var row = 0; row < agents.length; row++) {
-        var agentLabel = document.createElement('div');
-        agentLabel.className = 'test-modal-heatmap-agent-name';
-        agentLabel.textContent = agents[row].name || ('Agent ' + (row + 1));
-        agentLabel.style.textAlign = 'left';
-        heatEl.appendChild(agentLabel);
-        var v = agents[row].value;
-        var cellColor = heatmapColorForValue(v, higherIsWorse, testType);
-        var valStr = v != null ? (isVoice ? v.toFixed(2) : v.toFixed(1) + '%') : '--';
-        for (var col = 0; col < numIntervals; col++) {
-          var cell = document.createElement('div');
-          cell.className = 'test-modal-heatmap-cell';
-          cell.style.background = cellColor;
-          cell.title = (agents[row].name || '') + ' \u2022 interval ' + (col + 1) + ' \u2022 ' + valStr;
-          heatEl.appendChild(cell);
-        }
-      }
-    })
-    .catch(function() {
-      var subEl = document.getElementById('testModalHeatmapSub');
-      var heatEl = document.getElementById('testModalHeatmap');
-      if (subEl) subEl.textContent = 'Availability % \u2022 Failed to load agent data';
-      if (heatEl) heatEl.innerHTML = '<div style="padding:20px;color:var(--te-text-dim);font-size:12px;">Failed to load per-agent data</div>';
-    });
 }
 
 document.getElementById('testModalOverlay').addEventListener('click', function(e) { if (e.target === this) closeTestModal(); });

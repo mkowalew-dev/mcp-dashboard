@@ -1687,6 +1687,15 @@ def api_path_vis(test_id):
     # call_mcp_tool returns parsed JSON
     data = _normalize_path_vis_response(resp if isinstance(resp, dict) else {"raw": resp})
     data["test_id"] = test_id
+    if not (data.get("results")):
+        data["reason"] = (
+            "No path trace data for the selected 5-minute window. "
+            "Try again after the next test round completes."
+        )
+        log.warning(
+            "path_vis empty results: test_id=%s, window=%s to %s",
+            test_id, start_date, end_date,
+        )
     with _cache_lock:
         _path_vis_cache[test_id] = {"data": data, "ts": time.time()}
     return jsonify(data)
