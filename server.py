@@ -54,6 +54,9 @@ MCP_BATCH_SIZE = max(5, min(50, int(os.getenv("MCP_BATCH_SIZE", "15"))))
 # Delay between batch requests; higher reduces 429s (default 1.0s; min 0.5s when set)
 _raw_delay = float(os.getenv("MCP_INTER_BATCH_DELAY_SEC", "1.0"))
 MCP_INTER_BATCH_DELAY = max(0.5, _raw_delay)
+# Extra KPIs: longer delay between batches to avoid 429 (default 2.0s). Set MCP_EXTRA_KPI_DELAY_SEC higher if 429s persist.
+_extra_delay = float(os.getenv("MCP_EXTRA_KPI_DELAY_SEC", "2.0"))
+MCP_EXTRA_KPI_BATCH_DELAY = max(1.0, _extra_delay)
 # Max concurrent get_network_app_synthetics_metrics calls (1 = sequential, reduces 429s)
 MCP_SYNTH_CONCURRENCY = max(1, min(10, int(os.getenv("MCP_SYNTH_CONCURRENCY", "1"))))
 # Global MCP rate limit: max requests per minute (e.g. 240 rpm = 4 req/s); min interval between calls
@@ -369,11 +372,11 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                 err_str = (str(root) or repr(root) or type(root).__name__).strip()
                 err_str = err_str or type(root).__name__
                 if isinstance(root, httpx.HTTPStatusError) and getattr(root, "response", None):
-                    if getattr(root.response, "status_code", None) == 503:
-                        log.warning(
-                            "ThousandEyes API returned 503 Service Unavailable; will retry (attempt %d/%d).",
-                            attempt + 1, retries,
-                        )
+                    status_code = getattr(root.response, "status_code", None)
+                    log.error(
+                        "ThousandEyes API HTTP error: status=%s, url=%s; will retry (attempt %d/%d).",
+                        status_code, str(getattr(root.response, "url", MCP_URL)), attempt + 1, retries,
+                    )
                 elif type(root).__name__ == "BrokenResourceError":
                     log.warning(
                         "MCP connection broken (stream closed); will retry with fresh connection (attempt %d/%d).",
@@ -1087,7 +1090,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
     synth_ids = list(synth_ids_dict.values())
     test_ids_by_name = synth_ids_dict
     batch_size = MCP_BATCH_SIZE
-    delay = MCP_INTER_BATCH_DELAY
+    delay = MCP_EXTRA_KPI_BATCH_DELAY
     _set_refresh_status(
         phase="extra_kpis",
         message=f"Fetching extra KPIs (response, loss, jitter, latency) for {len(synth_ids)} tests...",
@@ -1096,13 +1099,13 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
              "avg_packet_loss": None, "loss_affected_paths": 0}
 
     resp_by_test = {}
-    resp_metric_order = ["WEB_TTFB", "DNS_SERVER_TIME", "DNS_TRACE_QUERY_TIME"]
+    resp_metric_order = ["WEB_TTFB"]
     for i in range(0, len(synth_ids), batch_size):
         batch = synth_ids[i : i + batch_size]
         resps = await _mcp_synth_metrics_batch(resp_metric_order, batch, start, end)
         merged = _merge_parsed_first_wins(resps)
         resp_by_test.update({k: v for k, v in merged.items() if k not in resp_by_test})
-        await asyncio.sleep(delay + random.uniform(0, 0.4))
+        await asyncio.sleep(delay + random.uniform(0, 0.5))
 
     if resp_by_test:
         vals = list(resp_by_test.values())
@@ -1121,13 +1124,14 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         extra["resp_by_test"] = resp_detail
 
     loss_by_test = {}
-    loss_metric_order = ["NET_LOSS", "ONE_WAY_NET_LOSS_BIDIRECTIONAL", "ONE_WAY_NET_LOSS_TO_TARGET"]
+    loss_metric_order = ["NET_LOSS"]
+    await asyncio.sleep(delay * 0.5)
     for i in range(0, len(synth_ids), batch_size):
         batch = synth_ids[i : i + batch_size]
         resps = await _mcp_synth_metrics_batch(loss_metric_order, batch, start, end)
         merged = _merge_parsed_first_wins(resps)
         loss_by_test.update({k: v for k, v in merged.items() if k not in loss_by_test})
-        await asyncio.sleep(delay + random.uniform(0, 0.4))
+        await asyncio.sleep(delay + random.uniform(0, 0.5))
 
     if loss_by_test:
         vals = list(loss_by_test.values())
@@ -1146,15 +1150,15 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         loss_detail.sort(key=lambda x: x["loss"], reverse=True)
         extra["loss_by_test"] = loss_detail
 
-    # --- Jitter by test ---
     jitter_by_test = {}
-    jitter_order = ["NET_JITTER", "ONE_WAY_NET_JITTER_BIDIRECTIONAL", "ONE_WAY_NET_JITTER_TO_TARGET"]
+    jitter_order = ["NET_JITTER"]
+    await asyncio.sleep(delay * 0.5)
     for i in range(0, len(synth_ids), batch_size):
         batch = synth_ids[i : i + batch_size]
         resps = await _mcp_synth_metrics_batch(jitter_order, batch, start, end)
         merged = _merge_parsed_first_wins(resps)
         jitter_by_test.update({k: v for k, v in merged.items() if k not in jitter_by_test})
-        await asyncio.sleep(delay + random.uniform(0, 0.4))
+        await asyncio.sleep(delay + random.uniform(0, 0.5))
 
     if jitter_by_test:
         jitter_detail = []
@@ -1165,13 +1169,14 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         extra["jitter_by_test"] = jitter_detail
 
     latency_by_test = {}
-    lat_order = ["NET_LATENCY", "ONE_WAY_NET_LATENCY_BIDIRECTIONAL", "ONE_WAY_NET_LATENCY_TO_TARGET"]
+    lat_order = ["NET_LATENCY"]
+    await asyncio.sleep(delay * 0.5)
     for i in range(0, len(synth_ids), batch_size):
         batch = synth_ids[i : i + batch_size]
         resps = await _mcp_synth_metrics_batch(lat_order, batch, start, end)
         merged = _merge_parsed_first_wins(resps)
         latency_by_test.update({k: v for k, v in merged.items() if k not in latency_by_test})
-        await asyncio.sleep(delay + random.uniform(0, 0.4))
+        await asyncio.sleep(delay + random.uniform(0, 0.5))
 
     if latency_by_test:
         lat_detail = []
@@ -1181,7 +1186,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         lat_detail.sort(key=lambda x: x["latency"], reverse=True)
         extra["latency_by_test"] = lat_detail
 
-    # --- VoIP / RTP metrics by test (MOS, latency, loss, PDV) ---
+    await asyncio.sleep(delay)
     voip_metrics = {
         "VOIP_MOS": "mos_by_test",
         "VOIP_LATENCY": "voip_latency_by_test",
@@ -1203,7 +1208,8 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                 by_test.update(parse_csv_metrics(resp))
             except Exception as e:
                 log.error("MCP extra KPI batch error: metric_id=%s, batch_index=%s, error=%s", metric_id, i, e)
-            await asyncio.sleep(delay + random.uniform(0, 0.4))
+            await asyncio.sleep(delay + random.uniform(0, 0.5))
+        await asyncio.sleep(delay * 0.5)
         if by_test:
             detail = []
             for test_name, val in by_test.items():
@@ -1212,7 +1218,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
             detail.sort(key=lambda x: x["value"], reverse=(metric_id != "VOIP_MOS"))
             extra[extra_key] = detail
 
-    # --- Additional per-type KPI metrics (BGP, API, Transaction, Page Load) ---
+    await asyncio.sleep(delay)
     extra_type_metrics = {
         "BGP_REACHABILITY": "bgp_reach_by_test",
         "API_REQUEST_COMPLETION": "api_completion_by_test",
@@ -1235,7 +1241,8 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                 by_test.update(parse_csv_metrics(resp))
             except Exception as e:
                 log.error("MCP extra KPI batch error: metric_id=%s, batch_index=%s, error=%s", metric_id, i, e)
-            await asyncio.sleep(delay + random.uniform(0, 0.4))
+            await asyncio.sleep(delay + random.uniform(0, 0.5))
+        await asyncio.sleep(delay * 0.5)
         if by_test:
             detail = []
             for test_name, val in by_test.items():
@@ -1629,6 +1636,42 @@ def _parse_path_vis_node(node_str: str) -> dict:
     return {"ipAddress": ip, "rdns": rdns.strip()}
 
 
+def _parse_path_trace_metrics(step) -> dict:
+    """Parse pathTrace step 4th element (e.g. 'L=0,E=0,S=0,T=1/L=279934,E=0,S=1,T=1') for latency and loss.
+    L= latency (typically µs), E= errors; returns { latencyMs, lossPercent } (None if absent).
+    """
+    out = {}
+    if not isinstance(step, (list, tuple)) or len(step) < 4:
+        return out
+    raw = step[3]
+    if not isinstance(raw, str):
+        return out
+    # One or two segments separated by /
+    segments = raw.split("/")
+    latencies = []
+    errors = []
+    for seg in segments:
+        for part in seg.split(","):
+            part = part.strip()
+            m = re.match(r"L=(\d+)", part, re.IGNORECASE)
+            if m:
+                latencies.append(int(m.group(1)))
+            m = re.match(r"E=(\d+)", part, re.IGNORECASE)
+            if m:
+                errors.append(int(m.group(1)))
+    if latencies:
+        # Assume L is in µs when > 1000, else ms
+        max_l = max(latencies)
+        out["latencyMs"] = round(max_l / 1000.0, 2) if max_l >= 1000 else max_l
+    if errors and any(e > 0 for e in errors):
+        out["hasLoss"] = True
+        if len(errors) == 1:
+            out["lossPercent"] = min(100, errors[0])
+        else:
+            out["lossPercent"] = min(100, max(errors))
+    return out
+
+
 def _normalize_path_vis_response(raw):
     """Normalize MCP path visualization response for frontend (agents, hops, rounds).
     Supports ThousandEyes pathVis shape: pathVis.nodes (node strings), pathVis.agents (agents with runs.pathTraces as node indices).
@@ -1667,7 +1710,7 @@ def _normalize_path_vis_response(raw):
             if not isinstance(path_traces, list):
                 path_traces = []
             hops = []
-            # pathTraces is list of traces; each trace is list of [nodeIndex, x, y] (or similar)
+            # pathTraces is list of traces; each trace is list of [nodeIndex, x, y] or [nodeIndex, x, y, "L=...,E=..."]
             if path_traces:
                 first_trace = path_traces[0] if isinstance(path_traces[0], list) else []
                 for step in first_trace if isinstance(first_trace, list) else []:
@@ -1676,7 +1719,15 @@ def _normalize_path_vis_response(raw):
                         if isinstance(idx, int) and 0 <= idx < len(nodes_list):
                             node_str = nodes_list[idx]
                             if isinstance(node_str, str):
-                                hops.append(_parse_path_vis_node(node_str))
+                                hop = dict(_parse_path_vis_node(node_str))
+                                metrics = _parse_path_trace_metrics(step)
+                                if metrics.get("latencyMs") is not None:
+                                    hop["latencyMs"] = metrics["latencyMs"]
+                                if metrics.get("hasLoss") or metrics.get("lossPercent") is not None:
+                                    hop["hasLoss"] = True
+                                    if metrics.get("lossPercent") is not None:
+                                        hop["lossPercent"] = metrics["lossPercent"]
+                                hops.append(hop)
                     elif isinstance(step, dict) and ("ipAddress" in step or "ip" in step):
                         hops.append({
                             "ipAddress": step.get("ipAddress") or step.get("ip") or "",
