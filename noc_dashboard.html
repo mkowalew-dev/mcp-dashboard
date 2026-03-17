@@ -821,12 +821,11 @@ document.querySelectorAll('.tab').forEach(function(tab) {
 
 function getDefaultBusinessServicesConfig() {
   return {
-    type_rules: { Infrastructure: ['agent-to-agent', 'bgp'], Voice: ['voice', 'sip-server'] },
+    type_rules: { 'Network Infrastructure': ['agent-to-agent', 'agent-to-server', 'bgp'], Voice: ['voice', 'sip-server'] },
     services: [
       { name: 'Collaboration - Microsoft', icon: '\uD83D\uDCE7', patterns: ['MSTeams'] },
       { name: 'Health Care', icon: '\u2695', patterns: ['MyChart', 'BSWHealth'] },
       { name: 'Voice', icon: '\uD83D\uDCDE', patterns: [] },
-      { name: 'Infrastructure', icon: '\uD83D\uDD17', patterns: [] },
       { name: 'Collaboration - Webex', icon: '\uD83D\uDCDE', patterns: ['Webex'] },
       { name: 'Microsoft O365', icon: '\uD83D\uDCE7', patterns: ['MSO365', 'MS O365', 'O365'] },
       { name: 'Retail Operations', icon: '\uD83C\uDFEA', patterns: ['RetailDemo', 'RetailSite', 'Public_Sector'] },

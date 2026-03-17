@@ -98,14 +98,14 @@ WINDOWS = {
 # Business services: type_rules map service name -> list of test types; services is display order with name, icon, patterns (substrings, case-insensitive)
 _DEFAULT_BUSINESS_SERVICES = {
     "type_rules": {
-        "Infrastructure": ["agent-to-agent", "bgp"],
+        "Network Infrastructure": ["agent-to-agent", "agent-to-server", "bgp"],
         "Voice": ["voice", "sip-server"],
     },
     "services": [
         {"name": "Collaboration - Microsoft", "icon": "\uD83D\uDCE7", "patterns": ["MSTeams"]},
         {"name": "Health Care", "icon": "\u2695", "patterns": ["MyChart", "BSWHealth"]},
         {"name": "Voice", "icon": "\uD83D\uDCDE", "patterns": []},
-        {"name": "Infrastructure", "icon": "\uD83D\uDD17", "patterns": []},
+        {"name": "Network Infrastructure", "icon": "\uD83D\uDD17", "patterns": ["SD-WAN", "DataCenter", "Site-DC", "Stores", "TOR-NYC", "SFTP"]},
         {"name": "Collaboration - Webex", "icon": "\uD83D\uDCDE", "patterns": ["Webex"]},
         {"name": "Microsoft O365", "icon": "\uD83D\uDCE7", "patterns": ["MSO365", "MS O365", "SD-WAN DIA", "O365"]},
         {"name": "Retail Operations", "icon": "\uD83C\uDFEA", "patterns": ["RetailDemo", "RetailSite", "Public_Sector"]},
@@ -116,7 +116,6 @@ _DEFAULT_BUSINESS_SERVICES = {
         {"name": "Salesforce & CRM", "icon": "\uD83D\uDCC8", "patterns": ["Salesforce", "SAP", "salesforce.com", "lightning.force"]},
         {"name": "Workday HR", "icon": "\uD83D\uDC64", "patterns": ["Workday", "RetailDemo_Workday"]},
         {"name": "Facebook & Social", "icon": "\uD83C\uDF10", "patterns": ["Facebook"]},
-        {"name": "Network Infrastructure", "icon": "\uD83D\uDD17", "patterns": ["SD-WAN", "DataCenter", "Site-DC", "Stores", "TOR-NYC", "SFTP"]},
         {"name": "Data Center Management", "icon": "\uD83D\uDCBB", "patterns": ["ESXi", "TrueNAS", "Xen Management", "Splunk"]},
         {"name": "Demo & Monitoring", "icon": "\uD83D\uDD2C", "patterns": ["Mar Demo", "Boutique", "Internet Test", "ThousandEyes", "thousandeyes.com"]},
     ],
