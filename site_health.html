@@ -179,7 +179,8 @@
   .test-drill-path-summary span { color: var(--te-text-dim); }
   .test-drill-path-summary strong { color: var(--te-text); margin-left: 4px; }
   .test-drill-path-summary .summary-bad { color: var(--te-red); }
-  .test-drill-path-svg-wrap { width: 100%; overflow-x: auto; padding: 16px 0; }
+  .test-drill-path-svg-wrap { width: 100%; overflow-x: auto; padding: 16px 0; position: relative; }
+  #pathVizTooltip { position: fixed; z-index: 10000; padding: 8px 12px; background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: 6px; font-size: 12px; color: var(--te-text); pointer-events: none; max-width: 320px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none; white-space: pre-wrap; }
   .test-drill-path-svg { display: block; }
   .test-drill-path-line { fill: none; stroke: var(--te-border); stroke-width: 2; stroke-dasharray: 8 6; }
   .test-drill-path-line.animated { animation: path-dash 1.5s linear infinite; }
@@ -325,6 +326,7 @@
 <!-- Test detail modal (drill-down layout) -->
 <div class="test-modal-overlay" id="testModalOverlay" role="dialog" aria-modal="true" aria-labelledby="testModalTitle">
   <div class="test-modal" onclick="event.stopPropagation()">
+    <div id="pathVizTooltip"></div>
     <div class="test-modal-header">
       <div class="test-modal-header-left">
         <h2 class="test-modal-title" id="testModalTitle">Test Drill-Down</h2>
@@ -1151,13 +1153,6 @@ function openTestDetail(testId) {
 
   document.getElementById('testModalOverlay').classList.add('visible');
 
-  var sites = buildSites(DATA);
-  var site = currentSiteKey ? sites[currentSiteKey] : null;
-  var siteAgentIdSet = {};
-  if (site && site.agents) {
-    site.agents.forEach(function(a) { siteAgentIdSet[String(a.id)] = true; });
-  }
-
   fetch('/api/path_vis/' + encodeURIComponent(testId))
     .then(function(r) { return r.json(); })
     .then(function(pathData) {
@@ -1171,9 +1166,16 @@ function openTestDetail(testId) {
         wrap.innerHTML = '<span class="path-fallback-msg">' + escHtml(err) + '</span><div style="margin-top:12px;font-size:11px;color:var(--te-text-dim);">Showing summary path below.</div>' + pathFallbackHtml;
         return;
       }
+      var sites = buildSites(DATA);
+      var selectedSiteKey = (document.getElementById('siteSelect') && document.getElementById('siteSelect').value) || currentSiteKey;
+      var site = selectedSiteKey ? sites[selectedSiteKey] : null;
+      var siteAgentIdSet = {};
+      var siteNames = {};
       if (site && site.agents && site.agents.length > 0) {
-        var siteNames = {};
-        site.agents.forEach(function(a) { siteNames[String(a.name || '').toLowerCase()] = true; });
+        site.agents.forEach(function(a) {
+          siteAgentIdSet[String(a.id)] = true;
+          siteNames[String(a.name || '').toLowerCase()] = true;
+        });
         results = results.filter(function(r) {
           var id = r.agent && (r.agent.agentId || r.agent.agent_id);
           if (id != null && siteAgentIdSet[String(id)]) return true;
@@ -1202,9 +1204,9 @@ function openTestDetail(testId) {
       var pathD = 'M' + pts.map(function(p) { return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L');
       var degraded = (respMs != null && respMs > 500) || (lossPct != null && lossPct > 1);
       var pathHover = 'End-to-end: ' + respStr + ', Loss: ' + lossStr + (jitterStr ? ', Jitter: ' + jitterStr : '');
-      var pathHoverAttr = escHtml(pathHover).replace(/"/g, '&quot;');
+      var pathHoverEsc = escHtml(pathHover).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
       var svg = '<div class="test-drill-path-svg-wrap"><svg class="test-drill-path-svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
-        '<g title="' + pathHoverAttr + '"><path class="test-drill-path-line' + (degraded ? ' degraded' : '') + ' animated" d="' + pathD + '"/></g>';
+        '<g data-path-tooltip="' + pathHoverEsc + '"><path class="test-drill-path-line' + (degraded ? ' degraded' : '') + ' animated" d="' + pathD + '"/></g>';
       var labels = [];
       var labelTitles = [];
       if (first && first.agent) {
@@ -1243,8 +1245,8 @@ function openTestDetail(testId) {
           if (parts.length) nodeTitle = (nodeTitle ? nodeTitle + ' — ' : '') + parts.join(', ');
           else if (pathMetricsStr) nodeTitle = (nodeTitle ? nodeTitle + ' — ' : '') + 'Path: ' + pathMetricsStr;
         }
-        var tip = nodeTitle ? escHtml(nodeTitle).replace(/"/g, '&quot;') : '';
-        svg += '<g' + (tip ? ' title="' + tip + '"' : '') + '><circle class="' + circleClass + '" cx="' + pts[ni].x + '" cy="' + pts[ni].y + '" r="10"/>';
+        var tipEsc = nodeTitle ? escHtml(nodeTitle).replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
+        svg += '<g' + (tipEsc ? ' data-path-tooltip="' + tipEsc + '"' : '') + '><circle class="' + circleClass + '" cx="' + pts[ni].x + '" cy="' + pts[ni].y + '" r="10"/>';
         svg += '<text x="' + pts[ni].x + '" y="' + (y + 22) + '" text-anchor="middle" fill="var(--te-text-dim)" font-size="10">' + escHtml(labels[ni] || '') + '</text></g>';
       }
       svg += '</svg></div>';
@@ -1256,6 +1258,25 @@ function openTestDetail(testId) {
         '</div>';
       wrap.className = '';
       wrap.innerHTML = svg + summary;
+      var tooltipEl = document.getElementById('pathVizTooltip');
+      var svgWrap = wrap.querySelector('.test-drill-path-svg-wrap');
+      if (tooltipEl && svgWrap) {
+        svgWrap.addEventListener('mousemove', function(e) {
+          var g = e.target.closest('[data-path-tooltip]');
+          var text = g ? g.getAttribute('data-path-tooltip') : '';
+          if (text) {
+            tooltipEl.textContent = text;
+            tooltipEl.style.display = 'block';
+            tooltipEl.style.left = (e.clientX + 14) + 'px';
+            tooltipEl.style.top = (e.clientY + 14) + 'px';
+          } else {
+            tooltipEl.style.display = 'none';
+          }
+        });
+        svgWrap.addEventListener('mouseleave', function() {
+          tooltipEl.style.display = 'none';
+        });
+      }
     })
     .catch(function(e) {
       var wrap = document.getElementById('testModalPathContent');
