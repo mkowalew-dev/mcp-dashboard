@@ -638,6 +638,13 @@ function getEndpointAgentsForSite(site) {
   var siteName = (site.name || '').toString().trim();
   var siteLoc = (site.loc || site.name || '').toString().trim();
 
+  if (typeof console !== 'undefined' && console.log) {
+    console.log('[EP debug] getEndpointAgentsForSite called', { siteName: site.name, siteLoc: site.loc, siteToken: siteToken });
+    console.log('[EP debug] DATA.ENDPOINT_AGENTS length=', allEp.length, 'agents:', allEp.map(function(e) { return { name: e.name, loc: e.loc }; }));
+    var epInAll = (allAgents || []).filter(function(a) { return a.type === 'endpoint'; });
+    console.log('[EP debug] ALL_AGENTS with type=endpoint count=', epInAll.length, 'locs:', epInAll.map(function(a) { return (a.city || a.loc) + '|' + (a.name || ''); }));
+  }
+
   function addOne(name, loc, id, device) {
     var uid = (id != null && id !== '') ? String(id) : (name != null && name !== '' ? 'n-' + String(name) : 'r-' + list.length);
     if (seenIds[uid]) return;
@@ -683,6 +690,9 @@ function getEndpointAgentsForSite(site) {
     }
   });
 
+  if (typeof console !== 'undefined' && console.log) {
+    console.log('[EP debug] getEndpointAgentsForSite returning list.length=', list.length, 'names:', list.map(function(e) { return e.name; }));
+  }
   return list;
 }
 
@@ -835,6 +845,9 @@ function renderCategories(site, tests, epAgentsForSite) {
 
   // Build endpoint table from a fresh list; use DOM so every row is guaranteed to be added
   var epAgents = getEndpointAgentsForSite(site);
+  if (typeof console !== 'undefined' && console.log) {
+    console.log('[EP debug] renderCategories: epAgents.length=', epAgents.length, 'names=', epAgents.map(function(e) { return e.name; }));
+  }
   panel.innerHTML = html;
 
   var endSection = document.createElement('div');
@@ -862,6 +875,9 @@ function renderCategories(site, tests, epAgentsForSite) {
     var tbody = document.createElement('tbody');
     for (var i = 0; i < epAgents.length; i++) {
       var ep = epAgents[i];
+      if (typeof console !== 'undefined' && console.log) {
+        console.log('[EP debug] table row i=' + i + ' name=' + (ep && ep.name));
+      }
       var tr = document.createElement('tr');
       if (endpointAgentHasNoData(ep)) tr.className = 'ep-row-inactive';
       var nameTd = document.createElement('td');
@@ -902,6 +918,9 @@ function renderCategories(site, tests, epAgentsForSite) {
       addMetricTd(ep.latency, 'latency');
       tbody.appendChild(tr);
     }
+    if (typeof console !== 'undefined' && console.log) {
+      console.log('[EP debug] tbody.childNodes.length (rows added)=', tbody.childNodes.length);
+    }
     table.appendChild(tbody);
     endSection.appendChild(table);
   } else {
@@ -918,6 +937,12 @@ function renderCategories(site, tests, epAgentsForSite) {
     endSection.appendChild(noAgents);
   }
   panel.appendChild(endSection);
+  if (typeof console !== 'undefined' && console.log && epAgents.length > 0) {
+    var tbl = endSection.querySelector && endSection.querySelector('table.endpoint-metrics-table');
+    var tbody = tbl && tbl.tBodies && tbl.tBodies[0];
+    var rowCount = tbody ? tbody.rows.length : 0;
+    console.log('[EP debug] after append: endpoint table tbody rows in DOM=', rowCount);
+  }
 }
 
 function renderUpdatedLabel() {
