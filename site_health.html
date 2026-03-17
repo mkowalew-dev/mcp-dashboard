@@ -604,6 +604,12 @@ function renderAgentsList(site) {
   el.innerHTML = eaHtml + epHtml;
 }
 
+function firstLocationToken(s) {
+  if (s == null || s === '') return '';
+  var t = s.toString().trim().split(',')[0].trim().toLowerCase();
+  return t;
+}
+
 function endpointAtSiteMatch(agentLoc, agentCity, siteName, siteLoc) {
   var loc = (agentLoc || '').toString().trim();
   var city = (agentCity || '').toString().trim();
@@ -611,6 +617,9 @@ function endpointAtSiteMatch(agentLoc, agentCity, siteName, siteLoc) {
   var sl = (siteLoc || '').toString().trim();
   if (!sn && !sl) return false;
   if (loc === sl || city === sn || loc === sn || city === sl) return true;
+  var siteToken = firstLocationToken(sn) || firstLocationToken(sl);
+  var agentToken = firstLocationToken(loc) || firstLocationToken(city);
+  if (siteToken && agentToken && siteToken === agentToken) return true;
   if (sn && (loc.indexOf(sn) >= 0 || city.indexOf(sn) >= 0)) return true;
   if (sl && (loc.indexOf(sl) >= 0 || city.indexOf(sl) >= 0)) return true;
   if (loc && (sn.indexOf(loc) >= 0 || sl.indexOf(loc) >= 0)) return true;
@@ -650,16 +659,33 @@ function getEndpointAgentsForSite(site) {
 
   allAgents.forEach(function(a) {
     if (a.type !== 'endpoint') return;
-    if (!endpointAtSiteMatch(a.loc, a.city, siteName, siteLoc)) return;
+    var kpiMatch = (a.city === site.name || a.loc === site.loc);
+    var flexibleMatch = endpointAtSiteMatch(a.loc, a.city, siteName, siteLoc);
+    if (!kpiMatch && !flexibleMatch) return;
     var epDetail = allEp.find(function(e) { return e.id === a.id || e.name === a.name; }) || {};
     addAgent(a, epDetail.device);
   });
 
   allEp.forEach(function(e) {
-    if (!endpointAtSiteMatch(e.loc, e.loc, siteName, siteLoc)) return;
+    var loc = (e.loc || '').toString().trim();
+    var kpiMatch = (loc === site.name || loc === site.loc);
+    var flexibleMatch = endpointAtSiteMatch(e.loc, e.loc, siteName, siteLoc);
+    if (!kpiMatch && !flexibleMatch) return;
     var a = allAgents.find(function(x) { return x.type === 'endpoint' && (x.id === e.id || x.name === e.name); });
     addAgent(a || { name: e.name, loc: e.loc, id: e.id, city: e.loc }, e.device);
   });
+
+  var kpiEpCount = allAgents.filter(function(a) {
+    return a.type === 'endpoint' && (a.city === site.name || a.loc === site.loc);
+  }).length;
+  if (list.length < kpiEpCount) {
+    allAgents.forEach(function(a) {
+      if (a.type !== 'endpoint') return;
+      if (a.city !== site.name && a.loc !== site.loc) return;
+      var epDetail = allEp.find(function(e) { return e.id === a.id || e.name === a.name; }) || {};
+      addAgent(a, epDetail.device);
+    });
+  }
 
   return list;
 }
