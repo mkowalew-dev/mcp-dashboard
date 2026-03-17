@@ -636,12 +636,12 @@ function getEndpointAgentsForSite(site) {
   var siteName = (site.name || '').toString().trim();
   var siteLoc = (site.loc || site.name || '').toString().trim();
   var list = [];
-  var seen = {};
+  var seenIds = {};
 
   function addOne(name, loc, id, device) {
-    var key = (id || name || '').toString();
-    if (seen[key]) return;
-    seen[key] = true;
+    var uid = (id != null && id !== '') ? String(id) : (name != null && name !== '' ? 'n-' + String(name) : 'r-' + list.length);
+    if (seenIds[uid]) return;
+    seenIds[uid] = true;
     var metrics = perf.find(function(p) {
       if (p.name === name) return true;
       if (p.name && p.name.split('.')[0] === name) return true;
@@ -832,7 +832,7 @@ function renderCategories(site, tests, epAgentsForSite) {
     html = '<div class="no-site">No tests assigned to agents at this site.</div>';
   }
 
-  var epAgents = epAgentsForSite;
+  var epAgents = (epAgentsForSite && epAgentsForSite.length) ? epAgentsForSite.slice(0) : [];
   var endpointHtml = '';
   if (epAgents.length > 0) {
     endpointHtml += '<div class="endpoint-section">';
@@ -843,7 +843,8 @@ function renderCategories(site, tests, epAgentsForSite) {
     endpointHtml += '<thead><tr>';
     endpointHtml += '<th>Agent</th><th>CPU</th><th>Mem</th><th>WiFi RSSI</th><th>Gateway Lat.</th><th>Gateway Loss</th><th>E2E Latency</th>';
     endpointHtml += '</tr></thead><tbody>';
-    epAgents.forEach(function(ep) {
+    for (var ei = 0; ei < epAgents.length; ei++) {
+      var ep = epAgents[ei];
       var isInactive = endpointAgentHasNoData(ep);
       var rowCls = isInactive ? 'ep-row-inactive' : '';
       var cpuCls = endpointMetricClass(ep.cpu, 'cpu');
@@ -865,7 +866,7 @@ function renderCategories(site, tests, epAgentsForSite) {
       endpointHtml += '<td class="ep-metric ' + gwLossCls + '"' + t(ep.gateway_loss, 'gateway_loss') + '>' + formatEndpointMetric(ep.gateway_loss, 'gateway_loss') + '</td>';
       endpointHtml += '<td class="ep-metric ' + latCls + '"' + t(ep.latency, 'latency') + '>' + formatEndpointMetric(ep.latency, 'latency') + '</td>';
       endpointHtml += '</tr>';
-    });
+    }
     endpointHtml += '</tbody></table></div>';
   } else {
     endpointHtml += '<div class="endpoint-section"><div class="endpoint-section-header"><span class="endpoint-section-title">Endpoint Agents</span></div>';
