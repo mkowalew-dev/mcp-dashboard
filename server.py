@@ -217,6 +217,7 @@ COORD_LOOKUP = {
 _base_cache = {}
 _metrics_cache = {}
 _extra_kpi_cache = {}
+_agent_perf_cache: dict[str, dict] = {}  # test_id -> {"data": {...}, "ts": float}
 _cache_lock = threading.Lock()
 
 # Refresh status for initial load and startup script / UI (thread-safe)
@@ -643,6 +644,7 @@ async def refresh_base_data_async():
                 "state": a.get("state", ""),
             }
         time_str = ""
+        time_iso = ""
         if start_time:
             try:
                 if isinstance(start_time, (int, float)):
@@ -650,12 +652,14 @@ async def refresh_base_data_async():
                 else:
                     dt = datetime.fromisoformat(str(start_time).replace("Z", "+00:00"))
                 time_str = dt.strftime("%H:%M")
+                time_iso = dt.isoformat().replace("+00:00", "Z")
             except (ValueError, TypeError, OSError):
                 time_str = str(start_time)[:5]
         sev_color = "red" if severity.upper() in ("MAJOR", "CRITICAL") else "yellow" if severity.upper() == "MINOR" else "green"
         alert_id = str(a.get("alertId", a.get("id", "")))
         alert_feed.append({
             "time": time_str,
+            "timeISO": time_iso,
             "msg": f"{severity.upper()} - {test_name}: {rule_name} ({alert_type})",
             "sev": sev_color,
             "severity": severity.upper(),
@@ -736,6 +740,9 @@ async def refresh_base_data_async():
         else:
             duration_str = f"{duration_min}m"
 
+        time_iso = ""
+        if start_dt:
+            time_iso = start_dt.isoformat().replace("+00:00", "Z")
         live_events.append({
             "eventId": event_id,
             "title": e.get("title", e.get("type", "Event")),
@@ -745,6 +752,7 @@ async def refresh_base_data_async():
             "duration": duration_str,
             "durationMin": duration_min,
             "time": time_str,
+            "timeISO": time_iso,
             "timestamp": str(start_date),
             "ongoing": True,
         })
@@ -1513,6 +1521,11 @@ def api_agent_perf(test_id):
         return jsonify({"error": "Invalid test id"}), 400
     with _cache_lock:
         base = dict(_base_cache) if _base_cache else {}
+        cached = _agent_perf_cache.get(test_id)
+        now = time.time()
+        if cached and (now - cached["ts"]) < METRICS_TTL_SECONDS:
+            return jsonify(cached["data"])
+
     test_types = base.get("TEST_TYPES", {})
     test_ids = base.get("TEST_IDS", {})
     inv_ids = {v: k for k, v in test_ids.items()}
@@ -1521,6 +1534,7 @@ def api_agent_perf(test_id):
 
     metric_id = METRIC_FOR_TYPE.get(test_type, "WEB_AVAILABILITY")
     metric_label = METRIC_LABEL_FOR_TYPE.get(test_type, "Availability %")
+    higher_is_worse = test_type in ("agent-to-server", "agent-to-agent")
 
     end = datetime.now(timezone.utc)
     start = end - timedelta(hours=24)
@@ -1538,12 +1552,27 @@ def api_agent_perf(test_id):
         agents = _parse_agent_csv(resp)
     except Exception as e:
         log.error("agent_perf fetch failed: test_id=%s, error=%s", test_id, e)
-        agents = []
+        with _cache_lock:
+            stale = _agent_perf_cache.get(test_id)
+        if stale:
+            out = dict(stale["data"])
+            out["cached"] = True
+            out["cached_message"] = "Rate limited or temporary error; showing last cached data."
+            return jsonify(out)
+        return jsonify({
+            "test_id": test_id,
+            "test_name": test_name,
+            "test_type": test_type,
+            "metric_id": metric_id,
+            "metric_label": metric_label,
+            "higher_is_worse": higher_is_worse,
+            "agents": [],
+            "error": "Unable to load per-agent data (rate limited or connection error). Try again in a few minutes.",
+        })
 
-    higher_is_worse = test_type in ("agent-to-server", "agent-to-agent")
     agents.sort(key=lambda a: a["value"], reverse=higher_is_worse)
 
-    return jsonify({
+    payload = {
         "test_id": test_id,
         "test_name": test_name,
         "test_type": test_type,
@@ -1551,7 +1580,10 @@ def api_agent_perf(test_id):
         "metric_label": metric_label,
         "higher_is_worse": higher_is_worse,
         "agents": agents,
-    })
+    }
+    with _cache_lock:
+        _agent_perf_cache[test_id] = {"data": payload, "ts": time.time()}
+    return jsonify(payload)
 
 
 @app.route("/api/refresh", methods=["POST"])

@@ -673,9 +673,7 @@ function renderUpdatedLabel() {
   if (ts) {
     try {
       var d = new Date(ts);
-      var hh = d.getHours().toString().padStart(2, '0');
-      var mm = d.getMinutes().toString().padStart(2, '0');
-      el.textContent = 'Updated ' + hh + ':' + mm + ' PM';
+      el.textContent = 'Updated ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
     } catch (e) {
       el.textContent = 'Updated --';
     }
@@ -759,10 +757,12 @@ function openTestDetail(testId) {
       var wrapEl = document.getElementById('testModalHeatmapWrap');
       var heatEl = document.getElementById('testModalHeatmap');
       if (!subEl || !heatEl) return;
+      var errMsg = d.error || '';
+      var cachedMsg = d.cached_message || '';
       var nLocations = agents.length;
-      subEl.textContent = metricLabel + ' \u2022 ' + nLocations + ' location' + (nLocations !== 1 ? 's' : '') + ' \u2022 24 intervals';
+      subEl.textContent = metricLabel + (nLocations ? ' \u2022 ' + nLocations + ' location' + (nLocations !== 1 ? 's' : '') + ' \u2022 24 intervals' : '') + (cachedMsg ? ' \u2022 Cached' : '');
       if (agents.length === 0) {
-        heatEl.innerHTML = '<div style="padding:20px;color:var(--te-text-dim);font-size:12px;">No per-agent data available</div>';
+        heatEl.innerHTML = '<div style="padding:20px;color:var(--te-text-dim);font-size:12px;">' + (errMsg ? escHtml(errMsg) : 'No per-agent data available. If rate limited, try again in a few minutes.') + '</div>';
         return;
       }
       var numIntervals = 24;

@@ -1349,7 +1349,7 @@ function renderII() {
     }
     html += '<div class="insight-card">';
     html += '<div class="insight-header"><div class="insight-provider">' + escHtml(o.provider) + '</div><span class="insight-severity sev-' + o.severity + '">' + escHtml(o.severity) + '</span></div>';
-    html += '<div class="insight-meta">' + escHtml(o.type) + ' \u00B7 ' + escHtml(o.affected) + ' \u00B7 Started ' + escHtml(o.start) + '</div>';
+    html += '<div class="insight-meta">' + escHtml(o.type) + ' \u00B7 ' + escHtml(o.affected) + ' \u00B7 Started ' + escHtml(o.start_iso ? formatInLocalDateTime(o.start_iso) : o.start) + '</div>';
     html += '<div class="insight-bar-container"><div class="insight-bar" style="width:' + Math.min(o.impact, 100) + '%;background:' + barColor + '"></div></div>';
     html += '<div style="font-size:9px;color:var(--te-text-dim);margin-top:4px;">Impact Score: ' + o.impact + '/100 \u00B7 Duration: ' + durationMin + ' min</div>';
     html += '</div>';
@@ -1367,17 +1367,21 @@ function renderAlerts() {
   alerts.forEach(function(a) {
     var color = a.sev === 'red' ? 'var(--te-red)' : a.sev === 'yellow' ? 'var(--te-yellow)' : 'var(--te-green)';
     var link = a.alertId ? 'https://app.thousandeyes.com/alerts/list/active?alertId=' + encodeURIComponent(a.alertId) : '';
-    combined.push({ time: a.time || '', color: color, msg: a.msg || '', link: link, tag: 'ALERT', tagColor: 'var(--te-red)', tagBg: 'rgba(248,81,73,0.12)' });
+    combined.push({ time: a.time || '', timeISO: a.timeISO || '', color: color, msg: a.msg || '', link: link, tag: 'ALERT', tagColor: 'var(--te-red)', tagBg: 'rgba(248,81,73,0.12)' });
   });
   events.forEach(function(e) {
     var color = e.impact === 'HIGH' ? 'var(--te-red)' : e.impact === 'MEDIUM' ? 'var(--te-yellow)' : 'var(--te-blue)';
     var link = e.eventId ? 'https://app.thousandeyes.com/alerts/list/active?eventId=' + encodeURIComponent(e.eventId) : '';
     var label = (e.impact || '') + ' \u2014 ' + (e.title || 'Event');
     if (e.type) label += ' (' + e.type + ')';
-    combined.push({ time: e.time || '', color: color, msg: label, link: link, tag: 'EVENT', tagColor: 'var(--te-blue)', tagBg: 'rgba(88,166,255,0.12)' });
+    combined.push({ time: e.time || '', timeISO: e.timeISO || e.timestamp || '', color: color, msg: label, link: link, tag: 'EVENT', tagColor: 'var(--te-blue)', tagBg: 'rgba(88,166,255,0.12)' });
   });
 
-  combined.sort(function(a, b) { return a.time < b.time ? 1 : a.time > b.time ? -1 : 0; });
+  combined.sort(function(a, b) {
+    var ta = a.timeISO || a.time || '';
+    var tb = b.timeISO || b.time || '';
+    return ta < tb ? 1 : ta > tb ? -1 : 0;
+  });
 
   if (combined.length === 0) {
     feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--te-green);font-size:12px;">\u2713 No active alerts or events</div>';
@@ -1389,7 +1393,7 @@ function renderAlerts() {
       ? '<a href="' + item.link + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.4);transition:color 0.2s, border-color 0.2s;" onmouseover="this.style.color=\'#79c0ff\';this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.color=\'var(--te-blue)\';this.style.borderBottomColor=\'rgba(88,166,255,0.4)\'">' + escHtml(item.msg) + '</a>'
       : escHtml(item.msg);
     html += '<div class="alert-item">';
-    html += '<span class="alert-time">' + escHtml(item.time) + '</span>';
+    html += '<span class="alert-time">' + escHtml(formatInLocalTime(item.timeISO) || item.time) + '</span>';
     html += '<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:' + item.tagBg + ';color:' + item.tagColor + ';font-weight:600;letter-spacing:0.5px;white-space:nowrap;">' + item.tag + '</span>';
     html += '<span class="alert-msg">' + msgHtml + '</span>';
     html += '</div>';
@@ -1563,13 +1567,34 @@ function renderGauges() {
   }).join('');
 }
 
+function formatInLocalTime(isoOrTimestamp) {
+  if (!isoOrTimestamp) return '';
+  try {
+    var d = typeof isoOrTimestamp === 'number' ? new Date(isoOrTimestamp) : new Date(isoOrTimestamp);
+    if (isNaN(d.getTime())) return String(isoOrTimestamp).slice(0, 5);
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
+  } catch (e) {
+    return String(isoOrTimestamp).slice(0, 5);
+  }
+}
+function formatInLocalDateTime(isoOrTimestamp) {
+  if (!isoOrTimestamp) return '';
+  try {
+    var d = typeof isoOrTimestamp === 'number' ? new Date(isoOrTimestamp) : new Date(isoOrTimestamp);
+    if (isNaN(d.getTime())) return String(isoOrTimestamp);
+    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', hour12: true });
+  } catch (e) {
+    return String(isoOrTimestamp);
+  }
+}
+
 function renderFooter() {
   var ts = DATA.lastRefresh || '';
   var label = 'Live Data via MCP';
   if (ts) {
     try {
       var d = new Date(ts);
-      label = 'Last refresh: ' + d.toUTCString().replace('GMT','UTC');
+      label = 'Last refresh: ' + d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', hour12: true });
     } catch(e) {}
   }
   var orgName = (DATA.ACCOUNT_GROUP || 'ThousandEyes');
@@ -2015,7 +2040,7 @@ function buildAlertModal() {
   feed.forEach(function(a) {
     var teLink = a.alertId ? 'https://app.thousandeyes.com/alerts/list/active?alertId=' + encodeURIComponent(a.alertId) : '#';
     html += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--te-border);">';
-    html += '<span style="font-family:var(--font-mono);font-size:10px;color:var(--te-text-dim);white-space:nowrap;min-width:48px;">' + escHtml(a.time) + '</span>';
+    html += '<span style="font-family:var(--font-mono);font-size:10px;color:var(--te-text-dim);white-space:nowrap;min-width:48px;">' + escHtml(formatInLocalTime(a.timeISO) || a.time) + '</span>';
     html += '<a href="' + teLink + '" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:var(--te-blue);line-height:1.4;text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.3);transition:border-color 0.2s;" onmouseover="this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.borderBottomColor=\'rgba(88,166,255,0.3)\'">' + escHtml(a.msg) + '</a>';
     html += '</div>';
   });
@@ -2112,7 +2137,7 @@ function buildOutagesModal() {
       }
       html += '<div class="insight-card">';
       html += '<div class="insight-header"><div class="insight-provider">' + escHtml(o.provider) + '</div><span class="insight-severity ' + sevClass + '">' + escHtml(o.severity) + '</span></div>';
-      html += '<div class="insight-meta">' + escHtml(o.type) + ' \u00B7 ' + escHtml(o.affected) + ' \u00B7 Started ' + escHtml(o.start) + '</div>';
+      html += '<div class="insight-meta">' + escHtml(o.type) + ' \u00B7 ' + escHtml(o.affected) + ' \u00B7 Started ' + escHtml(o.start_iso ? formatInLocalDateTime(o.start_iso) : o.start) + '</div>';
       html += '<div class="insight-bar-container" style="margin-top:8px;"><div class="insight-bar" style="width:' + Math.min(o.impact, 100) + '%;background:' + barColor + '"></div></div>';
       html += '<div style="font-size:10px;color:var(--te-text-dim);margin-top:4px;">Impact Score: ' + o.impact + '/100 \u00B7 Duration: ' + durationMin + ' min</div>';
       html += '</div>';
