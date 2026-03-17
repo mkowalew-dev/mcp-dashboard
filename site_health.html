@@ -174,10 +174,11 @@
   .test-modal-heatmap-cell:hover { opacity: 0.85; }
   .test-modal-heatmap-agent-name { padding: 8px 10px; background: var(--te-dark-3); color: var(--te-text-dim); font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
 
-  .endpoint-section { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); overflow: hidden; margin-top: 20px; }
-  .endpoint-section-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--te-border); }
+  .endpoint-section { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); margin-top: 20px; display: flex; flex-direction: column; min-height: 0; }
+  .endpoint-section-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--te-border); flex-shrink: 0; }
   .endpoint-section-title { font-size: 14px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
   .endpoint-section-title .ep-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(249,115,22,0.2); color: var(--te-orange); font-weight: 600; }
+  .endpoint-section-table-wrap { overflow-y: auto; max-height: 320px; -webkit-overflow-scrolling: touch; }
   .endpoint-metrics-table { width: 100%; border-collapse: collapse; font-size: 11px; }
   .endpoint-metrics-table th { text-align: left; padding: 10px 14px; color: var(--te-text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; border-bottom: 1px solid var(--te-border); background: var(--te-dark-3); }
   .endpoint-metrics-table td { padding: 10px 14px; border-bottom: 1px solid var(--te-border); color: var(--te-text); font-family: var(--font-mono); }
@@ -922,7 +923,10 @@ function renderCategories(site, tests, epAgentsForSite) {
       console.log('[EP debug] tbody.childNodes.length (rows added)=', tbody.childNodes.length);
     }
     table.appendChild(tbody);
-    endSection.appendChild(table);
+    var tableWrap = document.createElement('div');
+    tableWrap.className = 'endpoint-section-table-wrap';
+    tableWrap.appendChild(table);
+    endSection.appendChild(tableWrap);
   } else {
     var noHeader = document.createElement('div');
     noHeader.className = 'endpoint-section-header';
