@@ -579,17 +579,26 @@ function renderMap(site) {
 
 function renderAgentsList(site) {
   var el = document.getElementById('agentsList');
-  if (site.agents.length === 0) {
-    el.innerHTML = '<div style="color:var(--te-text-dim);font-size:12px;">No agents at this site</div>';
-    return;
-  }
-  el.innerHTML = site.agents.map(function(a) {
+  var epAtSite = getEndpointAgentsForSite(site);
+  var eaHtml = site.agents.map(function(a) {
     return '<div class="agent-at-site">' +
       '<div class="agent-site-dot" style="background:var(--te-green);box-shadow:0 0 6px var(--te-green);"></div>' +
       '<div class="agent-site-name">' + escHtml(a.name) + '</div>' +
       '<div class="agent-site-type">EA</div>' +
       '</div>';
   }).join('');
+  var epHtml = epAtSite.map(function(a) {
+    return '<div class="agent-at-site">' +
+      '<div class="agent-site-dot" style="background:var(--te-orange);box-shadow:0 0 6px var(--te-orange);"></div>' +
+      '<div class="agent-site-name">' + escHtml(a.name) + '</div>' +
+      '<div class="agent-site-type">EP</div>' +
+      '</div>';
+  }).join('');
+  if (eaHtml === '' && epHtml === '') {
+    el.innerHTML = '<div style="color:var(--te-text-dim);font-size:12px;">No agents at this site</div>';
+    return;
+  }
+  el.innerHTML = eaHtml + epHtml;
 }
 
 function getEndpointAgentsForSite(site) {

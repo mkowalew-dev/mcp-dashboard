@@ -1246,8 +1246,8 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         _fetch_ep_metric("ENDPOINT_GATEWAY_WIRELESS_RSSI"),
         _fetch_ep_metric("ENDPOINT_GATEWAY_LATENCY"),
         _fetch_ep_metric("ENDPOINT_GATEWAY_LOSS"),
-        _fetch_ep_metric("ENDPOINT_CPU_LOAD"),
-        _fetch_ep_metric("ENDPOINT_MEMORY"),
+        _fetch_ep_metric("ENDPOINT_NET_CPU_LOAD_PERCENT"),
+        _fetch_ep_metric("ENDPOINT_NET_MEMORY_LOAD_PERCENT"),
     )
     ep_responses = {
         "latency": ep_results[0],
