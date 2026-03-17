@@ -38,6 +38,8 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+# Suppress Werkzeug's per-request access logs (no incoming API call logging)
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 # --- Config (env); no secrets logged ---
 MCP_URL = os.getenv("MCP_URL", "https://api.thousandeyes.com/mcp").strip()
@@ -560,18 +562,19 @@ async def refresh_base_data_async():
         if not aid or aid in agent_id_set or aid not in relevant_agent_ids:
             continue
         agent_id_set.add(aid)
-        loc = a.get("location", "")
+        loc = (a.get("location") or "").strip()
         lat, lng = resolve_coords(loc)
         atype = classify_agent_type(a.get("agentType", ""))
         agent_name = a.get("agentName", "")
-        city = agent_name if atype == "enterprise" else derive_city(a)
+        # Use geographic location for site grouping; fall back to agent name when location is empty
+        city = loc if loc and atype == "enterprise" else (derive_city(a) if atype == "cloud" else agent_name)
         if atype == "cloud":
             cloud_count += 1
         else:
             enterprise_count += 1
         agent_entry = {
             "id": aid, "name": agent_name, "type": atype,
-            "city": city, "loc": loc,
+            "city": city or agent_name, "loc": loc,
         }
         if lat is not None:
             agent_entry["lat"] = lat
@@ -1354,7 +1357,7 @@ def run_initial_load():
 # Flask routes
 # ---------------------------------------------------------------------------
 
-_TEST_ID_RE = re.compile(r"^(\d{1,12}|ep-[\w-]{1,64})$")
+_TEST_ID_RE = re.compile(r"^(\d{1,20}|ep-[\w-]{1,64})$")
 
 
 @app.after_request

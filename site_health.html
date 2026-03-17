@@ -303,7 +303,7 @@ function escHtml(s) {
 }
 
 function getSiteKey(agent) {
-  return agent.city || agent.name || agent.id;
+  return (agent.loc || agent.city || agent.name || agent.id || '').toString().trim() || ('agent-' + agent.id);
 }
 
 function buildSites(data) {
