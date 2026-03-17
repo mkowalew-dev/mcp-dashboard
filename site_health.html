@@ -1201,8 +1201,9 @@ function openTestDetail(testId) {
       for (var i = 0; i < nodeCount; i++) pts.push({ x: pad + i * xStep, y: y });
       var pathD = 'M' + pts.map(function(p) { return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L');
       var degraded = (respMs != null && respMs > 500) || (lossPct != null && lossPct > 1);
+      var pathHover = 'End-to-end: ' + respStr + ', Loss: ' + lossStr + (jitterStr ? ', Jitter: ' + jitterStr : '');
       var svg = '<div class="test-drill-path-svg-wrap"><svg class="test-drill-path-svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
-        '<path class="test-drill-path-line' + (degraded ? ' degraded' : '') + ' animated" d="' + pathD + '"/>';
+        '<g><title>' + escHtml(pathHover) + '</title><path class="test-drill-path-line' + (degraded ? ' degraded' : '') + ' animated" d="' + pathD + '"/></g>';
       var labels = [];
       var labelTitles = [];
       if (first && first.agent) {
@@ -1212,34 +1213,39 @@ function openTestDetail(testId) {
       }
       if (hops) for (var hi = 0; hi < hops.length; hi++) {
         var hop = hops[hi];
-        var ip = hop.ipAddress || hop.ip;
-        var dns = hop.rdns || hop.hostname || hop.dnsName;
-        var fullLabel = (dns && dns !== ip ? dns + (ip ? ' (' + ip + ')' : '') : ip) || dns || ('Hop ' + (hi + 1));
+        var ip = hop.ipAddress || hop.ip || '';
+        var fullLabel = ip || ('Hop ' + (hi + 1));
         labelTitles.push(fullLabel);
-        labels.push(fullLabel.length > 24 ? fullLabel.substring(0, 21) + '…' : fullLabel);
+        labels.push(fullLabel.length > 20 ? fullLabel.substring(0, 17) + '…' : fullLabel);
       }
       var tgtLabel = first && first.server ? first.server : targetStr;
       labels.push(tgtLabel);
       labelTitles.push(tgtLabel);
       var latencyThresholdMs = 100;
+      var pathMetricsStr = respMs != null || lossPct != null ? (respStr + ', ' + lossStr + (jitterStr ? ', ' + jitterStr : '')) : '';
       for (var ni = 0; ni < pts.length; ni++) {
         var isFirst = ni === 0;
         var isLast = ni === pts.length - 1;
-        var circleClass = 'test-drill-path-node-circle' + (isFirst ? ' source' : '') + (isLast ? ' target' : '') + (degraded && !isFirst && !isLast ? ' degraded' : '');
+        var circleClass = 'test-drill-path-node-circle' + (isFirst ? ' source' : '') + (isLast ? ' target' : '');
+        var hasPerHopMetrics = false;
         if (!isFirst && !isLast && hops && hops[ni - 1]) {
           var h = hops[ni - 1];
+          hasPerHopMetrics = h.latencyMs != null || h.hasLoss || (h.lossPercent != null && h.lossPercent > 0);
           if (h.hasLoss || (h.lossPercent != null && h.lossPercent > 0)) circleClass += ' has-loss';
           else if (h.latencyMs != null && h.latencyMs > latencyThresholdMs) circleClass += ' high-latency';
-        }
+          else if (!hasPerHopMetrics) {
+            if (lossPct != null && lossPct > 0) circleClass += ' has-loss';
+            else if (respMs != null && respMs > latencyThresholdMs) circleClass += ' high-latency';
+          }
+        } else if (degraded && !isFirst && !isLast) circleClass += ' degraded';
         var nodeTitle = labelTitles[ni] || '';
         if (!isFirst && !isLast && hops && hops[ni - 1]) {
           var hop = hops[ni - 1];
-          if (hop.latencyMs != null || hop.lossPercent != null || hop.hasLoss) {
-            var parts = [];
-            if (hop.latencyMs != null) parts.push(hop.latencyMs + ' ms');
-            if (hop.hasLoss || hop.lossPercent != null) parts.push(hop.lossPercent != null ? hop.lossPercent + '% loss' : 'loss');
-            if (parts.length) nodeTitle = (nodeTitle ? nodeTitle + ' — ' : '') + parts.join(', ');
-          }
+          var parts = [];
+          if (hop.latencyMs != null) parts.push(hop.latencyMs + ' ms');
+          if (hop.hasLoss || hop.lossPercent != null) parts.push(hop.lossPercent != null ? hop.lossPercent + '% loss' : 'loss');
+          if (parts.length) nodeTitle = (nodeTitle ? nodeTitle + ' — ' : '') + parts.join(', ');
+          else if (pathMetricsStr) nodeTitle = (nodeTitle ? nodeTitle + ' — ' : '') + 'Path: ' + pathMetricsStr;
         }
         svg += '<circle class="' + circleClass + '" cx="' + pts[ni].x + '" cy="' + pts[ni].y + '" r="10"/>';
         var titleAttr = nodeTitle ? ' title="' + escHtml(nodeTitle).replace(/"/g, '&quot;') + '"' : '';
