@@ -1168,9 +1168,21 @@ function openTestDetail(testId) {
         wrap.innerHTML = '<span class="path-fallback-msg">' + escHtml(err) + '</span><div style="margin-top:12px;font-size:11px;color:var(--te-text-dim);">Showing summary path below.</div>' + pathFallbackHtml;
         return;
       }
+      if (site && site.agents && site.agents.length > 0) {
+        var siteNames = {};
+        site.agents.forEach(function(a) { siteNames[String(a.name || '').toLowerCase()] = true; });
+        results = results.filter(function(r) {
+          var id = r.agent && (r.agent.agentId || r.agent.agent_id);
+          if (id != null && siteAgentIdSet[String(id)]) return true;
+          var name = r.agent && (r.agent.agentName || r.agent.agent_name);
+          return name != null && siteNames[String(name).toLowerCase()];
+        });
+      }
       var first = results[0];
       if (!first) {
-        var emptyMsg = reason || 'No path trace data for the previous 15-minute window. Try again after the next test round completes.';
+        var emptyMsg = (site && site.agents && site.agents.length > 0)
+          ? 'No path trace for agents at this site for the selected window.'
+          : (reason || 'No path trace data for the previous 15-minute window. Try again after the next test round completes.');
         wrap.className = 'test-drill-path-loading';
         wrap.innerHTML = '<span class="path-fallback-msg">' + escHtml(emptyMsg) + '</span><div style="margin-top:12px;font-size:11px;color:var(--te-text-dim);">Showing summary path below.</div>' + pathFallbackHtml;
         return;

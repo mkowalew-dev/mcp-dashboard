@@ -1618,12 +1618,82 @@ def _parse_agent_csv(data: dict) -> list[dict]:
 _path_vis_cache: dict = {}
 PATH_VIS_CACHE_TTL = 300  # 5 min
 
+def _parse_path_vis_node(node_str: str) -> dict:
+    """Parse pathVis node string 'ip|prefix|AS|location' into { ipAddress, rdns }."""
+    if not node_str or not isinstance(node_str, str):
+        return {"ipAddress": "", "rdns": ""}
+    parts = node_str.split("|")
+    ip = (parts[0] or "").strip()
+    # Prefer location for label, then AS, then prefix
+    rdns = (parts[3] if len(parts) > 3 else "") or (parts[2] if len(parts) > 2 else "") or (parts[1] if len(parts) > 1 else "") or ip
+    return {"ipAddress": ip, "rdns": rdns.strip()}
+
+
 def _normalize_path_vis_response(raw):
-    """Normalize MCP path visualization response for frontend (agents, hops, rounds)."""
+    """Normalize MCP path visualization response for frontend (agents, hops, rounds).
+    Supports ThousandEyes pathVis shape: pathVis.nodes (node strings), pathVis.agents (agents with runs.pathTraces as node indices).
+    """
     if not raw or not isinstance(raw, dict):
         return raw
-    # MCP may return content in different shapes; try common keys
     out = {"results": [], "error": raw.get("error")}
+
+    # Handle pathVis shape: { test, pathVis: { server, nodes[], agents[] } }
+    path_vis = raw.get("pathVis") if isinstance(raw.get("pathVis"), dict) else None
+    if path_vis:
+        nodes_list = path_vis.get("nodes") or []
+        if not isinstance(nodes_list, list):
+            nodes_list = []
+        server_default = path_vis.get("server") or ""
+        agents_list = path_vis.get("agents") or []
+        if not isinstance(agents_list, list):
+            agents_list = []
+        for ag in agents_list:
+            if not isinstance(ag, dict):
+                continue
+            agent_node = {
+                "agentId": ag.get("agentId") or ag.get("agent_id") or "",
+                "agentName": ag.get("agentName") or ag.get("agent_name") or "Agent",
+                "location": ag.get("countryId") or ag.get("location") or "",
+            }
+            runs = ag.get("runs") or []
+            if not isinstance(runs, list):
+                runs = []
+            # Use first run (or latest) to get one path
+            run = runs[0] if runs else {}
+            if not isinstance(run, dict):
+                run = {}
+            server_ip = run.get("serverIp") or server_default
+            path_traces = run.get("pathTraces") or []
+            if not isinstance(path_traces, list):
+                path_traces = []
+            hops = []
+            # pathTraces is list of traces; each trace is list of [nodeIndex, x, y] (or similar)
+            if path_traces:
+                first_trace = path_traces[0] if isinstance(path_traces[0], list) else []
+                for step in first_trace if isinstance(first_trace, list) else []:
+                    if isinstance(step, (list, tuple)) and len(step) >= 1:
+                        idx = step[0]
+                        if isinstance(idx, int) and 0 <= idx < len(nodes_list):
+                            node_str = nodes_list[idx]
+                            if isinstance(node_str, str):
+                                hops.append(_parse_path_vis_node(node_str))
+                    elif isinstance(step, dict) and ("ipAddress" in step or "ip" in step):
+                        hops.append({
+                            "ipAddress": step.get("ipAddress") or step.get("ip") or "",
+                            "rdns": step.get("rdns") or step.get("hostname") or "",
+                        })
+            out["results"].append({
+                "agent": agent_node,
+                "server": server_ip if isinstance(server_ip, str) else server_default,
+                "serverIp": server_ip if isinstance(server_ip, str) else "",
+                "roundId": run.get("roundId") or run.get("round_id"),
+                "responseTime": run.get("responseTime"),
+                "numberOfHops": len(hops) if hops else None,
+                "hops": hops,
+            })
+        return out
+
+    # Legacy/alternate shape: results or path_results array with agent, pathTraces, hops
     results = raw.get("results") or raw.get("path_results") or raw.get("pathResults") or []
     if isinstance(results, dict):
         results = results.get("items") or results.get("results") or []
@@ -1645,7 +1715,7 @@ def _normalize_path_vis_response(raw):
         if not isinstance(path_traces, list):
             path_traces = []
         hops = []
-        for pt in path_traces[:1]:  # first trace
+        for pt in path_traces[:1]:
             h = pt.get("hops") if isinstance(pt, dict) else None
             if isinstance(h, list):
                 hops = h
@@ -1675,14 +1745,13 @@ def api_path_vis(test_id):
 
     try:
         # MCP tool: "Get Full Path Visualization" – comprehensive path data for all agents and rounds.
-        # Tool requires start_date and end_date (ISO format). Use the *previous* completed 15-minute
-        # window (one period back) so data is more likely available (e.g. at 22:47 use 22:15–22:30,
-        # not 22:30–22:45, which may not be ready yet).
+        # Tool requires start_date and end_date (ISO format). Use a 15-minute window two periods
+        # back so data is reliably available (e.g. at 22:47 use 22:00–22:15, matching MCP behavior).
         now_utc = datetime.now(timezone.utc)
         last_5min = now_utc.replace(
             minute=(now_utc.minute // 5) * 5, second=0, microsecond=0
         )
-        end_utc = last_5min - timedelta(minutes=15)
+        end_utc = last_5min - timedelta(minutes=30)   # two 15-min periods back
         start_utc = end_utc - timedelta(minutes=15)
         start_date = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         end_date = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
