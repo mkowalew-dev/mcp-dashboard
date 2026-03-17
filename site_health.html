@@ -472,14 +472,14 @@ function renderSite() {
 
   var tests = getSiteTests(site, DATA);
   var epAgentsForSite = getEndpointAgentsForSite(site);
-  renderKPIs(site, tests);
+  renderKPIs(site, tests, epAgentsForSite);
   renderMap(site);
   renderAgentsList(site, epAgentsForSite);
   renderCategories(site, tests, epAgentsForSite);
   renderUpdatedLabel();
 }
 
-function renderKPIs(site, tests) {
+function renderKPIs(site, tests, epAgentsForSite) {
   var healthy = 0, degraded = 0, critical = 0, unknown = 0;
   var availVals = [];
 
@@ -546,7 +546,7 @@ function renderKPIs(site, tests) {
   var agEl = document.getElementById('kpiAgents');
   agEl.textContent = site.agents.length;
   agEl.className = 'kpi-value blue';
-  var epCount = (DATA.ALL_AGENTS || []).filter(function(a) { return a.type === 'endpoint' && (a.city === site.name || a.loc === site.loc); }).length;
+  var epCount = (epAgentsForSite && epAgentsForSite.length) ? epAgentsForSite.length : 0;
   document.getElementById('kpiAgentsSub').textContent = site.agents.length + ' enterprise' + (epCount > 0 ? ', ' + epCount + ' endpoint' : '');
 }
 
@@ -632,9 +632,6 @@ function getEndpointAgentsForSite(site) {
   var allEp = DATA.ENDPOINT_AGENTS || [];
   var allAgents = DATA.ALL_AGENTS || [];
   var perf = (DATA.EXTRA_KPI || {}).ep_worst_performers || [];
-  var siteToken = firstLocationToken(site.name) || firstLocationToken(site.loc);
-  var siteName = (site.name || '').toString().trim();
-  var siteLoc = (site.loc || site.name || '').toString().trim();
   var list = [];
   var seenIds = {};
 
@@ -662,24 +659,23 @@ function getEndpointAgentsForSite(site) {
     });
   }
 
-  allEp.forEach(function(e) {
-    var loc = (e.loc || '').toString().trim();
-    var token = firstLocationToken(loc);
-    var exact = (loc === siteName || loc === siteLoc);
-    var tokenMatch = (siteToken && token && siteToken === token);
-    if (exact || tokenMatch || endpointAtSiteMatch(e.loc, e.loc, siteName, siteLoc)) {
-      addOne(e.name, e.loc, e.id, e.device);
-    }
-  });
+  // Use the same filter as the KPI ("X endpoint") so sidebar and table match the count
+  function atSiteExact(a) {
+    return (a.type === 'endpoint' && (a.city === site.name || a.loc === site.loc));
+  }
 
   allAgents.forEach(function(a) {
-    if (a.type !== 'endpoint') return;
-    var token = firstLocationToken(a.loc) || firstLocationToken(a.city);
-    var exact = (a.city === site.name || a.loc === site.loc);
-    var tokenMatch = (siteToken && token && siteToken === token);
-    if (exact || tokenMatch || endpointAtSiteMatch(a.loc, a.city, siteName, siteLoc)) {
-      var ep = allEp.find(function(e) { return e.id === a.id || e.name === a.name; });
-      addOne(a.name, a.loc || a.city, a.id, ep ? ep.device : a.device);
+    if (!atSiteExact(a)) return;
+    var ep = allEp.find(function(e) { return e.id === a.id || e.name === a.name; });
+    addOne(a.name, a.loc || a.city, a.id, ep ? ep.device : a.device);
+  });
+
+  // Include any from ENDPOINT_AGENTS that match by location token (in case ALL_AGENTS has different city/loc format)
+  var siteToken = firstLocationToken(site.name) || firstLocationToken(site.loc);
+  allEp.forEach(function(e) {
+    var token = firstLocationToken(e.loc);
+    if (token && siteToken && token === siteToken) {
+      addOne(e.name, e.loc, e.id, e.device);
     }
   });
 
