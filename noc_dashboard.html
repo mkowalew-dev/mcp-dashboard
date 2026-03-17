@@ -819,31 +819,67 @@ document.querySelectorAll('.tab').forEach(function(tab) {
   });
 });
 
-var BUSINESS_SERVICES = [
-  { name: 'Collaboration - Microsoft', icon: '\uD83D\uDCE7', patterns: [/^MSTeams(?!.*RetailDemo)/i] },
-  { name: 'Collaboration - Webex', icon: '\uD83D\uDCDE', patterns: [/^Webex/i] },
-  { name: 'Microsoft O365', icon: '\uD83D\uDCE7', patterns: [/^MSO365/i, /^MS O365/i, /^SD-WAN DIA.*O365/i] },
-  { name: 'Retail Operations', icon: '\uD83C\uDFEA', patterns: [/^RetailDemo/i, /^RetailSite/i, /^Public_Sector/i] },
-  { name: 'Pseudoco Platform', icon: '\uD83D\uDDA5', patterns: [/^Pseudoco/i, /^Psuedoco/i, /pseudoco\./i] },
-  { name: 'AI Services', icon: '\uD83E\uDD16', patterns: [/Bedrock/i] },
-  { name: 'AWS Cloud Services', icon: '\u2601', patterns: [/^AWS/i] },
-  { name: 'Azure Cloud Services', icon: '\u2601', patterns: [/^Azure/i] },
-  { name: 'Salesforce & CRM', icon: '\uD83D\uDCC8', patterns: [/^Salesforce/i, /^SAP/i, /salesforce\.com/i, /lightning\.force/i] },
-  { name: 'Workday HR', icon: '\uD83D\uDC64', patterns: [/^Workday/i, /^RetailDemo_Workday/i] },
-  { name: 'Facebook & Social', icon: '\uD83C\uDF10', patterns: [/^Facebook/i, /Facebook.*Traffic/i] },
-  { name: 'Network Infrastructure', icon: '\uD83D\uDD17', patterns: [/^SD-WAN/i, /^DataCenter/i, /^Site-DC/i, /^Stores/i, /^TOR-NYC/i, /^SIP/i, /^SFTP/i] },
-  { name: 'Data Center Management', icon: '\uD83D\uDCBB', patterns: [/ESXi/i, /TrueNAS/i, /Xen Management/i, /Splunk/i] },
-  { name: 'Demo & Monitoring', icon: '\uD83D\uDD2C', patterns: [/^Mar Demo/i, /^Boutique/i, /^Internet Test/i, /^ThousandEyes/i, /thousandeyes\.com/i] },
-];
+function getDefaultBusinessServicesConfig() {
+  return {
+    type_rules: { Infrastructure: ['agent-to-agent', 'bgp'], Voice: ['voice', 'sip-server'] },
+    services: [
+      { name: 'Collaboration - Microsoft', icon: '\uD83D\uDCE7', patterns: ['MSTeams'] },
+      { name: 'Health Care', icon: '\u2695', patterns: ['MyChart', 'BSWHealth'] },
+      { name: 'Voice', icon: '\uD83D\uDCDE', patterns: [] },
+      { name: 'Infrastructure', icon: '\uD83D\uDD17', patterns: [] },
+      { name: 'Collaboration - Webex', icon: '\uD83D\uDCDE', patterns: ['Webex'] },
+      { name: 'Microsoft O365', icon: '\uD83D\uDCE7', patterns: ['MSO365', 'MS O365', 'O365'] },
+      { name: 'Retail Operations', icon: '\uD83C\uDFEA', patterns: ['RetailDemo', 'RetailSite', 'Public_Sector'] },
+      { name: 'Pseudoco Platform', icon: '\uD83D\uDDA5', patterns: ['Pseudoco', 'Psuedoco', 'pseudoco.'] },
+      { name: 'AI Services', icon: '\uD83E\uDD16', patterns: ['Bedrock'] },
+      { name: 'AWS Cloud Services', icon: '\u2601', patterns: ['AWS'] },
+      { name: 'Azure Cloud Services', icon: '\u2601', patterns: ['Azure'] },
+      { name: 'Salesforce & CRM', icon: '\uD83D\uDCC8', patterns: ['Salesforce', 'SAP', 'salesforce.com', 'lightning.force'] },
+      { name: 'Workday HR', icon: '\uD83D\uDC64', patterns: ['Workday'] },
+      { name: 'Facebook & Social', icon: '\uD83C\uDF10', patterns: ['Facebook'] },
+      { name: 'Network Infrastructure', icon: '\uD83D\uDD17', patterns: ['SD-WAN', 'DataCenter', 'Site-DC', 'Stores', 'TOR-NYC', 'SFTP'] },
+      { name: 'Data Center Management', icon: '\uD83D\uDCBB', patterns: ['ESXi', 'TrueNAS', 'Splunk'] },
+      { name: 'Demo & Monitoring', icon: '\uD83D\uDD2C', patterns: ['Mar Demo', 'Boutique', 'Internet Test', 'ThousandEyes', 'thousandeyes.com'] },
+    ],
+  };
+}
 
-function getBusinessService(testName) {
-  for (var s = 0; s < BUSINESS_SERVICES.length; s++) {
-    var svc = BUSINESS_SERVICES[s];
-    for (var p = 0; p < svc.patterns.length; p++) {
-      if (svc.patterns[p].test(testName)) return svc.name;
+function getBusinessServicesConfig() {
+  if (typeof DATA !== 'undefined' && DATA && DATA.business_services_config && DATA.business_services_config.services) {
+    return DATA.business_services_config;
+  }
+  return getDefaultBusinessServicesConfig();
+}
+
+function getBusinessService(test) {
+  var cfg = getBusinessServicesConfig();
+  var testName = (test && test.name) ? test.name : '';
+  var testType = (test && test.type) ? String(test.type).toLowerCase() : '';
+  var typeRules = cfg.type_rules || {};
+  var typeRuleNames = Object.keys(typeRules);
+  for (var r = 0; r < typeRuleNames.length; r++) {
+    var svcName = typeRuleNames[r];
+    var types = typeRules[svcName];
+    if (types && types.indexOf(testType) !== -1) return svcName;
+  }
+  for (var s = 0; s < (cfg.services || []).length; s++) {
+    var svc = cfg.services[s];
+    var patterns = svc.patterns || [];
+    for (var p = 0; p < patterns.length; p++) {
+      var pat = String(patterns[p]);
+      if (pat && testName.toLowerCase().indexOf(pat.toLowerCase()) !== -1) return svc.name;
     }
   }
   return 'Other Services';
+}
+
+function getBusinessServiceTypeRule(test, cfg) {
+  var testType = (test && test.type) ? String(test.type).toLowerCase() : '';
+  var typeRules = (cfg || getBusinessServicesConfig()).type_rules || {};
+  for (var svcName in typeRules) {
+    if (typeRules[svcName] && typeRules[svcName].indexOf(testType) !== -1) return svcName;
+  }
+  return null;
 }
 
 function toggleBsvc(id) { document.getElementById(id).classList.toggle('expanded'); }
@@ -965,14 +1001,15 @@ function renderCEATests() {
 
   var grouped = {};
   tests.forEach(function(t) {
-    var svc = getBusinessService(t.name);
+    var svc = getBusinessService(t);
     if (!grouped[svc]) grouped[svc] = [];
     grouped[svc].push(t);
   });
 
   var STATUS_PRIORITY = { critical: 0, warning: 1, healthy: 2, unknown: 3 };
 
-  var svcOrder = BUSINESS_SERVICES.map(function(s) { return s.name; });
+  var bsvcConfig = getBusinessServicesConfig();
+  var svcOrder = (bsvcConfig.services || []).map(function(s) { return s.name; });
   svcOrder.push('Other Services');
 
   var svcStatusMap = {};
@@ -1503,13 +1540,14 @@ function renderGauges() {
 
   var grouped = {};
   tests.forEach(function(t) {
-    var svc = getBusinessService(t.name);
+    var svc = getBusinessService(t);
     if (!grouped[svc]) grouped[svc] = [];
     grouped[svc].push(t);
   });
 
   var svcData = [];
-  var svcOrder = BUSINESS_SERVICES.map(function(s) { return s.name; });
+  var bsvcConfig = getBusinessServicesConfig();
+  var svcOrder = (bsvcConfig.services || []).map(function(s) { return s.name; });
   svcOrder.push('Other Services');
   svcOrder.forEach(function(svcName) {
     var items = grouped[svcName];

@@ -95,6 +95,58 @@ WINDOWS = {
     "7d": 168,
 }
 
+# Business services: type_rules map service name -> list of test types; services is display order with name, icon, patterns (substrings, case-insensitive)
+_DEFAULT_BUSINESS_SERVICES = {
+    "type_rules": {
+        "Infrastructure": ["agent-to-agent", "bgp"],
+        "Voice": ["voice", "sip-server"],
+    },
+    "services": [
+        {"name": "Collaboration - Microsoft", "icon": "\uD83D\uDCE7", "patterns": ["MSTeams"]},
+        {"name": "Health Care", "icon": "\u2695", "patterns": ["MyChart", "BSWHealth"]},
+        {"name": "Voice", "icon": "\uD83D\uDCDE", "patterns": []},
+        {"name": "Infrastructure", "icon": "\uD83D\uDD17", "patterns": []},
+        {"name": "Collaboration - Webex", "icon": "\uD83D\uDCDE", "patterns": ["Webex"]},
+        {"name": "Microsoft O365", "icon": "\uD83D\uDCE7", "patterns": ["MSO365", "MS O365", "SD-WAN DIA", "O365"]},
+        {"name": "Retail Operations", "icon": "\uD83C\uDFEA", "patterns": ["RetailDemo", "RetailSite", "Public_Sector"]},
+        {"name": "Pseudoco Platform", "icon": "\uD83D\uDDA5", "patterns": ["Pseudoco", "Psuedoco", "pseudoco."]},
+        {"name": "AI Services", "icon": "\uD83E\uDD16", "patterns": ["Bedrock"]},
+        {"name": "AWS Cloud Services", "icon": "\u2601", "patterns": ["AWS"]},
+        {"name": "Azure Cloud Services", "icon": "\u2601", "patterns": ["Azure"]},
+        {"name": "Salesforce & CRM", "icon": "\uD83D\uDCC8", "patterns": ["Salesforce", "SAP", "salesforce.com", "lightning.force"]},
+        {"name": "Workday HR", "icon": "\uD83D\uDC64", "patterns": ["Workday", "RetailDemo_Workday"]},
+        {"name": "Facebook & Social", "icon": "\uD83C\uDF10", "patterns": ["Facebook"]},
+        {"name": "Network Infrastructure", "icon": "\uD83D\uDD17", "patterns": ["SD-WAN", "DataCenter", "Site-DC", "Stores", "TOR-NYC", "SFTP"]},
+        {"name": "Data Center Management", "icon": "\uD83D\uDCBB", "patterns": ["ESXi", "TrueNAS", "Xen Management", "Splunk"]},
+        {"name": "Demo & Monitoring", "icon": "\uD83D\uDD2C", "patterns": ["Mar Demo", "Boutique", "Internet Test", "ThousandEyes", "thousandeyes.com"]},
+    ],
+}
+
+
+def _load_business_services_config() -> dict:
+    """Load business services config from env (JSON) or file path, else default. No secrets."""
+    raw = os.getenv("BUSINESS_SERVICES_CONFIG", "").strip()
+    if raw:
+        try:
+            out = json.loads(raw)
+            if isinstance(out, dict) and "services" in out:
+                return out
+        except json.JSONDecodeError:
+            log.warning("BUSINESS_SERVICES_CONFIG invalid JSON, using default")
+    path = os.getenv("BUSINESS_SERVICES_CONFIG_FILE", "").strip()
+    if path and os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                out = json.load(f)
+            if isinstance(out, dict) and "services" in out:
+                return out
+        except (json.JSONDecodeError, OSError) as e:
+            log.warning("BUSINESS_SERVICES_CONFIG_FILE load failed: %s, using default", e)
+    return _DEFAULT_BUSINESS_SERVICES
+
+
+_business_services_config: dict = _load_business_services_config()
+
 COORD_LOOKUP = {
     "toronto, canada": (43.65, -79.38),
     "singapore, singapore": (1.35, 103.82),
@@ -1424,6 +1476,7 @@ def api_data():
     base["metrics_ready"] = bool(metrics)
     base["refresh_interval_minutes"] = REFRESH_MINUTES
     base["metrics_ttl_seconds"] = METRICS_TTL_SECONDS
+    base["business_services_config"] = _business_services_config
     return jsonify(base)
 
 
