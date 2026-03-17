@@ -1,6 +1,9 @@
 """
 NOC dashboard server: ThousandEyes MCP (streamable HTTP) + Flask.
 
+All ThousandEyes data is gathered via MCP only; no direct ThousandEyes REST API calls.
+See: https://docs.thousandeyes.com/product-documentation/integration-guides/thousandeyes-mcp-server
+
 MCP collection practices: batched test filters, bounded retries with backoff on 429,
 stagger between batches to avoid rate limits, parallel independent calls only where
 merge order stays deterministic; cache TTL aligned to refresh interval.
@@ -1595,6 +1598,89 @@ def _parse_agent_csv(data: dict) -> list[dict]:
         name = names_map.get(aid, aid)
         result.append({"id": aid, "name": name, "value": round(sums[aid] / cnts[aid], 4)})
     return result
+
+
+# Path visualization: MCP tool "Get Full Path Visualization" (Network Path Analysis)
+# https://docs.thousandeyes.com/product-documentation/integration-guides/thousandeyes-mcp-server#mcp-server-functionality-and-sample-prompts
+_path_vis_cache: dict = {}
+PATH_VIS_CACHE_TTL = 300  # 5 min
+
+def _normalize_path_vis_response(raw):
+    """Normalize MCP path visualization response for frontend (agents, hops, rounds)."""
+    if not raw or not isinstance(raw, dict):
+        return raw
+    # MCP may return content in different shapes; try common keys
+    out = {"results": [], "error": raw.get("error")}
+    results = raw.get("results") or raw.get("path_results") or raw.get("pathResults") or []
+    if isinstance(results, dict):
+        results = results.get("items") or results.get("results") or []
+    if not isinstance(results, list):
+        return out
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        agent = r.get("agent") or {}
+        if isinstance(agent, dict):
+            node = {
+                "agentId": agent.get("agentId") or agent.get("agent_id"),
+                "agentName": agent.get("agentName") or agent.get("agent_name") or "Agent",
+                "location": agent.get("location") or "",
+            }
+        else:
+            node = {"agentName": str(agent), "location": ""}
+        path_traces = r.get("pathTraces") or r.get("path_traces") or []
+        if not isinstance(path_traces, list):
+            path_traces = []
+        hops = []
+        for pt in path_traces[:1]:  # first trace
+            h = pt.get("hops") if isinstance(pt, dict) else None
+            if isinstance(h, list):
+                hops = h
+                break
+        out["results"].append({
+            "agent": node,
+            "server": r.get("server") or r.get("serverIp") or "",
+            "serverIp": r.get("serverIp") or r.get("server_ip") or "",
+            "roundId": r.get("roundId") or r.get("round_id"),
+            "responseTime": (pt or {}).get("responseTime") if path_traces else r.get("responseTime"),
+            "numberOfHops": (pt or {}).get("numberOfHops") if path_traces else r.get("numberOfHops"),
+            "hops": hops,
+        })
+    return out
+
+
+@app.route("/api/path_vis/<test_id>")
+def api_path_vis(test_id):
+    """Return path visualization for a test via MCP Get Full Path Visualization tool."""
+    if not _TEST_ID_RE.match(test_id or ""):
+        return jsonify({"error": "Invalid test id"}), 400
+    with _cache_lock:
+        cached = _path_vis_cache.get(test_id)
+        now = time.time()
+        if cached and (now - cached["ts"]) < PATH_VIS_CACHE_TTL:
+            return jsonify(cached["data"])
+
+    try:
+        # MCP tool: "Get Full Path Visualization" – comprehensive path data for all agents and rounds.
+        # Tool name must match ThousandEyes MCP server (e.g. get_full_path_visualization).
+        resp = asyncio.run(call_mcp_tool("get_full_path_visualization", {
+            "test_id": test_id,
+            "window": "1h",
+        }))
+    except Exception as e:
+        log.warning("path_vis MCP call failed: test_id=%s, error=%s", test_id, e)
+        return jsonify({
+            "test_id": test_id,
+            "results": [],
+            "error": "Path visualization unavailable (MCP tool failed or rate limited). Try again later.",
+        })
+
+    # call_mcp_tool returns parsed JSON
+    data = _normalize_path_vis_response(resp if isinstance(resp, dict) else {"raw": resp})
+    data["test_id"] = test_id
+    with _cache_lock:
+        _path_vis_cache[test_id] = {"data": data, "ts": time.time()}
+    return jsonify(data)
 
 
 @app.route("/api/agent_perf/<test_id>")
