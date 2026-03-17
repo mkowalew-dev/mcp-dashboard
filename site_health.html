@@ -84,7 +84,7 @@
   .kpi-value.blue { color: var(--te-blue); }
   .kpi-sub { font-size: 11px; color: var(--te-text-dim); margin-top: 4px; font-family: var(--font-mono); }
 
-  .main-grid { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 200px); }
+  .main-grid { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 200px); max-height: calc(100vh - 200px); overflow: hidden; }
 
   .left-panel { padding: 20px; border-right: 1px solid var(--te-border); display: flex; flex-direction: column; gap: 20px; overflow-y: auto; max-height: calc(100vh - 200px); min-height: 0; }
   .map-container { background: var(--te-dark-2); border-radius: var(--radius); border: 1px solid var(--te-border); position: relative; overflow: hidden; height: 320px; flex-shrink: 0; }
@@ -105,7 +105,7 @@
   .agent-site-name { font-size: 13px; font-weight: 600; color: #fff; }
   .agent-site-type { font-size: 10px; color: var(--te-text-dim); font-weight: 500; margin-left: auto; padding: 2px 8px; border-radius: 4px; background: var(--te-dark-3); text-transform: uppercase; letter-spacing: 0.5px; }
 
-  .right-panel { padding: 20px 28px; overflow-y: auto; max-height: calc(100vh - 200px); display: flex; flex-direction: column; gap: 20px; }
+  .right-panel { padding: 20px 28px; overflow-y: auto; max-height: calc(100vh - 200px); min-height: 0; display: flex; flex-direction: column; gap: 20px; -webkit-overflow-scrolling: touch; }
 
   .category-section { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); overflow: hidden; }
   .category-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; }
@@ -852,7 +852,7 @@ function renderCategories(site, tests, epAgentsForSite) {
     if (la == null && lb == null) return 0;
     if (la == null) return 1;
     if (lb == null) return -1;
-    return la - lb;
+    return lb - la;
   });
   if (typeof console !== 'undefined' && console.log) {
     console.log('[EP debug] renderCategories: epAgents.length=', epAgents.length, 'names=', epAgents.map(function(e) { return e.name; }));
