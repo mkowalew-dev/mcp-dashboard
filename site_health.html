@@ -1170,7 +1170,7 @@ function openTestDetail(testId) {
       }
       var first = results[0];
       if (!first) {
-        var emptyMsg = reason || 'No path trace data for the selected 15-minute window. Try again after the next test round completes.';
+        var emptyMsg = reason || 'No path trace data for the previous 15-minute window. Try again after the next test round completes.';
         wrap.className = 'test-drill-path-loading';
         wrap.innerHTML = '<span class="path-fallback-msg">' + escHtml(emptyMsg) + '</span><div style="margin-top:12px;font-size:11px;color:var(--te-text-dim);">Showing summary path below.</div>' + pathFallbackHtml;
         return;

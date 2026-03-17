@@ -1675,12 +1675,14 @@ def api_path_vis(test_id):
 
     try:
         # MCP tool: "Get Full Path Visualization" – comprehensive path data for all agents and rounds.
-        # Tool requires start_date and end_date (ISO format). Use the last completed 15-minute
-        # window (e.g. at 4:47pm CDT use 4:30pm–4:45pm) so path trace data is more likely available.
+        # Tool requires start_date and end_date (ISO format). Use the *previous* completed 15-minute
+        # window (one period back) so data is more likely available (e.g. at 22:47 use 22:15–22:30,
+        # not 22:30–22:45, which may not be ready yet).
         now_utc = datetime.now(timezone.utc)
-        end_utc = now_utc.replace(
+        last_5min = now_utc.replace(
             minute=(now_utc.minute // 5) * 5, second=0, microsecond=0
         )
+        end_utc = last_5min - timedelta(minutes=15)
         start_utc = end_utc - timedelta(minutes=15)
         start_date = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         end_date = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1703,7 +1705,7 @@ def api_path_vis(test_id):
     results = data.get("results") or []
     if not results:
         data["reason"] = (
-            "No path trace data for the selected 15-minute window. "
+            "No path trace data for the previous 15-minute window. "
             "Try again after the next test round completes."
         )
         log.error(
