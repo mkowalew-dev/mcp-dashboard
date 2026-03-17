@@ -854,13 +854,7 @@ function getBusinessService(test) {
   var cfg = getBusinessServicesConfig();
   var testName = (test && test.name) ? test.name : '';
   var testType = (test && test.type) ? String(test.type).toLowerCase() : '';
-  var typeRules = cfg.type_rules || {};
-  var typeRuleNames = Object.keys(typeRules);
-  for (var r = 0; r < typeRuleNames.length; r++) {
-    var svcName = typeRuleNames[r];
-    var types = typeRules[svcName];
-    if (types && types.indexOf(testType) !== -1) return svcName;
-  }
+  // 1. Service definitions (name patterns) first
   for (var s = 0; s < (cfg.services || []).length; s++) {
     var svc = cfg.services[s];
     var patterns = svc.patterns || [];
@@ -869,6 +863,15 @@ function getBusinessService(test) {
       if (pat && testName.toLowerCase().indexOf(pat.toLowerCase()) !== -1) return svc.name;
     }
   }
+  // 2. Type rules second
+  var typeRules = cfg.type_rules || {};
+  var typeRuleNames = Object.keys(typeRules);
+  for (var r = 0; r < typeRuleNames.length; r++) {
+    var svcName = typeRuleNames[r];
+    var types = typeRules[svcName];
+    if (types && types.indexOf(testType) !== -1) return svcName;
+  }
+  // 3. Fallback
   return 'Other Services';
 }
 
