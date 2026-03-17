@@ -189,6 +189,9 @@
   .endpoint-metrics-table .ep-metric.warn { color: var(--te-yellow); }
   .endpoint-metrics-table .ep-metric.bad { color: var(--te-red); }
   .endpoint-metrics-table .ep-metric.dim { color: var(--te-text-dim); }
+  .endpoint-metrics-table tr.ep-row-inactive { background: rgba(239,68,68,0.08); border-left: 3px solid var(--te-red); }
+  .endpoint-metrics-table tr.ep-row-inactive .ep-name { color: var(--te-red); }
+  .endpoint-metrics-table .ep-inactive-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--te-red); font-weight: 600; margin-top: 2px; }
   .endpoint-no-agents { padding: 20px; text-align: center; color: var(--te-text-dim); font-size: 12px; }
 
   @media (max-width: 1100px) {
@@ -602,21 +605,27 @@ function renderAgentsList(site) {
 }
 
 function getEndpointAgentsForSite(site) {
+  var allAgents = DATA.ALL_AGENTS || [];
   var allEp = DATA.ENDPOINT_AGENTS || [];
   var perf = (DATA.EXTRA_KPI || {}).ep_worst_performers || [];
+  var siteName = (site.name || '').toString().trim();
   var siteLoc = (site.loc || site.name || '').toString().trim();
   var list = [];
-  allEp.forEach(function(a) {
+  allAgents.forEach(function(a) {
+    if (a.type !== 'endpoint') return;
     var loc = (a.loc || a.city || '').toString().trim();
-    if (loc !== siteLoc) return;
+    var city = (a.city || '').toString().trim();
+    var atSite = (loc === siteLoc || city === siteName || loc === siteName || city === siteLoc);
+    if (!atSite) return;
+    var epDetail = allEp.find(function(e) { return e.id === a.id || e.name === a.name; }) || {};
     var metrics = perf.find(function(p) {
-      return p.name === a.name || (p.name && p.name.split('.')[0] === a.name);
+      return p.name === a.name || (p.name && p.name.split('.')[0] === a.name) || (a.name && a.name.indexOf(p.name) >= 0);
     }) || {};
     list.push({
       name: a.name,
-      loc: a.loc,
+      loc: a.loc || a.city,
       id: a.id,
-      device: a.device,
+      device: a.device || epDetail.device,
       latency: metrics.latency,
       rssi: metrics.rssi,
       gateway_latency: metrics.gateway_latency,
@@ -655,6 +664,23 @@ function formatEndpointMetric(val, type) {
   if (type === 'latency' || type === 'gateway_latency') return Math.round(val) + ' ms';
   if (type === 'rssi') return Math.round(val) + ' dBm';
   return String(val);
+}
+
+function endpointMetricTitle(val, type) {
+  if (val != null) return '';
+  var labels = {
+    cpu: 'CPU load',
+    memory: 'Memory usage',
+    rssi: 'WiFi signal strength (RSSI)',
+    gateway_latency: 'Gateway latency',
+    gateway_loss: 'Gateway packet loss',
+    latency: 'End-to-end network latency'
+  };
+  return (labels[type] || 'Metric') + ': No data in the last 24h. Agent may be offline or not reporting.';
+}
+
+function endpointAgentHasNoData(ep) {
+  return ep.latency == null && ep.rssi == null && ep.gateway_latency == null && ep.gateway_loss == null && ep.cpu == null && ep.memory == null;
 }
 
 function renderCategories(site, tests) {
@@ -768,6 +794,8 @@ function renderCategories(site, tests) {
     endpointHtml += '<th>Agent</th><th>CPU</th><th>Mem</th><th>WiFi RSSI</th><th>Gateway Lat.</th><th>Gateway Loss</th><th>E2E Latency</th>';
     endpointHtml += '</tr></thead><tbody>';
     epAgents.forEach(function(ep) {
+      var isInactive = endpointAgentHasNoData(ep);
+      var rowCls = isInactive ? 'ep-row-inactive' : '';
       var cpuCls = endpointMetricClass(ep.cpu, 'cpu');
       var memCls = endpointMetricClass(ep.memory, 'memory');
       var rssiCls = endpointMetricClass(ep.rssi, 'rssi');
@@ -776,14 +804,16 @@ function renderCategories(site, tests) {
       var latCls = endpointMetricClass(ep.latency, 'latency');
       var teUrl = ep.id ? 'https://app.thousandeyes.com/view/endpoint-agent/?agentId=' + encodeURIComponent(ep.id) : '#';
       var nameCell = teUrl !== '#' ? '<a href="' + teUrl + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;">' + escHtml(ep.name) + '</a>' : escHtml(ep.name);
-      endpointHtml += '<tr>';
+      if (isInactive) nameCell += '<div class="ep-inactive-label" title="No metrics in the last 24h. Agent may be offline or not reporting data.">Not sending data</div>';
+      var t = function(v, type) { return (v == null ? ' title="' + escHtml(endpointMetricTitle(v, type)) + '"' : ''); };
+      endpointHtml += '<tr class="' + rowCls + '">';
       endpointHtml += '<td class="ep-name">' + nameCell + '</td>';
-      endpointHtml += '<td class="ep-metric ' + cpuCls + '">' + formatEndpointMetric(ep.cpu, 'cpu') + '</td>';
-      endpointHtml += '<td class="ep-metric ' + memCls + '">' + formatEndpointMetric(ep.memory, 'memory') + '</td>';
-      endpointHtml += '<td class="ep-metric ' + rssiCls + '">' + formatEndpointMetric(ep.rssi, 'rssi') + '</td>';
-      endpointHtml += '<td class="ep-metric ' + gwLatCls + '">' + formatEndpointMetric(ep.gateway_latency, 'gateway_latency') + '</td>';
-      endpointHtml += '<td class="ep-metric ' + gwLossCls + '">' + formatEndpointMetric(ep.gateway_loss, 'gateway_loss') + '</td>';
-      endpointHtml += '<td class="ep-metric ' + latCls + '">' + formatEndpointMetric(ep.latency, 'latency') + '</td>';
+      endpointHtml += '<td class="ep-metric ' + cpuCls + '"' + t(ep.cpu, 'cpu') + '>' + formatEndpointMetric(ep.cpu, 'cpu') + '</td>';
+      endpointHtml += '<td class="ep-metric ' + memCls + '"' + t(ep.memory, 'memory') + '>' + formatEndpointMetric(ep.memory, 'memory') + '</td>';
+      endpointHtml += '<td class="ep-metric ' + rssiCls + '"' + t(ep.rssi, 'rssi') + '>' + formatEndpointMetric(ep.rssi, 'rssi') + '</td>';
+      endpointHtml += '<td class="ep-metric ' + gwLatCls + '"' + t(ep.gateway_latency, 'gateway_latency') + '>' + formatEndpointMetric(ep.gateway_latency, 'gateway_latency') + '</td>';
+      endpointHtml += '<td class="ep-metric ' + gwLossCls + '"' + t(ep.gateway_loss, 'gateway_loss') + '>' + formatEndpointMetric(ep.gateway_loss, 'gateway_loss') + '</td>';
+      endpointHtml += '<td class="ep-metric ' + latCls + '"' + t(ep.latency, 'latency') + '>' + formatEndpointMetric(ep.latency, 'latency') + '</td>';
       endpointHtml += '</tr>';
     });
     endpointHtml += '</tbody></table></div>';
