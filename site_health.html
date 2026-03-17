@@ -604,20 +604,33 @@ function renderAgentsList(site) {
   el.innerHTML = eaHtml + epHtml;
 }
 
+function endpointAtSiteMatch(agentLoc, agentCity, siteName, siteLoc) {
+  var loc = (agentLoc || '').toString().trim();
+  var city = (agentCity || '').toString().trim();
+  var sn = (siteName || '').toString().trim();
+  var sl = (siteLoc || '').toString().trim();
+  if (!sn && !sl) return false;
+  if (loc === sl || city === sn || loc === sn || city === sl) return true;
+  if (sn && (loc.indexOf(sn) >= 0 || city.indexOf(sn) >= 0)) return true;
+  if (sl && (loc.indexOf(sl) >= 0 || city.indexOf(sl) >= 0)) return true;
+  if (loc && (sn.indexOf(loc) >= 0 || sl.indexOf(loc) >= 0)) return true;
+  if (city && (sn.indexOf(city) >= 0 || sl.indexOf(city) >= 0)) return true;
+  return false;
+}
+
 function getEndpointAgentsForSite(site) {
   var allAgents = DATA.ALL_AGENTS || [];
   var allEp = DATA.ENDPOINT_AGENTS || [];
   var perf = (DATA.EXTRA_KPI || {}).ep_worst_performers || [];
   var siteName = (site.name || '').toString().trim();
   var siteLoc = (site.loc || site.name || '').toString().trim();
+  var seen = {};
   var list = [];
-  allAgents.forEach(function(a) {
-    if (a.type !== 'endpoint') return;
-    var loc = (a.loc || a.city || '').toString().trim();
-    var city = (a.city || '').toString().trim();
-    var atSite = (loc === siteLoc || city === siteName || loc === siteName || city === siteLoc);
-    if (!atSite) return;
-    var epDetail = allEp.find(function(e) { return e.id === a.id || e.name === a.name; }) || {};
+
+  function addAgent(a, device) {
+    var key = (a.id || a.name || '').toString();
+    if (seen[key]) return;
+    seen[key] = true;
     var metrics = perf.find(function(p) {
       return p.name === a.name || (p.name && p.name.split('.')[0] === a.name) || (a.name && a.name.indexOf(p.name) >= 0);
     }) || {};
@@ -625,7 +638,7 @@ function getEndpointAgentsForSite(site) {
       name: a.name,
       loc: a.loc || a.city,
       id: a.id,
-      device: a.device || epDetail.device,
+      device: device || a.device,
       latency: metrics.latency,
       rssi: metrics.rssi,
       gateway_latency: metrics.gateway_latency,
@@ -633,7 +646,21 @@ function getEndpointAgentsForSite(site) {
       cpu: metrics.cpu,
       memory: metrics.memory,
     });
+  }
+
+  allAgents.forEach(function(a) {
+    if (a.type !== 'endpoint') return;
+    if (!endpointAtSiteMatch(a.loc, a.city, siteName, siteLoc)) return;
+    var epDetail = allEp.find(function(e) { return e.id === a.id || e.name === a.name; }) || {};
+    addAgent(a, epDetail.device);
   });
+
+  allEp.forEach(function(e) {
+    if (!endpointAtSiteMatch(e.loc, e.loc, siteName, siteLoc)) return;
+    var a = allAgents.find(function(x) { return x.type === 'endpoint' && (x.id === e.id || x.name === e.name); });
+    addAgent(a || { name: e.name, loc: e.loc, id: e.id, city: e.loc }, e.device);
+  });
+
   return list;
 }
 
