@@ -366,6 +366,11 @@ function getTestAvail(test, data) {
   var extra = data.EXTRA_KPI || {};
   var tp = (test.type || '').toLowerCase();
 
+  if (tp === 'voice' || tp === 'sip-server') {
+    var mosList = extra.mos_by_test || [];
+    var rec = mosList.find(function(r) { return r.test === test.name; });
+    return rec && rec.value != null ? rec.value : null;
+  }
   if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
     var lossMap = {};
     (extra.loss_by_test || []).forEach(function(r) { lossMap[r.test] = r.loss; });
@@ -379,6 +384,12 @@ function getTestAvail(test, data) {
 function getTestStatus(test, data) {
   var v = getTestAvail(test, data);
   if (v == null) return 'unknown';
+  var tp = (test.type || '').toLowerCase();
+  if (tp === 'voice' || tp === 'sip-server') {
+    if (v >= 4) return 'healthy';
+    if (v >= 3) return 'degraded';
+    return 'critical';
+  }
   if (v < 80) return 'critical';
   if (v < 95) return 'degraded';
   return 'healthy';
@@ -827,7 +838,8 @@ function renderCategories(site, tests, epAgentsForSite) {
       var tp = (t.type || '').toLowerCase();
       var typeLabel = TYPE_LABELS[tp] || TYPE_LABELS[t.type] || t.type || '--';
       var isLoss = (tp === 'agent-to-server' || tp === 'agent-to-agent');
-      var displayVal = v != null ? v.toFixed(1) + '%' : '--';
+      var isVoice = (tp === 'voice' || tp === 'sip-server');
+      var displayVal = v != null ? (isVoice ? v.toFixed(2) : v.toFixed(1) + '%') : '--';
 
       var testIdAttr = (t.id != null && t.id !== '') ? escHtml(String(t.id)) : '';
       html += '<div class="test-tile" role="button" tabindex="0" data-test-id="' + testIdAttr + '" onclick="openTestDetail(this.dataset.testId)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openTestDetail(this.dataset.testId);}">';
@@ -1007,20 +1019,23 @@ function openTestDetail(testId) {
   var color = statusColor(status);
   var statusLabel = status === 'critical' ? 'Critical' : status === 'degraded' ? 'Degraded' : status === 'healthy' ? 'Healthy' : 'Unknown';
   var tp = (t.type || '').toLowerCase();
+  var isVoice = (tp === 'voice' || tp === 'sip-server');
   var typeLabel = TYPE_LABELS[tp] || TYPE_LABELS[t.type] || t.type || '--';
   var targetStr = (t.target || '--');
   var teLink = t.id ? 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(t.id) : '#';
 
+  var kpiLabel = isVoice ? 'MOS' : 'Availability';
+  var kpiValue = avail != null ? (isVoice ? avail.toFixed(2) : avail.toFixed(1) + '%') : '--';
+
   document.getElementById('testModalTitle').textContent = t.name || 'Test';
   var body = document.getElementById('testModalBody');
-  var availPct = avail != null ? avail.toFixed(1) + '%' : '--';
   var healthIconClass = status === 'healthy' ? 'healthy' : status === 'degraded' ? 'degraded' : status === 'critical' ? 'critical' : 'unknown';
   var healthIconSvg = status === 'healthy' ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>' : status === 'degraded' ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>' : status === 'critical' ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>' : '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>';
 
   body.innerHTML =
     '<div class="test-modal-health">' +
     '<div class="test-modal-health-icon ' + healthIconClass + '">' + healthIconSvg + '</div>' +
-    '<div><div class="test-modal-health-text">' + statusLabel.toUpperCase() + '</div><div class="test-modal-health-pct" style="color:' + color + ';">' + availPct + '</div></div>' +
+    '<div><div class="test-modal-health-text">' + statusLabel.toUpperCase() + '</div><div class="test-modal-health-pct" style="color:' + color + ';">' + kpiValue + '</div></div>' +
     '</div>' +
     '<div class="test-modal-details"><div class="test-modal-details-title">Test details</div>' +
     '<div class="test-modal-details-grid">' +
@@ -1029,12 +1044,12 @@ function openTestDetail(testId) {
     '<div class="test-modal-detail-card"><div class="test-modal-detail-label">Target</div><div class="test-modal-detail-value">' + escHtml(targetStr) + '</div></div>' +
     '</div></div>' +
     '<div class="test-modal-details-grid" style="margin-bottom:16px;">' +
-    '<div class="test-modal-detail-card"><div class="test-modal-detail-label">Availability</div><div class="test-modal-detail-value" style="color:' + color + ';">' + availPct + '</div></div>' +
+    '<div class="test-modal-detail-card"><div class="test-modal-detail-label">' + kpiLabel + '</div><div class="test-modal-detail-value" style="color:' + color + ';">' + kpiValue + '</div></div>' +
     '<div class="test-modal-detail-card"><div class="test-modal-detail-label">Window</div><div class="test-modal-detail-value">24h</div></div>' +
     '</div>' +
     '<a href="' + teLink + '" target="_blank" rel="noopener noreferrer" class="test-modal-te-link">View in ThousandEyes <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>' +
-    '<div class="test-modal-heatmap-title">Per-Agent KPIs – 24H</div>' +
-    '<div class="test-modal-heatmap-sub" id="testModalHeatmapSub">Availability % • loading...</div>' +
+    '<div class="test-modal-heatmap-title">' + (isVoice ? 'Performance over time (MOS)' : 'Per-Agent KPIs – 24H') + '</div>' +
+    '<div class="test-modal-heatmap-sub" id="testModalHeatmapSub">' + (isVoice ? 'MOS score' : 'Availability %') + ' • loading...</div>' +
     '<div class="test-modal-heatmap-wrap" id="testModalHeatmapWrap"><div id="testModalHeatmap" class="test-modal-heatmap"></div></div>';
 
   document.getElementById('testModalOverlay').classList.add('visible');
@@ -1099,7 +1114,8 @@ function openTestDetail(testId) {
           cell.className = 'test-modal-heatmap-cell';
           var v = agents[col].value;
           cell.style.background = heatmapColorForValue(v, higherIsWorse, testType);
-          cell.title = (agents[col].name || '') + ' \u2022 interval ' + (row + 1) + ' \u2022 ' + (v != null ? v.toFixed(1) + '%' : '--');
+          var valStr = v != null ? (testType === 'voice' ? v.toFixed(2) : v.toFixed(1) + '%') : '--';
+          cell.title = (agents[col].name || '') + ' \u2022 interval ' + (row + 1) + ' \u2022 ' + valStr;
           heatEl.appendChild(cell);
         }
       }
