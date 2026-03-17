@@ -471,10 +471,11 @@ function renderSite() {
   }
 
   var tests = getSiteTests(site, DATA);
+  var epAgentsForSite = getEndpointAgentsForSite(site);
   renderKPIs(site, tests);
   renderMap(site);
-  renderAgentsList(site);
-  renderCategories(site, tests);
+  renderAgentsList(site, epAgentsForSite);
+  renderCategories(site, tests, epAgentsForSite);
   renderUpdatedLabel();
 }
 
@@ -580,9 +581,9 @@ function renderMap(site) {
   setTimeout(function() { siteMap.invalidateSize(); }, 100);
 }
 
-function renderAgentsList(site) {
+function renderAgentsList(site, epAtSite) {
   var el = document.getElementById('agentsList');
-  var epAtSite = getEndpointAgentsForSite(site);
+  if (epAtSite == null) epAtSite = getEndpointAgentsForSite(site);
   var eaHtml = site.agents.map(function(a) {
     return '<div class="agent-at-site">' +
       '<div class="agent-site-dot" style="background:var(--te-green);box-shadow:0 0 6px var(--te-green);"></div>' +
@@ -628,26 +629,30 @@ function endpointAtSiteMatch(agentLoc, agentCity, siteName, siteLoc) {
 }
 
 function getEndpointAgentsForSite(site) {
-  var allAgents = DATA.ALL_AGENTS || [];
   var allEp = DATA.ENDPOINT_AGENTS || [];
+  var allAgents = DATA.ALL_AGENTS || [];
   var perf = (DATA.EXTRA_KPI || {}).ep_worst_performers || [];
+  var siteToken = firstLocationToken(site.name) || firstLocationToken(site.loc);
   var siteName = (site.name || '').toString().trim();
   var siteLoc = (site.loc || site.name || '').toString().trim();
-  var seen = {};
   var list = [];
+  var seen = {};
 
-  function addAgent(a, device) {
-    var key = (a.id || a.name || '').toString();
+  function addOne(name, loc, id, device) {
+    var key = (id || name || '').toString();
     if (seen[key]) return;
     seen[key] = true;
     var metrics = perf.find(function(p) {
-      return p.name === a.name || (p.name && p.name.split('.')[0] === a.name) || (a.name && a.name.indexOf(p.name) >= 0);
+      if (p.name === name) return true;
+      if (p.name && p.name.split('.')[0] === name) return true;
+      if (name && name.indexOf(p.name) >= 0) return true;
+      return false;
     }) || {};
     list.push({
-      name: a.name,
-      loc: a.loc || a.city,
-      id: a.id,
-      device: device || a.device,
+      name: name,
+      loc: loc,
+      id: id,
+      device: device || '',
       latency: metrics.latency,
       rssi: metrics.rssi,
       gateway_latency: metrics.gateway_latency,
@@ -657,35 +662,26 @@ function getEndpointAgentsForSite(site) {
     });
   }
 
-  allAgents.forEach(function(a) {
-    if (a.type !== 'endpoint') return;
-    var kpiMatch = (a.city === site.name || a.loc === site.loc);
-    var flexibleMatch = endpointAtSiteMatch(a.loc, a.city, siteName, siteLoc);
-    if (!kpiMatch && !flexibleMatch) return;
-    var epDetail = allEp.find(function(e) { return e.id === a.id || e.name === a.name; }) || {};
-    addAgent(a, epDetail.device);
-  });
-
   allEp.forEach(function(e) {
     var loc = (e.loc || '').toString().trim();
-    var kpiMatch = (loc === site.name || loc === site.loc);
-    var flexibleMatch = endpointAtSiteMatch(e.loc, e.loc, siteName, siteLoc);
-    if (!kpiMatch && !flexibleMatch) return;
-    var a = allAgents.find(function(x) { return x.type === 'endpoint' && (x.id === e.id || x.name === e.name); });
-    addAgent(a || { name: e.name, loc: e.loc, id: e.id, city: e.loc }, e.device);
+    var token = firstLocationToken(loc);
+    var exact = (loc === siteName || loc === siteLoc);
+    var tokenMatch = (siteToken && token && siteToken === token);
+    if (exact || tokenMatch || endpointAtSiteMatch(e.loc, e.loc, siteName, siteLoc)) {
+      addOne(e.name, e.loc, e.id, e.device);
+    }
   });
 
-  var kpiEpCount = allAgents.filter(function(a) {
-    return a.type === 'endpoint' && (a.city === site.name || a.loc === site.loc);
-  }).length;
-  if (list.length < kpiEpCount) {
-    allAgents.forEach(function(a) {
-      if (a.type !== 'endpoint') return;
-      if (a.city !== site.name && a.loc !== site.loc) return;
-      var epDetail = allEp.find(function(e) { return e.id === a.id || e.name === a.name; }) || {};
-      addAgent(a, epDetail.device);
-    });
-  }
+  allAgents.forEach(function(a) {
+    if (a.type !== 'endpoint') return;
+    var token = firstLocationToken(a.loc) || firstLocationToken(a.city);
+    var exact = (a.city === site.name || a.loc === site.loc);
+    var tokenMatch = (siteToken && token && siteToken === token);
+    if (exact || tokenMatch || endpointAtSiteMatch(a.loc, a.city, siteName, siteLoc)) {
+      var ep = allEp.find(function(e) { return e.id === a.id || e.name === a.name; });
+      addOne(a.name, a.loc || a.city, a.id, ep ? ep.device : a.device);
+    }
+  });
 
   return list;
 }
@@ -736,12 +732,13 @@ function endpointAgentHasNoData(ep) {
   return ep.latency == null && ep.rssi == null && ep.gateway_latency == null && ep.gateway_loss == null && ep.cpu == null && ep.memory == null;
 }
 
-function renderCategories(site, tests) {
+function renderCategories(site, tests, epAgentsForSite) {
   var panel = document.getElementById('rightPanel');
   var availability = DATA.TEST_AVAILABILITY || {};
   var extra = DATA.EXTRA_KPI || {};
   var lossMap = {};
   (extra.loss_by_test || []).forEach(function(r) { lossMap[r.test] = r.loss; });
+  if (epAgentsForSite == null) epAgentsForSite = getEndpointAgentsForSite(site);
 
   var categorized = {};
   TEST_CATEGORIES.forEach(function(cat) { categorized[cat.key] = []; });
@@ -835,7 +832,7 @@ function renderCategories(site, tests) {
     html = '<div class="no-site">No tests assigned to agents at this site.</div>';
   }
 
-  var epAgents = getEndpointAgentsForSite(site);
+  var epAgents = epAgentsForSite;
   var endpointHtml = '';
   if (epAgents.length > 0) {
     endpointHtml += '<div class="endpoint-section">';
