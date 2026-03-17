@@ -49,47 +49,81 @@ logging.getLogger("werkzeug").setLevel(logging.WARNING)
 # --- Config (env); no secrets logged ---
 MCP_URL = os.getenv("MCP_URL", "https://api.thousandeyes.com/mcp").strip()
 MCP_TOKEN = (os.getenv("TE_TOKEN") or "").strip()
-REFRESH_MINUTES = max(1, min(120, int(os.getenv("REFRESH_MINUTES", "15"))))
-MCP_BATCH_SIZE = max(5, min(50, int(os.getenv("MCP_BATCH_SIZE", "15"))))
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (ValueError, TypeError):
+        log.warning("Invalid env var %s, using default %d", name, default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (ValueError, TypeError):
+        log.warning("Invalid env var %s, using default %g", name, default)
+        return default
+
+
+REFRESH_MINUTES = max(1, min(120, _env_int("REFRESH_MINUTES", 15)))
+MCP_BATCH_SIZE = max(5, min(50, _env_int("MCP_BATCH_SIZE", 15)))
 # Delay between batch requests; higher reduces 429s (default 1.0s; min 0.5s when set)
-_raw_delay = float(os.getenv("MCP_INTER_BATCH_DELAY_SEC", "1.0"))
-MCP_INTER_BATCH_DELAY = max(0.5, _raw_delay)
+MCP_INTER_BATCH_DELAY = max(0.5, _env_float("MCP_INTER_BATCH_DELAY_SEC", 1.0))
 # Extra KPIs: longer delay between batches to avoid 429 (default 2.0s). Set MCP_EXTRA_KPI_DELAY_SEC higher if 429s persist.
-_extra_delay = float(os.getenv("MCP_EXTRA_KPI_DELAY_SEC", "2.0"))
-MCP_EXTRA_KPI_BATCH_DELAY = max(1.0, _extra_delay)
+MCP_EXTRA_KPI_BATCH_DELAY = max(1.0, _env_float("MCP_EXTRA_KPI_DELAY_SEC", 2.0))
 # Max concurrent get_network_app_synthetics_metrics calls (1 = sequential, reduces 429s)
-MCP_SYNTH_CONCURRENCY = max(1, min(10, int(os.getenv("MCP_SYNTH_CONCURRENCY", "1"))))
+MCP_SYNTH_CONCURRENCY = max(1, min(10, _env_int("MCP_SYNTH_CONCURRENCY", 1)))
 # Global MCP rate limit: max requests per minute (e.g. 240 rpm = 4 req/s); min interval between calls
-MCP_MAX_RPM = max(10, min(500, int(os.getenv("MCP_MAX_RPM", "240"))))
+MCP_MAX_RPM = max(10, min(500, _env_int("MCP_MAX_RPM", 240)))
 _mcp_min_interval_sec = 60.0 / MCP_MAX_RPM
-# Per-event-loop primitives (avoids "bound to a different event loop" when asyncio.run() is used from multiple threads)
-_mcp_rate_limit_locks: dict[int, asyncio.Lock] = {}
-_mcp_last_call_times: dict[int, float] = {}
-_synth_semaphores: dict[int, asyncio.Semaphore] = {}
+
+# Single shared event loop for all MCP async calls — eliminates per-thread event-loop races and
+# ensures the rate-limiter and semaphore are shared across all Flask worker threads.
+_async_loop_ready = threading.Event()
+_mcp_rate_limit_lock: asyncio.Lock  # created inside the loop thread
+_mcp_last_call_time: float = 0.0
+_synth_semaphore: asyncio.Semaphore  # created inside the loop thread
+
+
+def _run_async_loop() -> None:
+    """Thread target: owns the shared event loop for all MCP coroutines."""
+    global _async_loop, _mcp_rate_limit_lock, _synth_semaphore
+    _async_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_async_loop)
+    _mcp_rate_limit_lock = asyncio.Lock()
+    _synth_semaphore = asyncio.Semaphore(MCP_SYNTH_CONCURRENCY)
+    _async_loop_ready.set()
+    _async_loop.run_forever()
+
+
+_async_loop: asyncio.AbstractEventLoop  # assigned by _run_async_loop
+_async_loop_thread = threading.Thread(target=_run_async_loop, daemon=True, name="mcp-async-loop")
+_async_loop_thread.start()
+_async_loop_ready.wait()  # block until the loop is ready before accepting requests
+
+
+def run_async(coro):
+    """Submit a coroutine to the shared MCP event loop; block the calling thread until done."""
+    future = asyncio.run_coroutine_threadsafe(coro, _async_loop)
+    return future.result()
 
 
 async def _mcp_rate_limit_wait() -> None:
-    """Enforce global MCP request rate (MCP_MAX_RPM). Call once before each MCP request."""
-    loop = asyncio.get_running_loop()
-    lid = id(loop)
-    if lid not in _mcp_rate_limit_locks:
-        _mcp_rate_limit_locks[lid] = asyncio.Lock()
-        _mcp_last_call_times[lid] = 0.0
-    async with _mcp_rate_limit_locks[lid]:
+    """Enforce global MCP request rate (MCP_MAX_RPM). All coroutines share one lock/counter."""
+    global _mcp_last_call_time
+    async with _mcp_rate_limit_lock:
         now = time.monotonic()
-        wait = max(0.0, _mcp_min_interval_sec - (now - _mcp_last_call_times[lid]))
+        wait = max(0.0, _mcp_min_interval_sec - (now - _mcp_last_call_time))
         if wait > 0:
             await asyncio.sleep(wait)
-        _mcp_last_call_times[lid] = time.monotonic()
+        _mcp_last_call_time = time.monotonic()
 
 
 async def _get_synth_sem() -> asyncio.Semaphore:
-    """Return semaphore for current event loop (created on first use in that loop)."""
-    loop = asyncio.get_running_loop()
-    lid = id(loop)
-    if lid not in _synth_semaphores:
-        _synth_semaphores[lid] = asyncio.Semaphore(MCP_SYNTH_CONCURRENCY)
-    return _synth_semaphores[lid]
+    """Return the shared semaphore for MCP synth calls."""
+    return _synth_semaphore
 
 # Cache window metrics at least one refresh cycle (capped)
 METRICS_TTL_SECONDS = max(300, min(3600, REFRESH_MINUTES * 60))
@@ -1053,18 +1087,18 @@ def get_or_fetch_metrics(window_key: str) -> dict[str, float] | None:
 
     with _cache_lock:
         entry = _metrics_cache.get(window_key)
-        if entry and (time.time() - entry["ts"]) < METRICS_TTL_SECONDS:
+        if entry and (time.monotonic() - entry["ts"]) < METRICS_TTL_SECONDS:
             return entry["data"]
 
     try:
-        metrics = asyncio.run(fetch_metrics_async(hours))
+        metrics = run_async(fetch_metrics_async(hours))
     except Exception as e:
         log.error("Metrics fetch failed: window=%s, error=%s", window_key, e)
         metrics = {}
 
     if metrics:
         with _cache_lock:
-            _metrics_cache[window_key] = {"data": metrics, "ts": time.time()}
+            _metrics_cache[window_key] = {"data": metrics, "ts": time.monotonic()}
         return metrics
 
     with _cache_lock:
@@ -1385,11 +1419,11 @@ def get_or_fetch_extra_kpis(window_key: str) -> dict:
 
     with _cache_lock:
         entry = _extra_kpi_cache.get(window_key)
-        if entry and (time.time() - entry["ts"]) < METRICS_TTL_SECONDS:
+        if entry and (time.monotonic() - entry["ts"]) < METRICS_TTL_SECONDS:
             return entry["data"]
 
     try:
-        data = asyncio.run(fetch_extra_kpis_async(hours))
+        data = run_async(fetch_extra_kpis_async(hours))
     except Exception as e:
         log.error("Extra KPIs fetch failed: window=%s, error=%s", window_key, e)
         data = {}
@@ -1397,7 +1431,7 @@ def get_or_fetch_extra_kpis(window_key: str) -> dict:
     has_data = data and (data.get("avg_response_ms") is not None or data.get("avg_packet_loss") is not None)
     if has_data:
         with _cache_lock:
-            _extra_kpi_cache[window_key] = {"data": data, "ts": time.time()}
+            _extra_kpi_cache[window_key] = {"data": data, "ts": time.monotonic()}
         return data
 
     with _cache_lock:
@@ -1413,7 +1447,7 @@ def get_or_fetch_extra_kpis(window_key: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def refresh_base():
-    asyncio.run(refresh_base_data_async())
+    run_async(refresh_base_data_async())
 
 
 def refresh_default_metrics():
@@ -1515,6 +1549,8 @@ def api_data():
     with _cache_lock:
         m_entry = _metrics_cache.get(window) or _metrics_cache.get("24h")
         e_entry = _extra_kpi_cache.get(window) or _extra_kpi_cache.get("24h")
+        served_metrics_window = window if _metrics_cache.get(window) else ("24h" if _metrics_cache.get("24h") else window)
+        served_extra_window = window if _extra_kpi_cache.get(window) else ("24h" if _extra_kpi_cache.get("24h") else window)
 
     metrics = m_entry["data"] if m_entry else {}
     extra_kpis = e_entry["data"] if e_entry else {}
@@ -1522,6 +1558,8 @@ def api_data():
     base["TEST_AVAILABILITY"] = metrics
     base["EXTRA_KPI"] = extra_kpis
     base["window"] = window
+    base["served_metrics_window"] = served_metrics_window
+    base["served_extra_window"] = served_extra_window
     base["metrics_ready"] = bool(metrics)
     base["refresh_interval_minutes"] = REFRESH_MINUTES
     base["metrics_ttl_seconds"] = METRICS_TTL_SECONDS
@@ -1540,25 +1578,25 @@ def api_fetch_window():
     with _cache_lock:
         m_entry = _metrics_cache.get(window)
         e_entry = _extra_kpi_cache.get(window)
-    if (m_entry and (time.time() - m_entry["ts"]) < METRICS_TTL_SECONDS and
-            e_entry and (time.time() - e_entry["ts"]) < METRICS_TTL_SECONDS):
+    if (m_entry and (time.monotonic() - m_entry["ts"]) < METRICS_TTL_SECONDS and
+            e_entry and (time.monotonic() - e_entry["ts"]) < METRICS_TTL_SECONDS):
         return jsonify({"status": "cached", "window": window})
 
     log.info("Fetching metrics on demand for window %s (%dh)...", window, hours)
     try:
-        metrics = asyncio.run(fetch_metrics_async(hours))
+        metrics = run_async(fetch_metrics_async(hours))
         if metrics:
             with _cache_lock:
-                _metrics_cache[window] = {"data": metrics, "ts": time.time()}
+                _metrics_cache[window] = {"data": metrics, "ts": time.monotonic()}
     except Exception as e:
         log.error("On-demand metrics fetch failed: window=%s, error=%s", window, e)
 
     try:
-        extra = asyncio.run(fetch_extra_kpis_async(hours))
+        extra = run_async(fetch_extra_kpis_async(hours))
         has_data = extra and (extra.get("avg_response_ms") is not None or extra.get("avg_packet_loss") is not None)
         if has_data:
             with _cache_lock:
-                _extra_kpi_cache[window] = {"data": extra, "ts": time.time()}
+                _extra_kpi_cache[window] = {"data": extra, "ts": time.monotonic()}
     except Exception as e:
         log.error("On-demand extra KPIs fetch failed: window=%s, error=%s", window, e)
 
@@ -1790,7 +1828,7 @@ def api_path_vis(test_id):
         return jsonify({"error": "Invalid test id"}), 400
     with _cache_lock:
         cached = _path_vis_cache.get(test_id)
-        now = time.time()
+        now = time.monotonic()
         if cached and (now - cached["ts"]) < PATH_VIS_CACHE_TTL:
             return jsonify(cached["data"])
 
@@ -1806,7 +1844,7 @@ def api_path_vis(test_id):
         start_utc = end_utc - timedelta(minutes=15)
         start_date = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         end_date = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-        resp = asyncio.run(call_mcp_tool("get_full_path_visualization", {
+        resp = run_async(call_mcp_tool("get_full_path_visualization", {
             "test_id": test_id,
             "start_date": start_date,
             "end_date": end_date,
@@ -1833,12 +1871,12 @@ def api_path_vis(test_id):
             test_id, start_date, end_date,
         )
     else:
-        log.error(
+        log.info(
             "path_vis got result: test_id=%s, window=%s to %s, result_count=%s",
             test_id, start_date, end_date, len(results),
         )
     with _cache_lock:
-        _path_vis_cache[test_id] = {"data": data, "ts": time.time()}
+        _path_vis_cache[test_id] = {"data": data, "ts": time.monotonic()}
     return jsonify(data)
 
 
@@ -1849,7 +1887,7 @@ def api_agent_perf(test_id):
     with _cache_lock:
         base = dict(_base_cache) if _base_cache else {}
         cached = _agent_perf_cache.get(test_id)
-        now = time.time()
+        now = time.monotonic()
         if cached and (now - cached["ts"]) < METRICS_TTL_SECONDS:
             return jsonify(cached["data"])
 
@@ -1869,7 +1907,7 @@ def api_agent_perf(test_id):
     ef = end.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     try:
-        resp = asyncio.run(call_mcp_tool("get_network_app_synthetics_metrics", {
+        resp = run_async(call_mcp_tool("get_network_app_synthetics_metrics", {
             "metric_id": metric_id,
             "start_date": sf, "end_date": ef,
             "aggregation_type": "MEAN",
@@ -1909,7 +1947,7 @@ def api_agent_perf(test_id):
         "agents": agents,
     }
     with _cache_lock:
-        _agent_perf_cache[test_id] = {"data": payload, "ts": time.time()}
+        _agent_perf_cache[test_id] = {"data": payload, "ts": time.monotonic()}
     return jsonify(payload)
 
 

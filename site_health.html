@@ -62,6 +62,8 @@
   @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
 
   .controls-bar { display: flex; align-items: center; justify-content: space-between; padding: 14px 28px; border-bottom: 1px solid var(--te-border); background: var(--te-dark-2); flex-wrap: wrap; gap: 12px; }
+  .stale-banner { display: none; align-items: center; gap: 8px; padding: 8px 28px; background: rgba(247,181,0,0.12); border-bottom: 1px solid rgba(247,181,0,0.3); font-size: 11px; color: var(--te-yellow); font-weight: 600; letter-spacing: 0.3px; }
+  .stale-banner.visible { display: flex; }
   .controls-left { display: flex; align-items: center; gap: 16px; }
   .controls-right { display: flex; align-items: center; gap: 16px; }
 
@@ -84,7 +86,7 @@
   .kpi-value.blue { color: var(--te-blue); }
   .kpi-sub { font-size: 11px; color: var(--te-text-dim); margin-top: 4px; font-family: var(--font-mono); }
 
-  .main-grid { display: grid; grid-template-columns: 380px 1fr; grid-template-rows: minmax(0, 1fr); height: calc(100vh - 200px); overflow: hidden; }
+  .main-grid { display: grid; grid-template-columns: 380px 1fr; grid-template-rows: minmax(0, 1fr); flex: 1; min-height: 0; overflow: hidden; }
 
   .left-panel { padding: 20px; border-right: 1px solid var(--te-border); display: flex; flex-direction: column; gap: 20px; overflow-y: auto; min-height: 0; }
   .map-container { background: var(--te-dark-2); border-radius: var(--radius); border: 1px solid var(--te-border); position: relative; overflow: hidden; height: 320px; flex-shrink: 0; }
@@ -296,6 +298,11 @@
   </div>
 </div>
 
+<div class="stale-banner" id="staleBanner">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  <span id="staleBannerText">Showing cached 24h data — <span id="staleBannerWindow"></span> metrics not yet available</span>
+</div>
+
 <div class="kpi-strip" id="kpiStrip">
   <div class="kpi-card"><div class="kpi-label">Overall Avail.</div><div class="kpi-value green" id="kpiOverall">--</div><div class="kpi-sub" id="kpiOverallSub">loading...</div></div>
   <div class="kpi-card"><div class="kpi-label">Total Tests</div><div class="kpi-value blue" id="kpiTests">--</div><div class="kpi-sub" id="kpiTestsSub">loading...</div></div>
@@ -455,15 +462,24 @@ function statusColor(status) {
 
 async function fetchData(win) {
   var resp = await fetch('/api/data?window=' + encodeURIComponent(win));
-  if (!resp.ok) throw new Error('API returned ' + resp.status);
-  return await resp.json();
+  var data;
+  try { data = await resp.json(); } catch (e) { data = {}; }
+  if (!resp.ok) {
+    var err = new Error(data.error || 'API returned ' + resp.status);
+    err.status = resp.status;
+    throw err;
+  }
+  return data;
 }
+
+var refreshIntervalMs = 15 * 60 * 1000;
 
 async function loadData() {
   try {
     DATA = await fetchData(currentWindow);
     var rm = parseInt(DATA.refresh_interval_minutes, 10);
     if (rm >= 1 && rm <= 120) {
+      refreshIntervalMs = rm * 60 * 1000;
       var lr = document.getElementById('liveRefreshLabel');
       if (lr) lr.textContent = 'AUTO-REFRESH ' + rm + 'M';
     }
@@ -482,9 +498,15 @@ async function loadData() {
     document.getElementById('loadingOverlay').classList.add('hidden');
   } catch (e) {
     console.error('Failed to load data:', e);
-    document.querySelector('.loading-text').textContent = 'Connection error';
-    document.querySelector('.loading-sub').textContent = 'Retrying in 5 seconds...';
-    setTimeout(loadData, 5000);
+    if (e.status === 503) {
+      document.querySelector('.loading-text').textContent = 'Waiting for first data load\u2026';
+      document.querySelector('.loading-sub').textContent = 'Retrying in 3 seconds\u2026';
+      setTimeout(loadData, 3000);
+    } else {
+      document.querySelector('.loading-text').textContent = 'Connection error';
+      document.querySelector('.loading-sub').textContent = 'Retrying in 5 seconds\u2026';
+      setTimeout(loadData, 5000);
+    }
   }
 }
 
@@ -524,8 +546,25 @@ function onSiteChange() {
   renderSite();
 }
 
+function updateStaleBanner() {
+  var banner = document.getElementById('staleBanner');
+  var windowText = document.getElementById('staleBannerWindow');
+  if (!DATA || !banner) return;
+  var requestedWindow = DATA.window || '24h';
+  var servedMetrics = DATA.served_metrics_window || requestedWindow;
+  var servedExtra = DATA.served_extra_window || requestedWindow;
+  var isStale = (servedMetrics !== requestedWindow || servedExtra !== requestedWindow) && requestedWindow !== '24h';
+  if (isStale) {
+    if (windowText) windowText.textContent = requestedWindow;
+    banner.classList.add('visible');
+  } else {
+    banner.classList.remove('visible');
+  }
+}
+
 function renderSite() {
   if (!DATA) return;
+  updateStaleBanner();
   var orgName = DATA.ACCOUNT_GROUP || 'ThousandEyes';
   document.getElementById('footerOrg').textContent = orgName;
 
@@ -704,13 +743,6 @@ function getEndpointAgentsForSite(site) {
   var siteName = (site.name || '').toString().trim();
   var siteLoc = (site.loc || site.name || '').toString().trim();
 
-  if (typeof console !== 'undefined' && console.log) {
-    console.log('[EP debug] getEndpointAgentsForSite called', { siteName: site.name, siteLoc: site.loc, siteToken: siteToken });
-    console.log('[EP debug] DATA.ENDPOINT_AGENTS length=', allEp.length, 'agents:', allEp.map(function(e) { return { name: e.name, loc: e.loc }; }));
-    var epInAll = (allAgents || []).filter(function(a) { return a.type === 'endpoint'; });
-    console.log('[EP debug] ALL_AGENTS with type=endpoint count=', epInAll.length, 'locs:', epInAll.map(function(a) { return (a.city || a.loc) + '|' + (a.name || ''); }));
-  }
-
   function addOne(name, loc, id, device) {
     var uid = (id != null && id !== '') ? String(id) : (name != null && name !== '' ? 'n-' + String(name) : 'r-' + list.length);
     if (seenIds[uid]) return;
@@ -756,9 +788,6 @@ function getEndpointAgentsForSite(site) {
     }
   });
 
-  if (typeof console !== 'undefined' && console.log) {
-    console.log('[EP debug] getEndpointAgentsForSite returning list.length=', list.length, 'names:', list.map(function(e) { return e.name; }));
-  }
   return list;
 }
 
@@ -920,9 +949,6 @@ function renderCategories(site, tests, epAgentsForSite) {
     if (lb == null) return -1;
     return lb - la;
   });
-  if (typeof console !== 'undefined' && console.log) {
-    console.log('[EP debug] renderCategories: epAgents.length=', epAgents.length, 'names=', epAgents.map(function(e) { return e.name; }));
-  }
   panel.innerHTML = html;
 
   var endSection = document.createElement('div');
@@ -950,9 +976,6 @@ function renderCategories(site, tests, epAgentsForSite) {
     var tbody = document.createElement('tbody');
     for (var i = 0; i < epAgents.length; i++) {
       var ep = epAgents[i];
-      if (typeof console !== 'undefined' && console.log) {
-        console.log('[EP debug] table row i=' + i + ' name=' + (ep && ep.name));
-      }
       var tr = document.createElement('tr');
       if (endpointAgentHasNoData(ep)) tr.className = 'ep-row-inactive';
       var nameTd = document.createElement('td');
@@ -993,9 +1016,6 @@ function renderCategories(site, tests, epAgentsForSite) {
       addMetricTd(ep.latency, 'latency');
       tbody.appendChild(tr);
     }
-    if (typeof console !== 'undefined' && console.log) {
-      console.log('[EP debug] tbody.childNodes.length (rows added)=', tbody.childNodes.length);
-    }
     table.appendChild(tbody);
     var tableWrap = document.createElement('div');
     tableWrap.className = 'endpoint-section-table-wrap';
@@ -1015,12 +1035,6 @@ function renderCategories(site, tests, epAgentsForSite) {
     endSection.appendChild(noAgents);
   }
   panel.appendChild(endSection);
-  if (typeof console !== 'undefined' && console.log && epAgents.length > 0) {
-    var tbl = endSection.querySelector && endSection.querySelector('table.endpoint-metrics-table');
-    var tbody = tbl && tbl.tBodies && tbl.tBodies[0];
-    var rowCount = tbody ? tbody.rows.length : 0;
-    console.log('[EP debug] after append: endpoint table tbody rows in DOM=', rowCount);
-  }
 }
 
 function renderUpdatedLabel() {
@@ -1294,10 +1308,17 @@ document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && doc
 function doRefresh() {
   document.getElementById('loadingOverlay').classList.remove('hidden');
   document.querySelector('.loading-text').textContent = 'Refreshing data';
-  document.querySelector('.loading-sub').textContent = 'Please wait...';
+  document.querySelector('.loading-sub').textContent = 'Please wait\u2026';
   fetch('/api/refresh', { method: 'POST' })
-    .then(function() { setTimeout(loadData, 3000); })
-    .catch(function() { setTimeout(loadData, 3000); });
+    .then(function(r) {
+      if (!r.ok) { console.error('Refresh request failed: ' + r.status); }
+      setTimeout(loadData, 3000);
+    })
+    .catch(function(e) {
+      console.error('Refresh request error:', e);
+      document.querySelector('.loading-sub').textContent = 'Refresh failed, retrying\u2026';
+      setTimeout(loadData, 5000);
+    });
 }
 
 function pollUntilReady() {
@@ -1306,7 +1327,7 @@ function pollUntilReady() {
     .then(function(status) {
       var sub = document.getElementById('loadingSub');
       if (status.phase === 'done' || status.phase === 'error') {
-        loadData();
+        loadData().finally(scheduleRefresh);
         return;
       }
       if (sub && status.message) sub.textContent = status.message;
@@ -1315,15 +1336,19 @@ function pollUntilReady() {
     .catch(function() { setTimeout(pollUntilReady, 3000); });
 }
 
+function scheduleRefresh() {
+  setTimeout(function() {
+    loadData().finally(scheduleRefresh);
+  }, refreshIntervalMs);
+}
+
 fetch('/api/health')
   .then(function(r) { return r.json(); })
   .then(function(h) {
-    if (h.base_cache_ready) { loadData(); }
+    if (h.base_cache_ready) { loadData().finally(scheduleRefresh); }
     else { pollUntilReady(); }
   })
   .catch(function() { setTimeout(pollUntilReady, 3000); });
-
-setInterval(function() { loadData(); }, 15 * 60 * 1000);
 </script>
 </body>
 </html>
