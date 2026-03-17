@@ -168,9 +168,9 @@
   .test-modal-heatmap-title { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: var(--te-text-dim); margin-bottom: 6px; text-transform: uppercase; }
   .test-modal-heatmap-sub { font-size: 11px; color: var(--te-text-dim); margin-bottom: 12px; }
   .test-modal-heatmap-wrap { overflow-x: auto; }
-  .test-modal-heatmap { display: grid; border: 1px solid var(--te-border); border-radius: 8px; overflow: hidden; font-size: 11px; }
+  .test-modal-heatmap { display: grid; border: 1px solid var(--te-border); border-radius: 8px; overflow: hidden; font-size: 11px; gap: 1px; background: var(--te-border); }
   .test-modal-heatmap-y-label { display: flex; align-items: center; padding: 0 10px; background: var(--te-dark-3); color: var(--te-text-dim); font-family: var(--font-mono); }
-  .test-modal-heatmap-cell { min-width: 14px; min-height: 20px; transition: opacity 0.2s; }
+  .test-modal-heatmap-cell { min-width: 14px; min-height: 22px; transition: opacity 0.2s; border: none; }
   .test-modal-heatmap-cell:hover { opacity: 0.85; }
   .test-modal-heatmap-agent-name { padding: 8px 10px; background: var(--te-dark-3); color: var(--te-text-dim); font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
 
@@ -746,10 +746,26 @@ function openTestDetail(testId) {
 
   document.getElementById('testModalOverlay').classList.add('visible');
 
+  var sites = buildSites(DATA);
+  var site = currentSiteKey ? sites[currentSiteKey] : null;
+  var siteAgentIdSet = {};
+  if (site && site.agents) {
+    site.agents.forEach(function(a) { siteAgentIdSet[String(a.id)] = true; });
+  }
+
   fetch('/api/agent_perf/' + encodeURIComponent(testId))
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      var agents = d.agents || [];
+      var allAgents = d.agents || [];
+      var agents = allAgents;
+      if (site && site.agents && site.agents.length > 0) {
+        agents = allAgents.filter(function(ap) { return siteAgentIdSet[String(ap.id)]; });
+        if (agents.length === 0) {
+          var siteNames = {};
+          site.agents.forEach(function(a) { siteNames[String(a.name || '').toLowerCase()] = true; });
+          agents = allAgents.filter(function(ap) { return siteNames[String(ap.name || '').toLowerCase()]; });
+        }
+      }
       var metricLabel = d.metric_label || 'Availability %';
       var higherIsWorse = !!d.higher_is_worse;
       var testType = (d.test_type || '').toLowerCase();
@@ -768,7 +784,7 @@ function openTestDetail(testId) {
       var numIntervals = 24;
       heatEl.style.display = 'grid';
       heatEl.style.gridTemplateColumns = '32px repeat(' + agents.length + ', minmax(28px, 1fr))';
-      heatEl.style.gridTemplateRows = 'auto repeat(' + numIntervals + ', 20px)';
+      heatEl.style.gridTemplateRows = 'auto repeat(' + numIntervals + ', 22px)';
       heatEl.innerHTML = '';
       var corner = document.createElement('div');
       corner.style.background = 'var(--te-dark-3)';
