@@ -20,7 +20,8 @@
     { "name": "Salesforce & CRM", "icon": "\uD83D\uDCC8", "patterns": ["Salesforce", "SAP"] },
     { "name": "Workday HR", "icon": "\uD83D\uDC64", "patterns": ["Workday"] },
     { "name": "Data Center Management", "icon": "\uD83D\uDCBB", "patterns": ["ESXi", "TrueNAS", "Splunk"] },
-    { "name": "Demo & Monitoring", "icon": "\uD83D\uDD2C", "patterns": ["Mar Demo", "Boutique", "Internet Test", "ThousandEyes"] }
+    { "name": "Demo & Monitoring", "icon": "\uD83D\uDD2C", "patterns": ["Mar Demo", "Boutique", "Internet Test", "ThousandEyes"] },
+    { "name": "Other Services", "icon": "\uD83D\uDCE6", "patterns": [] }
   ],
   "_thousandeyes_test_types": {
     "agent-to-agent": "Network path between agents (packet loss/latency)",

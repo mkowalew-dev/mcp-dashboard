@@ -839,6 +839,7 @@ function getDefaultBusinessServicesConfig() {
       { name: 'Network Infrastructure', icon: '\uD83D\uDD17', patterns: ['SD-WAN', 'DataCenter', 'Site-DC', 'Stores', 'TOR-NYC', 'SFTP'] },
       { name: 'Data Center Management', icon: '\uD83D\uDCBB', patterns: ['ESXi', 'TrueNAS', 'Splunk'] },
       { name: 'Demo & Monitoring', icon: '\uD83D\uDD2C', patterns: ['Mar Demo', 'Boutique', 'Internet Test', 'ThousandEyes', 'thousandeyes.com'] },
+      { name: 'Other Services', icon: '\uD83D\uDCE6', patterns: [] },
     ],
   };
 }
@@ -1012,7 +1013,7 @@ function renderCEATests() {
 
   var bsvcConfig = getBusinessServicesConfig();
   var svcOrder = (bsvcConfig.services || []).map(function(s) { return s.name; });
-  svcOrder.push('Other Services');
+  if (svcOrder.indexOf('Other Services') === -1) svcOrder.push('Other Services');
 
   var svcStatusMap = {};
   var svcCritCount = {};
@@ -1550,7 +1551,7 @@ function renderGauges() {
   var svcData = [];
   var bsvcConfig = getBusinessServicesConfig();
   var svcOrder = (bsvcConfig.services || []).map(function(s) { return s.name; });
-  svcOrder.push('Other Services');
+  if (svcOrder.indexOf('Other Services') === -1) svcOrder.push('Other Services');
   svcOrder.forEach(function(svcName) {
     var items = grouped[svcName];
     if (!items || items.length === 0) return;

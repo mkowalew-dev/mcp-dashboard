@@ -118,6 +118,7 @@ _DEFAULT_BUSINESS_SERVICES = {
         {"name": "Facebook & Social", "icon": "\uD83C\uDF10", "patterns": ["Facebook"]},
         {"name": "Data Center Management", "icon": "\uD83D\uDCBB", "patterns": ["ESXi", "TrueNAS", "Xen Management", "Splunk"]},
         {"name": "Demo & Monitoring", "icon": "\uD83D\uDD2C", "patterns": ["Mar Demo", "Boutique", "Internet Test", "ThousandEyes", "thousandeyes.com"]},
+        {"name": "Other Services", "icon": "\uD83D\uDCE6", "patterns": []},
     ],
 }
 
