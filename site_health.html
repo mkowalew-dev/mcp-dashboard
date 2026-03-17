@@ -828,7 +828,8 @@ function renderCategories(site, tests, epAgentsForSite) {
     html = '<div class="no-site">No tests assigned to agents at this site.</div>';
   }
 
-  var epAgents = (epAgentsForSite && epAgentsForSite.length) ? epAgentsForSite.slice(0) : [];
+  // Build endpoint table from a fresh list so count and rows always match (no stale/mutated reference)
+  var epAgents = getEndpointAgentsForSite(site);
   var endpointHtml = '';
   if (epAgents.length > 0) {
     endpointHtml += '<div class="endpoint-section">';
