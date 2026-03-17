@@ -1228,26 +1228,35 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
             detail.sort(key=lambda x: x["value"])
             extra[extra_key] = detail
 
-    # --- Endpoint Agent worst performers (test net latency + WiFi RSSI) ---
-    try:
-        ep_latency_resp, ep_rssi_resp = await asyncio.gather(
-            call_mcp_tool("get_endpoint_agent_metrics", {
-                "metric_id": "ENDPOINT_TEST_NET_LATENCY",
+    # --- Endpoint Agent metrics (test net latency, RSSI, gateway, CPU, memory) ---
+    async def _fetch_ep_metric(metric_id: str):
+        try:
+            return await call_mcp_tool("get_endpoint_agent_metrics", {
+                "metric_id": metric_id,
                 "start_date": start, "end_date": end,
                 "aggregation_type": "MEAN",
                 "group_by": "ENDPOINT_AGENT_MACHINE_ID",
-            }),
-            call_mcp_tool("get_endpoint_agent_metrics", {
-                "metric_id": "ENDPOINT_GATEWAY_WIRELESS_RSSI",
-                "start_date": start, "end_date": end,
-                "aggregation_type": "MEAN",
-                "group_by": "ENDPOINT_AGENT_MACHINE_ID",
-            }),
-        )
-    except Exception as e:
-        log.error("Endpoint metrics fetch error: %s", e)
-        ep_latency_resp = None
-        ep_rssi_resp = None
+            })
+        except Exception as e:
+            log.debug("Endpoint metric %s failed: %s", metric_id, e)
+            return None
+
+    ep_results = await asyncio.gather(
+        _fetch_ep_metric("ENDPOINT_TEST_NET_LATENCY"),
+        _fetch_ep_metric("ENDPOINT_GATEWAY_WIRELESS_RSSI"),
+        _fetch_ep_metric("ENDPOINT_GATEWAY_LATENCY"),
+        _fetch_ep_metric("ENDPOINT_GATEWAY_LOSS"),
+        _fetch_ep_metric("ENDPOINT_CPU_LOAD"),
+        _fetch_ep_metric("ENDPOINT_MEMORY"),
+    )
+    ep_responses = {
+        "latency": ep_results[0],
+        "rssi": ep_results[1],
+        "gateway_latency": ep_results[2],
+        "gateway_loss": ep_results[3],
+        "cpu": ep_results[4],
+        "memory": ep_results[5],
+    }
 
     def _parse_ep_csv(resp):
         if not resp or not isinstance(resp, dict):
@@ -1277,21 +1286,34 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
             result[name] = round(sums[mid] / cnts[mid], 2)
         return result
 
-    latency_by_name = _parse_ep_csv(ep_latency_resp)
-    rssi_by_name = _parse_ep_csv(ep_rssi_resp)
-    log.info("EP CSV parsed: test_net_latency=%d, rssi=%d agents",
-             len(latency_by_name), len(rssi_by_name))
+    latency_by_name = _parse_ep_csv(ep_responses.get("latency"))
+    rssi_by_name = _parse_ep_csv(ep_responses.get("rssi"))
+    gateway_latency_by_name = _parse_ep_csv(ep_responses.get("gateway_latency"))
+    gateway_loss_by_name = _parse_ep_csv(ep_responses.get("gateway_loss"))
+    cpu_by_name = _parse_ep_csv(ep_responses.get("cpu"))
+    memory_by_name = _parse_ep_csv(ep_responses.get("memory"))
+    log.info(
+        "EP CSV parsed: latency=%d, rssi=%d, gw_lat=%d, gw_loss=%d, cpu=%d, mem=%d",
+        len(latency_by_name), len(rssi_by_name),
+        len(gateway_latency_by_name), len(gateway_loss_by_name),
+        len(cpu_by_name), len(memory_by_name),
+    )
 
     with _cache_lock:
         ep_agents = list(_base_cache.get("ENDPOINT_AGENTS") or [])
 
-    all_names = set(list(latency_by_name.keys()) + list(rssi_by_name.keys()))
+    all_names = set()
+    for m in (latency_by_name, rssi_by_name, gateway_latency_by_name, gateway_loss_by_name, cpu_by_name, memory_by_name):
+        all_names |= set(m.keys())
     ep_perf = []
     seen_names = set()
     for comp_name in all_names:
         lat_val = latency_by_name.get(comp_name)
         rssi_val = rssi_by_name.get(comp_name)
-        loss_val = None  # Endpoint worst performers use test net latency + RSSI only
+        gw_lat = gateway_latency_by_name.get(comp_name)
+        gw_loss = gateway_loss_by_name.get(comp_name)
+        cpu_val = cpu_by_name.get(comp_name)
+        mem_val = memory_by_name.get(comp_name)
         loc = ""
         agent_id = ""
         device = ""
@@ -1313,7 +1335,11 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                 "device": device,
                 "latency": lat_val,
                 "rssi": rssi_val,
-                "loss": loss_val,
+                "loss": None,
+                "gateway_latency": gw_lat,
+                "gateway_loss": gw_loss,
+                "cpu": cpu_val,
+                "memory": mem_val,
             })
 
     # Sort by test net latency (highest first = worst); then by RSSI (lowest first = worst)

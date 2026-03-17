@@ -449,7 +449,7 @@
       </div>
       <div class="bottom-card">
         <div class="bottom-card-title"><span style="color:var(--te-orange)">&bull;</span> Endpoint Agent &mdash; Worst Performers</div>
-        <table class="endpoint-table" id="endpointTable"><thead><tr><th>Agent</th><th>Location</th><th>Latency</th><th>WiFi RSSI</th></tr></thead><tbody></tbody></table>
+        <table class="endpoint-table" id="endpointTable"><thead><tr><th>Agent</th><th>Location</th><th>E2E Latency</th><th>WiFi RSSI</th><th>Gateway Lat.</th><th>Gateway Loss</th><th>CPU</th><th>Mem</th><th></th></tr></thead><tbody></tbody></table>
       </div>
       <div class="bottom-card">
         <div class="bottom-card-title" id="gaugeTitle"><span style="color:var(--te-green)">&bull;</span> Service Health Gauges</div>
@@ -657,6 +657,53 @@ function getEnterpriseAgentHealth(agent, agentTests, testAvail, lossByTest) {
   return { health: 'healthy', color: '#00D68F' };
 }
 
+function epMetricColor(val, type) {
+  if (val == null) return 'var(--te-text-dim)';
+  if (type === 'latency' || type === 'gateway_latency') {
+    return val > 200 ? 'var(--te-red)' : val > 100 ? 'var(--te-yellow)' : 'var(--te-green)';
+  }
+  if (type === 'rssi') {
+    return val < -70 ? 'var(--te-red)' : val < -60 ? 'var(--te-yellow)' : 'var(--te-green)';
+  }
+  if (type === 'gateway_loss' || type === 'cpu' || type === 'memory') {
+    return val > 20 ? 'var(--te-red)' : val > 10 ? 'var(--te-yellow)' : 'var(--te-green)';
+  }
+  return 'var(--te-text)';
+}
+function fmtEpVal(val, type) {
+  if (val == null) return '--';
+  if (type === 'cpu' || type === 'memory' || type === 'gateway_loss') return val.toFixed(1) + '%';
+  if (type === 'latency' || type === 'gateway_latency') return Math.round(val) + 'ms';
+  if (type === 'rssi') return Math.round(val) + ' dBm';
+  return String(val);
+}
+function buildEndpointPopup(m, epWorst) {
+  var ep = epWorst.find(function(p) {
+    return p.name === m.name || (p.name && p.name.split('.')[0] === m.name);
+  }) || {};
+  var loc = m.loc || m.city || '';
+  var h = '<div class="agent-popup">';
+  h += '<div class="agent-popup-header">';
+  h += '<div class="agent-popup-name">' + escHtml(m.name) + '</div>';
+  h += '<div style="font-size:10px;padding:2px 8px;border-radius:4px;display:inline-block;background:rgba(249,115,22,0.15);color:#F97316;">Endpoint Agent</div>';
+  h += '</div>';
+  h += '<div class="agent-popup-loc">' + escHtml(loc) + '</div>';
+  if (m.device) h += '<div style="font-size:10px;color:#7B8FAD;margin-bottom:6px;">' + escHtml(m.device) + '</div>';
+  h += '<div class="agent-popup-metrics">';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">E2E Latency</span><span class="agent-popup-val" style="color:' + epMetricColor(ep.latency, 'latency') + ';">' + fmtEpVal(ep.latency, 'latency') + '</span></div>';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">WiFi RSSI</span><span class="agent-popup-val" style="color:' + epMetricColor(ep.rssi, 'rssi') + ';">' + fmtEpVal(ep.rssi, 'rssi') + '</span></div>';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">Gateway Latency</span><span class="agent-popup-val" style="color:' + epMetricColor(ep.gateway_latency, 'gateway_latency') + ';">' + fmtEpVal(ep.gateway_latency, 'gateway_latency') + '</span></div>';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">Gateway Loss</span><span class="agent-popup-val" style="color:' + epMetricColor(ep.gateway_loss, 'gateway_loss') + ';">' + fmtEpVal(ep.gateway_loss, 'gateway_loss') + '</span></div>';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">CPU</span><span class="agent-popup-val" style="color:' + epMetricColor(ep.cpu, 'cpu') + ';">' + fmtEpVal(ep.cpu, 'cpu') + '</span></div>';
+  h += '<div class="agent-popup-row"><span class="agent-popup-label">Memory</span><span class="agent-popup-val" style="color:' + epMetricColor(ep.memory, 'memory') + ';">' + fmtEpVal(ep.memory, 'memory') + '</span></div>';
+  h += '</div>';
+  var siteKey = (m.loc || m.city || '').toString().trim();
+  var siteHealthUrl = siteKey ? '/site-health?site=' + encodeURIComponent(siteKey) : '/site-health';
+  h += '<a class="agent-popup-btn" href="' + siteHealthUrl + '">View in Site Health \u2192</a>';
+  h += '</div>';
+  return h;
+}
+
 function buildEnterprisePopup(agent, agentTests, testAvail, respByTest, lossByTest, jitterByTest) {
   var testNames = agentTests[agent.id] || [];
   var activeTests = testNames.length;
@@ -764,8 +811,7 @@ function buildMap() {
     if (m.type === 'enterprise') {
       popupHtml = buildEnterprisePopup(m, agentTests, testAvail, respByTest, lossByTest, jitterByTest);
     } else {
-      var popupExtra = m.device ? '<div style="font-size:10px;color:#7B8FAD;margin-top:4px;">' + escHtml(m.device) + '</div>' : '';
-      popupHtml = '<div style="padding:14px 18px;font-family:DM Sans,sans-serif;"><div style="font-weight:700;font-size:13px;color:#fff;margin-bottom:6px;">' + escHtml(m.name) + '</div><div style="font-size:11px;color:#7B8FAD;">' + escHtml(m.loc || m.city || '') + '</div>' + popupExtra + '<div style="margin-top:6px;font-size:10px;padding:2px 8px;border-radius:4px;display:inline-block;background:rgba(249,115,22,0.15);color:#F97316;">Endpoint Agent</div></div>';
+      popupHtml = buildEndpointPopup(m, extra.ep_worst_performers || []);
     }
     marker.bindPopup(popupHtml, { maxWidth: 360, closeButton: true });
     marker.on('mouseover', function() { this.openPopup(); });
@@ -1343,10 +1389,19 @@ function renderEPAData() {
     html += '</div>';
     html += '</div>';
 
+    var gwLatStr = ep.gateway_latency != null ? Math.round(ep.gateway_latency) + 'ms' : '--';
+    var gwLossStr = ep.gateway_loss != null ? ep.gateway_loss.toFixed(1) + '%' : '--';
+    var cpuStr = ep.cpu != null ? ep.cpu.toFixed(1) + '%' : '--';
+    var memStr = ep.memory != null ? ep.memory.toFixed(1) + '%' : '--';
+
     html += '<div class="epa-agent-body">';
     html += '<div class="epa-metric-grid">';
-    html += '<div class="epa-metric"><div class="epa-metric-label">Test Net Latency</div><div class="epa-metric-val" style="color:' + latHeaderColor + ';">' + latStr + '</div></div>';
-    html += '<div class="epa-metric"><div class="epa-metric-label">Avg WiFi RSSI</div><div class="epa-metric-val" style="color:' + rInfo.color + ';">' + rssiStr + '</div></div>';
+    html += '<div class="epa-metric"><div class="epa-metric-label">E2E Latency</div><div class="epa-metric-val" style="color:' + latHeaderColor + ';">' + latStr + '</div></div>';
+    html += '<div class="epa-metric"><div class="epa-metric-label">WiFi RSSI</div><div class="epa-metric-val" style="color:' + rInfo.color + ';">' + rssiStr + '</div></div>';
+    html += '<div class="epa-metric"><div class="epa-metric-label">Gateway Lat.</div><div class="epa-metric-val" style="color:var(--te-text);">' + gwLatStr + '</div></div>';
+    html += '<div class="epa-metric"><div class="epa-metric-label">Gateway Loss</div><div class="epa-metric-val" style="color:var(--te-text);">' + gwLossStr + '</div></div>';
+    html += '<div class="epa-metric"><div class="epa-metric-label">CPU</div><div class="epa-metric-val" style="color:var(--te-text);">' + cpuStr + '</div></div>';
+    html += '<div class="epa-metric"><div class="epa-metric-label">Memory</div><div class="epa-metric-val" style="color:var(--te-text);">' + memStr + '</div></div>';
     html += '<div class="epa-metric"><div class="epa-metric-label">Platform</div><div class="epa-metric-val" style="font-size:11px;color:#fff;">' + escHtml(deviceStr || '--') + '</div></div>';
     html += '</div>';
 
@@ -1354,12 +1409,20 @@ function renderEPAData() {
     html += '<div class="epa-detail-title">WiFi &amp; System Details</div>';
     html += '<div class="epa-detail-row"><span class="epa-detail-key">Signal Strength</span><span class="epa-detail-val" style="color:' + rInfo.color + ';">' + (rInfo.label || '--') + '</span></div>';
     html += '<div class="epa-detail-row"><span class="epa-detail-key">RSSI</span><span class="epa-detail-val">' + rssiStr + '</span></div>';
-    html += '<div class="epa-detail-row"><span class="epa-detail-key">Latency</span><span class="epa-detail-val">' + latStr + '</span></div>';
+    html += '<div class="epa-detail-row"><span class="epa-detail-key">E2E Latency</span><span class="epa-detail-val">' + latStr + '</span></div>';
+    html += '<div class="epa-detail-row"><span class="epa-detail-key">Gateway Latency</span><span class="epa-detail-val">' + gwLatStr + '</span></div>';
+    html += '<div class="epa-detail-row"><span class="epa-detail-key">Gateway Loss</span><span class="epa-detail-val">' + gwLossStr + '</span></div>';
+    html += '<div class="epa-detail-row"><span class="epa-detail-key">CPU / Memory</span><span class="epa-detail-val">' + cpuStr + ' / ' + memStr + '</span></div>';
     html += '<div class="epa-detail-row"><span class="epa-detail-key">Location</span><span class="epa-detail-val">' + escHtml(ep.loc) + '</span></div>';
     html += '</div>';
 
     var teLink = ep.id ? 'https://app.thousandeyes.com/view/endpoint-agent/?agentId=' + encodeURIComponent(ep.id) : '#';
-    html += '<a class="epa-drill-btn" href="' + teLink + '" target="_blank" rel="noopener noreferrer">Open Full Drill-Down \u2192</a>';
+    var siteKey = (ep.loc || '').toString().trim();
+    var siteHealthUrl = siteKey ? '/site-health?site=' + encodeURIComponent(siteKey) : '/site-health';
+    html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
+    html += '<a class="epa-drill-btn" href="' + teLink + '" target="_blank" rel="noopener noreferrer">Open in ThousandEyes \u2192</a>';
+    html += '<a class="epa-drill-btn" href="' + siteHealthUrl + '" style="background:var(--te-dark-4);border:1px solid var(--te-border);">View in Site Health \u2192</a>';
+    html += '</div>';
     html += '</div>';
     html += '</div>';
   });
@@ -1478,7 +1541,7 @@ function renderEndpointTable() {
   var worst = (ex.ep_worst_performers || []).slice(0, 10);
   var tbody = document.querySelector('#endpointTable tbody');
   if (worst.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="padding:12px;text-align:center;font-size:11px;color:var(--te-text-dim);">No endpoint performance data available</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="padding:12px;text-align:center;font-size:11px;color:var(--te-text-dim);">No endpoint performance data available</td></tr>';
     return;
   }
   var total = worst.length;
@@ -1489,16 +1552,29 @@ function renderEndpointTable() {
     var rInfo = rssi !== '--' ? rssiRating(rssi) : { label: '', color: 'var(--te-text-dim)' };
     var latDisplay = latMs !== '--' ? Math.round(latMs) + 'ms' : '--';
     var rssiDisplay = rssi !== '--' ? rssi : '--';
+    var gwLat = ep.gateway_latency != null ? Math.round(ep.gateway_latency) + 'ms' : '--';
+    var gwLoss = ep.gateway_loss != null ? ep.gateway_loss.toFixed(1) + '%' : '--';
+    var cpu = ep.cpu != null ? ep.cpu.toFixed(1) + '%' : '--';
+    var mem = ep.memory != null ? ep.memory.toFixed(1) + '%' : '--';
+    var gwLatColor = ep.gateway_latency == null ? 'var(--te-text-dim)' : ep.gateway_latency > 200 ? 'var(--te-red)' : ep.gateway_latency > 100 ? 'var(--te-yellow)' : 'var(--te-green)';
+    var gwLossColor = ep.gateway_loss == null ? 'var(--te-text-dim)' : ep.gateway_loss > 20 ? 'var(--te-red)' : ep.gateway_loss > 10 ? 'var(--te-yellow)' : 'var(--te-green)';
     var flipClass = idx >= total - 3 ? ' tip-above' : '';
     var agentLink = ep.id ? 'https://app.thousandeyes.com/view/endpoint-agent/?agentId=' + encodeURIComponent(ep.id) : '';
     var nameHtml = agentLink
       ? '<a href="' + agentLink + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.4);transition:color 0.2s,border-color 0.2s;" onmouseover="this.style.color=\'#79c0ff\';this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.color=\'var(--te-blue)\';this.style.borderBottomColor=\'rgba(88,166,255,0.4)\'">' + escHtml(ep.name) + '</a>'
       : escHtml(ep.name);
+    var siteKey = (ep.loc || '').toString().trim();
+    var siteHealthLink = siteKey ? '<a href="/site-health?site=' + encodeURIComponent(siteKey) + '" style="font-size:10px;color:var(--te-blue);text-decoration:none;">Site Health \u2192</a>' : '';
     return '<tr>' +
       '<td style="font-size:11px;font-family:var(--font-mono);font-weight:500;">' + nameHtml + '</td>' +
       '<td style="font-size:11px;color:var(--te-text-dim);">' + escHtml(ep.loc) + '</td>' +
       '<td style="font-size:11px;font-family:var(--font-mono);font-weight:600;color:' + latColor + ';">' + latDisplay + '</td>' +
       '<td class="rssi-cell' + flipClass + '" style="font-size:11px;font-family:var(--font-mono);font-weight:600;color:' + rInfo.color + ';text-align:right;">' + rssiDisplay + rssiTipHtml(rssi) + '</td>' +
+      '<td style="font-size:11px;font-family:var(--font-mono);font-weight:600;color:' + gwLatColor + ';">' + gwLat + '</td>' +
+      '<td style="font-size:11px;font-family:var(--font-mono);font-weight:600;color:' + gwLossColor + ';">' + gwLoss + '</td>' +
+      '<td style="font-size:11px;font-family:var(--font-mono);">' + cpu + '</td>' +
+      '<td style="font-size:11px;font-family:var(--font-mono);">' + mem + '</td>' +
+      '<td style="font-size:10px;">' + siteHealthLink + '</td>' +
       '</tr>';
   }).join('');
 }
