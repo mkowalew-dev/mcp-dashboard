@@ -707,11 +707,12 @@ function endpointMetricClass(val, type) {
 }
 
 function formatEndpointMetric(val, type) {
-  if (val == null) return '--';
-  if (type === 'cpu' || type === 'memory') return val.toFixed(1) + '%';
-  if (type === 'gateway_loss') return val.toFixed(1) + '%';
-  if (type === 'latency' || type === 'gateway_latency') return Math.round(val) + ' ms';
-  if (type === 'rssi') return Math.round(val) + ' dBm';
+  if (val == null || val === '') return '--';
+  var n = typeof val === 'number' ? val : Number(val);
+  if (type === 'cpu' || type === 'memory') return (isNaN(n) ? '--' : n.toFixed(1) + '%');
+  if (type === 'gateway_loss') return (isNaN(n) ? '--' : n.toFixed(1) + '%');
+  if (type === 'latency' || type === 'gateway_latency') return (isNaN(n) ? '--' : Math.round(n) + ' ms');
+  if (type === 'rssi') return (isNaN(n) ? '--' : Math.round(n) + ' dBm');
   return String(val);
 }
 
@@ -832,58 +833,91 @@ function renderCategories(site, tests, epAgentsForSite) {
     html = '<div class="no-site">No tests assigned to agents at this site.</div>';
   }
 
-  // Build endpoint table from a fresh list so count and rows always match (no stale/mutated reference)
+  // Build endpoint table from a fresh list; use DOM so every row is guaranteed to be added
   var epAgents = getEndpointAgentsForSite(site);
-  var endpointHtml = '';
-  if (epAgents.length > 0) {
-    endpointHtml += '<div class="endpoint-section">';
-    endpointHtml += '<div class="endpoint-section-header">';
-    endpointHtml += '<span class="endpoint-section-title">Endpoint Agents <span class="ep-badge">' + epAgents.length + ' at site</span></span>';
-    endpointHtml += '</div>';
-    endpointHtml += '<table class="endpoint-metrics-table">';
-    endpointHtml += '<thead><tr>';
-    endpointHtml += '<th>Agent</th><th>CPU</th><th>Mem</th><th>WiFi RSSI</th><th>Gateway Lat.</th><th>Gateway Loss</th><th>E2E Latency</th>';
-    endpointHtml += '</tr></thead><tbody>';
-    epAgents.forEach(function(ep) {
-      try {
-        var isInactive = endpointAgentHasNoData(ep);
-        var rowCls = isInactive ? 'ep-row-inactive' : '';
-        var cpuCls = endpointMetricClass(ep.cpu, 'cpu');
-        var memCls = endpointMetricClass(ep.memory, 'memory');
-        var rssiCls = endpointMetricClass(ep.rssi, 'rssi');
-        var gwLatCls = endpointMetricClass(ep.gateway_latency, 'gateway_latency');
-        var gwLossCls = endpointMetricClass(ep.gateway_loss, 'gateway_loss');
-        var latCls = endpointMetricClass(ep.latency, 'latency');
-        var teUrl = ep.id ? 'https://app.thousandeyes.com/view/endpoint-agent/?agentId=' + encodeURIComponent(ep.id) : '#';
-        var nameCell = teUrl !== '#' ? '<a href="' + teUrl + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;">' + escHtml(ep.name || '') + '</a>' : escHtml(ep.name || '');
-        if (isInactive) nameCell += '<div class="ep-inactive-label" title="No metrics in the last 24h. Agent may be offline or not reporting data.">Not sending data</div>';
-        var t = function(v, type) { return (v == null ? ' title="' + escHtml(endpointMetricTitle(v, type)) + '"' : ''); };
-        var cpuVal = ep.cpu != null ? ep.cpu : null;
-        var memVal = ep.memory != null ? ep.memory : null;
-        var rssiVal = ep.rssi != null ? ep.rssi : null;
-        var gwLatVal = ep.gateway_latency != null ? ep.gateway_latency : null;
-        var gwLossVal = ep.gateway_loss != null ? ep.gateway_loss : null;
-        var latVal = ep.latency != null ? ep.latency : null;
-        endpointHtml += '<tr class="' + rowCls + '">';
-        endpointHtml += '<td class="ep-name">' + nameCell + '</td>';
-        endpointHtml += '<td class="ep-metric ' + cpuCls + '"' + t(cpuVal, 'cpu') + '>' + formatEndpointMetric(cpuVal, 'cpu') + '</td>';
-        endpointHtml += '<td class="ep-metric ' + memCls + '"' + t(memVal, 'memory') + '>' + formatEndpointMetric(memVal, 'memory') + '</td>';
-        endpointHtml += '<td class="ep-metric ' + rssiCls + '"' + t(rssiVal, 'rssi') + '>' + formatEndpointMetric(rssiVal, 'rssi') + '</td>';
-        endpointHtml += '<td class="ep-metric ' + gwLatCls + '"' + t(gwLatVal, 'gateway_latency') + '>' + formatEndpointMetric(gwLatVal, 'gateway_latency') + '</td>';
-        endpointHtml += '<td class="ep-metric ' + gwLossCls + '"' + t(gwLossVal, 'gateway_loss') + '>' + formatEndpointMetric(gwLossVal, 'gateway_loss') + '</td>';
-        endpointHtml += '<td class="ep-metric ' + latCls + '"' + t(latVal, 'latency') + '>' + formatEndpointMetric(latVal, 'latency') + '</td>';
-        endpointHtml += '</tr>';
-      } catch (err) {
-        endpointHtml += '<tr><td colspan="7" class="ep-metric dim">' + escHtml(ep.name || 'Unknown') + ' (error)</td></tr>';
-      }
-    });
-    endpointHtml += '</tbody></table></div>';
-  } else {
-    endpointHtml += '<div class="endpoint-section"><div class="endpoint-section-header"><span class="endpoint-section-title">Endpoint Agents</span></div>';
-    endpointHtml += '<div class="endpoint-no-agents">No endpoint agents at this site</div></div>';
-  }
+  panel.innerHTML = html;
 
-  panel.innerHTML = html + endpointHtml;
+  var endSection = document.createElement('div');
+  endSection.className = 'endpoint-section';
+  if (epAgents.length > 0) {
+    var header = document.createElement('div');
+    header.className = 'endpoint-section-header';
+    var title = document.createElement('span');
+    title.className = 'endpoint-section-title';
+    title.innerHTML = 'Endpoint Agents <span class="ep-badge">' + epAgents.length + ' at site</span>';
+    header.appendChild(title);
+    endSection.appendChild(header);
+
+    var table = document.createElement('table');
+    table.className = 'endpoint-metrics-table';
+    var thead = document.createElement('thead');
+    var thr = document.createElement('tr');
+    ['Agent', 'CPU', 'Mem', 'WiFi RSSI', 'Gateway Lat.', 'Gateway Loss', 'E2E Latency'].forEach(function(h) {
+      var th = document.createElement('th');
+      th.textContent = h;
+      thr.appendChild(th);
+    });
+    thead.appendChild(thr);
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    for (var i = 0; i < epAgents.length; i++) {
+      var ep = epAgents[i];
+      var tr = document.createElement('tr');
+      if (endpointAgentHasNoData(ep)) tr.className = 'ep-row-inactive';
+      var nameTd = document.createElement('td');
+      nameTd.className = 'ep-name';
+      if (ep.id) {
+        var a = document.createElement('a');
+        a.href = 'https://app.thousandeyes.com/view/endpoint-agent/?agentId=' + encodeURIComponent(ep.id);
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.style.color = 'var(--te-blue)';
+        a.style.textDecoration = 'none';
+        a.textContent = ep.name || '';
+        nameTd.appendChild(a);
+      } else {
+        nameTd.textContent = ep.name || '';
+      }
+      if (endpointAgentHasNoData(ep)) {
+        var inactiveLabel = document.createElement('div');
+        inactiveLabel.className = 'ep-inactive-label';
+        inactiveLabel.title = 'No metrics in the last 24h. Agent may be offline or not reporting data.';
+        inactiveLabel.textContent = 'Not sending data';
+        nameTd.appendChild(inactiveLabel);
+      }
+      tr.appendChild(nameTd);
+      function addMetricTd(val, type) {
+        var td = document.createElement('td');
+        var cls = endpointMetricClass(val, type);
+        td.className = 'ep-metric ' + cls;
+        if (val == null) td.title = (type === 'cpu' ? 'CPU load' : type === 'memory' ? 'Memory usage' : type === 'rssi' ? 'WiFi signal strength (RSSI)' : type === 'gateway_latency' ? 'Gateway latency' : type === 'gateway_loss' ? 'Gateway packet loss' : 'End-to-end network latency') + ': No data in the last 24h. Agent may be offline or not reporting.';
+        td.textContent = formatEndpointMetric(val, type);
+        tr.appendChild(td);
+      }
+      addMetricTd(ep.cpu, 'cpu');
+      addMetricTd(ep.memory, 'memory');
+      addMetricTd(ep.rssi, 'rssi');
+      addMetricTd(ep.gateway_latency, 'gateway_latency');
+      addMetricTd(ep.gateway_loss, 'gateway_loss');
+      addMetricTd(ep.latency, 'latency');
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    endSection.appendChild(table);
+  } else {
+    var noHeader = document.createElement('div');
+    noHeader.className = 'endpoint-section-header';
+    var noTitle = document.createElement('span');
+    noTitle.className = 'endpoint-section-title';
+    noTitle.textContent = 'Endpoint Agents';
+    noHeader.appendChild(noTitle);
+    endSection.appendChild(noHeader);
+    var noAgents = document.createElement('div');
+    noAgents.className = 'endpoint-no-agents';
+    noAgents.textContent = 'No endpoint agents at this site';
+    endSection.appendChild(noAgents);
+  }
+  panel.appendChild(endSection);
 }
 
 function renderUpdatedLabel() {
