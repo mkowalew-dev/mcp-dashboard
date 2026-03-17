@@ -86,8 +86,8 @@
 
   .main-grid { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 200px); }
 
-  .left-panel { padding: 20px; border-right: 1px solid var(--te-border); display: flex; flex-direction: column; gap: 20px; }
-  .map-container { background: var(--te-dark-2); border-radius: var(--radius); border: 1px solid var(--te-border); position: relative; overflow: hidden; height: 320px; }
+  .left-panel { padding: 20px; border-right: 1px solid var(--te-border); display: flex; flex-direction: column; gap: 20px; overflow-y: auto; max-height: calc(100vh - 200px); min-height: 0; }
+  .map-container { background: var(--te-dark-2); border-radius: var(--radius); border: 1px solid var(--te-border); position: relative; overflow: hidden; height: 320px; flex-shrink: 0; }
   #siteMap { width: 100%; height: 100%; background: var(--te-dark-2); }
   .leaflet-container { background: var(--te-dark-2) !important; font-family: var(--font-body) !important; }
   .leaflet-control-zoom { border: 1px solid var(--te-border) !important; }
@@ -846,6 +846,14 @@ function renderCategories(site, tests, epAgentsForSite) {
 
   // Build endpoint table from a fresh list; use DOM so every row is guaranteed to be added
   var epAgents = getEndpointAgentsForSite(site);
+  epAgents.sort(function(a, b) {
+    var la = a.latency != null ? Number(a.latency) : null;
+    var lb = b.latency != null ? Number(b.latency) : null;
+    if (la == null && lb == null) return 0;
+    if (la == null) return 1;
+    if (lb == null) return -1;
+    return la - lb;
+  });
   if (typeof console !== 'undefined' && console.log) {
     console.log('[EP debug] renderCategories: epAgents.length=', epAgents.length, 'names=', epAgents.map(function(e) { return e.name; }));
   }
