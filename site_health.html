@@ -105,9 +105,10 @@
   .agent-site-name { font-size: 13px; font-weight: 600; color: #fff; }
   .agent-site-type { font-size: 10px; color: var(--te-text-dim); font-weight: 500; margin-left: auto; padding: 2px 8px; border-radius: 4px; background: var(--te-dark-3); text-transform: uppercase; letter-spacing: 0.5px; }
 
-  .right-panel { padding: 20px 28px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 20px; -webkit-overflow-scrolling: touch; }
+  .right-panel-wrapper { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .right-panel { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 20px 28px; display: flex; flex-direction: column; gap: 20px; -webkit-overflow-scrolling: touch; }
 
-  .category-section { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); overflow: hidden; }
+  .category-section { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); overflow: visible; flex-shrink: 0; }
   .category-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; }
   .category-header-left { display: flex; align-items: center; gap: 10px; }
   .category-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
@@ -120,7 +121,7 @@
   .category-avail { font-family: var(--font-mono); font-size: 13px; font-weight: 700; }
 
   .category-body { padding: 0 20px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
-  .test-tile { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: 8px; padding: 14px; transition: border-color 0.2s; cursor: pointer; }
+  .test-tile { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: 8px; padding: 14px; min-height: 72px; transition: border-color 0.2s; cursor: pointer; }
   .test-tile:hover { border-color: rgba(255,255,255,0.15); }
   .test-tile-status { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .test-tile-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -174,7 +175,7 @@
   .test-modal-heatmap-cell:hover { opacity: 0.85; }
   .test-modal-heatmap-agent-name { padding: 8px 10px; background: var(--te-dark-3); color: var(--te-text-dim); font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
 
-  .endpoint-section { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); margin-top: 20px; display: flex; flex-direction: column; min-height: 0; }
+  .endpoint-section { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); margin-top: 20px; display: flex; flex-direction: column; min-height: 0; flex-shrink: 0; }
   .endpoint-section-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--te-border); flex-shrink: 0; }
   .endpoint-section-title { font-size: 14px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
   .endpoint-section-title .ep-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(249,115,22,0.2); color: var(--te-orange); font-weight: 600; }
@@ -196,8 +197,8 @@
   .endpoint-no-agents { padding: 20px; text-align: center; color: var(--te-text-dim); font-size: 12px; }
 
   @media (max-width: 1100px) {
-    .main-grid { grid-template-columns: 1fr; }
-    .right-panel { max-height: none; }
+    .main-grid { grid-template-columns: 1fr; height: auto; max-height: none; }
+    .right-panel-wrapper { min-height: 0; }
     .kpi-strip { grid-template-columns: repeat(4, 1fr); }
     .left-panel { border-right: none; border-bottom: 1px solid var(--te-border); }
   }
@@ -273,7 +274,9 @@
       <div id="agentsList"></div>
     </div>
   </div>
-  <div class="right-panel" id="rightPanel"></div>
+  <div class="right-panel-wrapper">
+    <div class="right-panel" id="rightPanel"></div>
+  </div>
 </div>
 
 <div class="footer" id="footer">
