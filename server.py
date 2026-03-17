@@ -19,6 +19,8 @@ import random
 import re
 import threading
 import time
+
+import httpx
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
@@ -366,6 +368,17 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                 last_err = root
                 err_str = (str(root) or repr(root) or type(root).__name__).strip()
                 err_str = err_str or type(root).__name__
+                if isinstance(root, httpx.HTTPStatusError) and getattr(root, "response", None):
+                    if getattr(root.response, "status_code", None) == 503:
+                        log.warning(
+                            "ThousandEyes API returned 503 Service Unavailable; will retry (attempt %d/%d).",
+                            attempt + 1, retries,
+                        )
+                elif type(root).__name__ == "BrokenResourceError":
+                    log.warning(
+                        "MCP connection broken (stream closed); will retry with fresh connection (attempt %d/%d).",
+                        attempt + 1, retries,
+                    )
                 is_429 = (
                     "429" in str(e) or "Too Many Requests" in str(e)
                     or "429" in str(root) or "Too Many Requests" in str(root)
@@ -1662,13 +1675,13 @@ def api_path_vis(test_id):
 
     try:
         # MCP tool: "Get Full Path Visualization" – comprehensive path data for all agents and rounds.
-        # Tool requires start_date and end_date (ISO format). Use the latest completed 5-minute
-        # bucket (e.g. at 4:47pm CDT use 4:40pm–4:45pm).
+        # Tool requires start_date and end_date (ISO format). Use the last completed 15-minute
+        # window (e.g. at 4:47pm CDT use 4:30pm–4:45pm) so path trace data is more likely available.
         now_utc = datetime.now(timezone.utc)
         end_utc = now_utc.replace(
             minute=(now_utc.minute // 5) * 5, second=0, microsecond=0
         )
-        start_utc = end_utc - timedelta(minutes=5)
+        start_utc = end_utc - timedelta(minutes=15)
         start_date = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         end_date = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         resp = asyncio.run(call_mcp_tool("get_full_path_visualization", {
@@ -1677,7 +1690,7 @@ def api_path_vis(test_id):
             "end_date": end_date,
         }))
     except Exception as e:
-        log.warning("path_vis MCP call failed: test_id=%s, error=%s", test_id, e)
+        log.error("path_vis MCP call failed: test_id=%s, window=%s to %s, error=%s", test_id, start_date, end_date, e)
         return jsonify({
             "test_id": test_id,
             "results": [],
@@ -1687,14 +1700,20 @@ def api_path_vis(test_id):
     # call_mcp_tool returns parsed JSON
     data = _normalize_path_vis_response(resp if isinstance(resp, dict) else {"raw": resp})
     data["test_id"] = test_id
-    if not (data.get("results")):
+    results = data.get("results") or []
+    if not results:
         data["reason"] = (
-            "No path trace data for the selected 5-minute window. "
+            "No path trace data for the selected 15-minute window. "
             "Try again after the next test round completes."
         )
-        log.warning(
-            "path_vis empty results: test_id=%s, window=%s to %s",
+        log.error(
+            "path_vis no result: test_id=%s, window=%s to %s, result_count=0",
             test_id, start_date, end_date,
+        )
+    else:
+        log.error(
+            "path_vis got result: test_id=%s, window=%s to %s, result_count=%s",
+            test_id, start_date, end_date, len(results),
         )
     with _cache_lock:
         _path_vis_cache[test_id] = {"data": data, "ts": time.time()}
