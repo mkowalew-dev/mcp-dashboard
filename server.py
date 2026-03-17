@@ -1662,10 +1662,19 @@ def api_path_vis(test_id):
 
     try:
         # MCP tool: "Get Full Path Visualization" – comprehensive path data for all agents and rounds.
-        # Tool name must match ThousandEyes MCP server (e.g. get_full_path_visualization).
+        # Tool requires start_date and end_date (ISO format). Use the latest completed 5-minute
+        # bucket (e.g. at 4:47pm CDT use 4:40pm–4:45pm).
+        now_utc = datetime.now(timezone.utc)
+        end_utc = now_utc.replace(
+            minute=(now_utc.minute // 5) * 5, second=0, microsecond=0
+        )
+        start_utc = end_utc - timedelta(minutes=5)
+        start_date = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_date = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         resp = asyncio.run(call_mcp_tool("get_full_path_visualization", {
             "test_id": test_id,
-            "window": "1h",
+            "start_date": start_date,
+            "end_date": end_date,
         }))
     except Exception as e:
         log.warning("path_vis MCP call failed: test_id=%s, error=%s", test_id, e)
