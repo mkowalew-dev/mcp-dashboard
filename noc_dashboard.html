@@ -702,8 +702,9 @@ function buildEnterprisePopup(agent, agentTests, testAvail, respByTest, lossByTe
   h += '<div class="agent-popup-row"><span class="agent-popup-label">Jitter</span><span class="agent-popup-val" style="color:var(--te-text);">' + fmtJitter(avgJitter) + '</span></div>';
   h += '<div class="agent-popup-row"><span class="agent-popup-label">Active Tests</span><span class="agent-popup-val" style="color:var(--te-text);">' + activeTests + '</span></div>';
   h += '</div>';
-  var teLink = 'https://app.thousandeyes.com/settings/agents/enterprise/?agentId=' + encodeURIComponent(agent.id);
-  h += '<a class="agent-popup-btn" href="' + teLink + '" target="_blank" rel="noopener noreferrer">Open Drill-Down \u2192</a>';
+  var siteKey = (agent.loc || agent.city || agent.name || agent.id || '').toString().trim();
+  var siteHealthUrl = siteKey ? '/site-health?site=' + encodeURIComponent(siteKey) : '/site-health';
+  h += '<a class="agent-popup-btn" href="' + siteHealthUrl + '">View in Site Health \u2192</a>';
   h += '</div>';
   return h;
 }
