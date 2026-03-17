@@ -144,26 +144,41 @@
   /* Test detail modal (template layout) */
   .test-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 24px; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
   .test-modal-overlay.visible { opacity: 1; pointer-events: auto; }
-  .test-modal { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); max-width: 720px; width: 100%; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
-  .test-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--te-border); }
-  .test-modal-title { font-size: 16px; font-weight: 700; color: #fff; }
-  .test-modal-close { width: 36px; height: 36px; border: none; border-radius: 8px; background: var(--te-dark-3); color: var(--te-text-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s, color 0.2s; }
+  .test-modal { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); max-width: 920px; width: 100%; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  .test-modal-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--te-border); gap: 16px; }
+  .test-modal-header-left { flex: 1; min-width: 0; }
+  .test-modal-title { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+  .test-modal-status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .test-modal-status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .test-modal-status-label { font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
+  .test-modal-data-src { font-size: 11px; color: var(--te-text-dim); margin-top: 6px; }
+  .test-modal-close { width: 36px; height: 36px; border: none; border-radius: 8px; background: var(--te-dark-3); color: var(--te-text-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s, color 0.2s; flex-shrink: 0; }
   .test-modal-close:hover { background: var(--te-dark-4); color: #fff; }
   .test-modal-body { padding: 24px; overflow-y: auto; flex: 1; }
-  .test-modal-health { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
-  .test-modal-health-icon { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .test-modal-health-icon.healthy { background: var(--te-green-dim); color: var(--te-green); }
-  .test-modal-health-icon.degraded { background: var(--te-yellow-dim); color: var(--te-yellow); }
-  .test-modal-health-icon.critical { background: var(--te-red-dim); color: var(--te-red); }
-  .test-modal-health-icon.unknown { background: var(--te-dark-4); color: var(--te-text-dim); }
-  .test-modal-health-text { font-size: 14px; font-weight: 600; letter-spacing: 1px; color: var(--te-text-dim); }
-  .test-modal-health-pct { font-size: 32px; font-weight: 700; font-family: var(--font-mono); }
-  .test-modal-details { margin-bottom: 20px; }
-  .test-modal-details-title { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: var(--te-text-dim); margin-bottom: 12px; text-transform: uppercase; }
-  .test-modal-details-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-  .test-modal-detail-card { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: 8px; padding: 14px; }
-  .test-modal-detail-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--te-text-dim); margin-bottom: 6px; }
-  .test-modal-detail-value { font-size: 13px; font-weight: 600; color: #fff; word-break: break-word; }
+  .test-drill-kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--te-border); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
+  .test-drill-kpi-card { background: var(--te-dark-3); border: 1px solid var(--te-border); padding: 16px 18px; }
+  .test-drill-kpi-card:first-child { border-radius: 8px 0 0 0; }
+  .test-drill-kpi-card:nth-child(4) { border-radius: 0 8px 0 0; }
+  .test-drill-kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); margin-bottom: 8px; font-weight: 600; }
+  .test-drill-kpi-value { font-size: 24px; font-weight: 700; font-family: var(--font-mono); color: var(--te-text); }
+  .test-drill-kpi-value.kpi-red { color: var(--te-red); }
+  .test-drill-kpi-value.kpi-yellow { color: var(--te-yellow); }
+  .test-drill-kpi-value.kpi-green { color: var(--te-green); }
+  .test-drill-section { margin-bottom: 24px; }
+  .test-drill-section-title { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: var(--te-text-dim); margin-bottom: 12px; text-transform: uppercase; }
+  .test-drill-path-wrap { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: 8px; padding: 20px; overflow-x: auto; }
+  .test-drill-path-inner { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: min-content; }
+  .test-drill-path-node { display: flex; flex-direction: column; align-items: center; gap: 4px; flex-shrink: 0; }
+  .test-drill-path-node-icon { width: 40px; height: 40px; border-radius: 8px; background: var(--te-dark-4); border: 1px solid var(--te-border); display: flex; align-items: center; justify-content: center; color: var(--te-text-dim); }
+  .test-drill-path-node-icon.degraded { background: var(--te-red-dim); border-color: var(--te-red); color: var(--te-red); }
+  .test-drill-path-node-label { font-size: 11px; font-weight: 600; color: var(--te-text); white-space: nowrap; max-width: 100px; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .test-drill-path-node-meta { font-size: 10px; color: var(--te-text-dim); font-family: var(--font-mono); }
+  .test-drill-path-conn { display: flex; align-items: center; flex-shrink: 0; color: var(--te-border); }
+  .test-drill-path-conn.degraded { color: var(--te-red); }
+  .test-drill-path-summary { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--te-border); font-size: 12px; font-family: var(--font-mono); }
+  .test-drill-path-summary span { color: var(--te-text-dim); }
+  .test-drill-path-summary strong { color: var(--te-text); margin-left: 4px; }
+  .test-drill-path-summary .summary-bad { color: var(--te-red); }
   .test-modal-te-link { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: var(--te-blue); color: #fff; border-radius: 8px; font-size: 12px; font-weight: 600; text-decoration: none; margin-bottom: 24px; transition: background 0.2s; }
   .test-modal-te-link:hover { background: var(--te-blue-dark); color: #fff; }
   .test-modal-heatmap-title { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: var(--te-text-dim); margin-bottom: 6px; text-transform: uppercase; }
@@ -174,6 +189,16 @@
   .test-modal-heatmap-cell { min-width: 14px; min-height: 22px; transition: opacity 0.2s; border: none; }
   .test-modal-heatmap-cell:hover { opacity: 0.85; }
   .test-modal-heatmap-agent-name { padding: 8px 10px; background: var(--te-dark-3); color: var(--te-text-dim); font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+  .test-drill-waterfall-wrap { background: var(--te-dark-3); border: 1px solid var(--te-border); border-radius: 8px; padding: 20px; }
+  .test-drill-waterfall-layer { margin-bottom: 16px; }
+  .test-drill-waterfall-layer:last-child { margin-bottom: 0; }
+  .test-drill-waterfall-layer-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--te-text-dim); margin-bottom: 10px; font-weight: 600; }
+  .test-drill-waterfall-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .test-drill-waterfall-row:last-child { margin-bottom: 0; }
+  .test-drill-waterfall-label { font-size: 12px; color: var(--te-text); min-width: 100px; }
+  .test-drill-waterfall-bar-wrap { flex: 1; height: 20px; background: var(--te-dark-4); border-radius: 4px; overflow: hidden; display: flex; min-width: 80px; }
+  .test-drill-waterfall-bar { height: 100%; border-radius: 4px; min-width: 4px; }
+  .test-drill-waterfall-ms { font-size: 12px; font-family: var(--font-mono); color: var(--te-text-dim); }
 
   .endpoint-section { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); margin-top: 20px; display: flex; flex-direction: column; min-height: 0; flex-shrink: 0; }
   .endpoint-section-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--te-border); flex-shrink: 0; }
@@ -283,11 +308,15 @@
   <strong>Powered by <a href="https://www.thousandeyes.com" target="_blank" rel="noopener noreferrer">Cisco ThousandEyes</a></strong> &mdash; <span id="footerOrg"></span> &middot; Live Data via MCP
 </div>
 
-<!-- Test detail modal -->
+<!-- Test detail modal (drill-down layout) -->
 <div class="test-modal-overlay" id="testModalOverlay" role="dialog" aria-modal="true" aria-labelledby="testModalTitle">
   <div class="test-modal" onclick="event.stopPropagation()">
     <div class="test-modal-header">
-      <h2 class="test-modal-title" id="testModalTitle">Test name</h2>
+      <div class="test-modal-header-left">
+        <h2 class="test-modal-title" id="testModalTitle">Test Drill-Down</h2>
+        <div class="test-modal-status-row" id="testModalStatusRow"><span class="test-modal-status-dot" id="testModalStatusDot"></span><span class="test-modal-status-label" id="testModalStatusLabel">—</span></div>
+        <div class="test-modal-data-src">Data: ThousandEyes Cloud, Enterprise &amp; Endpoint Agents</div>
+      </div>
       <button type="button" class="test-modal-close" onclick="closeTestModal()" aria-label="Close">&times;</button>
     </div>
     <div class="test-modal-body" id="testModalBody">
@@ -393,6 +422,12 @@ function getTestStatus(test, data) {
   if (v < 80) return 'critical';
   if (v < 95) return 'degraded';
   return 'healthy';
+}
+
+function getTestExtraByKey(testName, extra, listKey, valueKey) {
+  var list = extra[listKey] || [];
+  var rec = list.find(function(r) { return r.test === testName; });
+  return rec && rec[valueKey] != null ? rec[valueKey] : null;
 }
 
 function statusColor(status) {
@@ -1019,6 +1054,7 @@ function openTestDetail(testId) {
     if (String(tests[i].id) === String(testId)) { t = tests[i]; break; }
   }
   if (!t) return;
+  var extra = DATA.EXTRA_KPI || {};
   var avail = getTestAvail(t, DATA);
   var status = getTestStatus(t, DATA);
   var color = statusColor(status);
@@ -1032,30 +1068,73 @@ function openTestDetail(testId) {
   var kpiLabel = isVoice ? 'MOS' : 'Availability';
   var kpiValue = avail != null ? (isVoice ? avail.toFixed(2) : avail.toFixed(1) + '%') : '--';
 
-  document.getElementById('testModalTitle').textContent = t.name || 'Test';
-  var body = document.getElementById('testModalBody');
-  var healthIconClass = status === 'healthy' ? 'healthy' : status === 'degraded' ? 'degraded' : status === 'critical' ? 'critical' : 'unknown';
-  var healthIconSvg = status === 'healthy' ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>' : status === 'degraded' ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>' : status === 'critical' ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>' : '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>';
+  var respMs = getTestExtraByKey(t.name, extra, 'resp_by_test', 'ms');
+  if (respMs == null) respMs = getTestExtraByKey(t.name, extra, 'latency_by_test', 'latency');
+  if (respMs == null) respMs = getTestExtraByKey(t.name, extra, 'voip_latency_by_test', 'value');
+  var lossPct = getTestExtraByKey(t.name, extra, 'loss_by_test', 'loss');
+  if (lossPct == null) lossPct = getTestExtraByKey(t.name, extra, 'voip_loss_by_test', 'value');
+  var jitterMs = getTestExtraByKey(t.name, extra, 'jitter_by_test', 'jitter');
 
+  var respStr = respMs != null ? respMs + 'ms' : '--';
+  var lossStr = lossPct != null ? lossPct.toFixed(1) + '%' : '--';
+  var jitterStr = jitterMs != null ? jitterMs.toFixed(1) + 'ms' : '--';
+
+  var kpi1Class = (status === 'critical' || status === 'degraded') ? (status === 'critical' ? ' kpi-red' : ' kpi-yellow') : ' kpi-green';
+  var respBad = respMs != null && respMs > 500;
+  var lossBad = lossPct != null && lossPct > 1;
+  var jitterBad = jitterMs != null && jitterMs > 30;
+  var kpi2Class = respBad ? ' kpi-red' : '';
+  var kpi3Class = lossBad ? ' kpi-red' : '';
+  var kpi4Class = jitterBad ? ' kpi-red' : '';
+
+  document.getElementById('testModalTitle').textContent = 'Test Drill-Down — ' + (t.name || 'Test');
+  document.getElementById('testModalStatusDot').style.background = color;
+  document.getElementById('testModalStatusLabel').textContent = statusLabel;
+  document.getElementById('testModalStatusLabel').style.color = color;
+
+  var siteName = '';
+  var sites = buildSites(DATA);
+  if (currentSiteKey && sites[currentSiteKey]) siteName = sites[currentSiteKey].name || currentSiteKey;
+
+  var pathSummaryBad = (lossPct != null && lossPct > 1) || (respMs != null && respMs > 500);
+  var pathHtml = '<div class="test-drill-path-inner">' +
+    '<div class="test-drill-path-node"><div class="test-drill-path-node-icon' + (pathSummaryBad ? ' degraded' : '') + '"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></div><div class="test-drill-path-node-label">' + escHtml(siteName || 'Agents') + '</div><div class="test-drill-path-node-meta">Source</div></div>' +
+    '<div class="test-drill-path-conn' + (pathSummaryBad ? ' degraded' : '') + '"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="4" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="20" cy="12" r="1.5" fill="currentColor"/></svg></div>' +
+    '<div class="test-drill-path-node"><div class="test-drill-path-node-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div><div class="test-drill-path-node-label">' + escHtml(targetStr) + '</div><div class="test-drill-path-node-meta">Target</div></div>' +
+    '</div>' +
+    '<div class="test-drill-path-summary">' +
+    '<span>End-to-end:<strong class="' + (respMs != null && respMs > 500 ? 'summary-bad' : '') + '">' + respStr + '</strong></span>' +
+    '<span>Loss:<strong class="' + (lossBad ? 'summary-bad' : '') + '">' + lossStr + '</strong></span>' +
+    '<span>Jitter:<strong>' + jitterStr + '</strong></span>' +
+    '</div>';
+
+  var maxBar = Math.max(respMs || 0, (jitterMs || 0) * 5, 100);
+  var respPct = maxBar > 0 && respMs != null ? Math.min(100, (respMs / maxBar) * 100) : 0;
+  var jitterPct = maxBar > 0 && jitterMs != null ? Math.min(100, ((jitterMs * 5) / maxBar) * 100) : 0;
+  var lossBarPct = lossPct != null ? Math.min(100, lossPct * 20) : 0;
+
+  var waterfallHtml = '<div class="test-drill-waterfall-layer"><div class="test-drill-waterfall-layer-title">Application / network metrics</div>' +
+    (respMs != null ? '<div class="test-drill-waterfall-row"><span class="test-drill-waterfall-label">Response / Latency</span><div class="test-drill-waterfall-bar-wrap"><div class="test-drill-waterfall-bar" style="width:' + respPct + '%;background:var(--te-blue);"></div></div><span class="test-drill-waterfall-ms">' + respMs + 'ms</span></div>' : '') +
+    (lossPct != null ? '<div class="test-drill-waterfall-row"><span class="test-drill-waterfall-label">Packet loss</span><div class="test-drill-waterfall-bar-wrap"><div class="test-drill-waterfall-bar" style="width:' + lossBarPct + '%;background:var(--te-red);"></div></div><span class="test-drill-waterfall-ms">' + lossPct.toFixed(2) + '%</span></div>' : '') +
+    (jitterMs != null ? '<div class="test-drill-waterfall-row"><span class="test-drill-waterfall-label">Jitter</span><div class="test-drill-waterfall-bar-wrap"><div class="test-drill-waterfall-bar" style="width:' + jitterPct + '%;background:var(--te-yellow);"></div></div><span class="test-drill-waterfall-ms">' + jitterMs.toFixed(1) + 'ms</span></div>' : '') +
+    '</div>';
+
+  var body = document.getElementById('testModalBody');
   body.innerHTML =
-    '<div class="test-modal-health">' +
-    '<div class="test-modal-health-icon ' + healthIconClass + '">' + healthIconSvg + '</div>' +
-    '<div><div class="test-modal-health-text">' + statusLabel.toUpperCase() + '</div><div class="test-modal-health-pct" style="color:' + color + ';">' + kpiValue + '</div></div>' +
+    '<div class="test-drill-kpi-strip">' +
+    '<div class="test-drill-kpi-card"><div class="test-drill-kpi-label">' + kpiLabel.toUpperCase() + '</div><div class="test-drill-kpi-value' + kpi1Class + '">' + kpiValue + '</div></div>' +
+    '<div class="test-drill-kpi-card"><div class="test-drill-kpi-label">Avg response</div><div class="test-drill-kpi-value' + kpi2Class + '">' + respStr + '</div></div>' +
+    '<div class="test-drill-kpi-card"><div class="test-drill-kpi-label">Packet loss</div><div class="test-drill-kpi-value' + kpi3Class + '">' + lossStr + '</div></div>' +
+    '<div class="test-drill-kpi-card"><div class="test-drill-kpi-label">Jitter</div><div class="test-drill-kpi-value' + kpi4Class + '">' + jitterStr + '</div></div>' +
     '</div>' +
-    '<div class="test-modal-details"><div class="test-modal-details-title">Test details</div>' +
-    '<div class="test-modal-details-grid">' +
-    '<div class="test-modal-detail-card"><div class="test-modal-detail-label">Type</div><div class="test-modal-detail-value">' + escHtml(typeLabel) + '</div></div>' +
-    '<div class="test-modal-detail-card"><div class="test-modal-detail-label">Test ID</div><div class="test-modal-detail-value">' + escHtml(String(t.id)) + '</div></div>' +
-    '<div class="test-modal-detail-card"><div class="test-modal-detail-label">Target</div><div class="test-modal-detail-value">' + escHtml(targetStr) + '</div></div>' +
-    '</div></div>' +
-    '<div class="test-modal-details-grid" style="margin-bottom:16px;">' +
-    '<div class="test-modal-detail-card"><div class="test-modal-detail-label">' + kpiLabel + '</div><div class="test-modal-detail-value" style="color:' + color + ';">' + kpiValue + '</div></div>' +
-    '<div class="test-modal-detail-card"><div class="test-modal-detail-label">Window</div><div class="test-modal-detail-value">24h</div></div>' +
-    '</div>' +
+    '<div class="test-drill-section"><div class="test-drill-section-title">Test path — ' + escHtml(siteName || 'Source') + ' \u2192 ' + escHtml(targetStr) + '</div>' +
+    '<div class="test-drill-path-wrap">' + pathHtml + '</div></div>' +
     '<a href="' + teLink + '" target="_blank" rel="noopener noreferrer" class="test-modal-te-link">View in ThousandEyes <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>' +
-    '<div class="test-modal-heatmap-title">' + (isVoice ? 'Performance over time (MOS)' : 'Per-Agent KPIs – 24H') + '</div>' +
-    '<div class="test-modal-heatmap-sub" id="testModalHeatmapSub">' + (isVoice ? 'MOS score' : 'Availability %') + ' • loading...</div>' +
-    '<div class="test-modal-heatmap-wrap" id="testModalHeatmapWrap"><div id="testModalHeatmap" class="test-modal-heatmap"></div></div>';
+    '<div class="test-drill-section"><div class="test-drill-section-title">' + (isVoice ? 'Performance over time (MOS)' : 'Response time &amp; loss — 24 hour trend') + '</div>' +
+    '<div class="test-modal-heatmap-sub" id="testModalHeatmapSub">' + (isVoice ? 'MOS score' : 'Availability %') + ' \u2022 loading...</div>' +
+    '<div class="test-modal-heatmap-wrap" id="testModalHeatmapWrap"><div id="testModalHeatmap" class="test-modal-heatmap"></div></div></div>' +
+    '<div class="test-drill-section"><div class="test-drill-section-title">Metrics breakdown</div>' +
+    '<div class="test-drill-waterfall-wrap">' + waterfallHtml + '</div></div>';
 
   document.getElementById('testModalOverlay').classList.add('visible');
 
