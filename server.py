@@ -1315,15 +1315,28 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         "memory": ep_results[5],
     }
 
+    # Candidate column names used by different endpoint metric types in the CSV response.
+    # Network metrics (latency, RSSI, gateway) use EYEBROW_MACHINE_ID; system metrics
+    # (CPU, memory) may use ENDPOINT_AGENT_MACHINE_ID or MACHINE_ID.
+    _EP_MID_COLS = ("EYEBROW_MACHINE_ID", "ENDPOINT_AGENT_MACHINE_ID", "MACHINE_ID")
+
     def _parse_ep_csv(resp):
         if not resp or not isinstance(resp, dict):
             return {}
         csv_text = resp.get("csv", "")
+        if not csv_text:
+            return {}
         agg_map = resp.get("names", {}).get("aggregatesMap", {})
-        machine_names = agg_map.get("EYEBROW_MACHINE_ID", {})
-        mid_col = "EYEBROW_MACHINE_ID"
-        header = csv_text.split("\n", 1)[0] if csv_text else ""
-        if mid_col not in header:
+        # Try multiple aggregatesMap keys — different metrics use different dimension names
+        machine_names = {}
+        for key in _EP_MID_COLS:
+            machine_names = agg_map.get(key) or {}
+            if machine_names:
+                break
+        header = csv_text.split("\n", 1)[0]
+        mid_col = next((c for c in _EP_MID_COLS if c in header), None)
+        if not mid_col:
+            log.debug("EP CSV: no known machine-ID column in header: %s", header[:120])
             return {}
         sums = defaultdict(float)
         cnts = defaultdict(int)
@@ -1343,6 +1356,24 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
             result[name] = round(sums[mid] / cnts[mid], 2)
         return result
 
+    def _ep_norm(name: str) -> str:
+        """Normalize an endpoint agent name for cross-metric matching.
+        Strips common local domain suffixes and lowercases so that
+        'MKOWALEW-M-YQVQ' and 'MKOWALEW-M-YQVQ.local' resolve to the same key.
+        """
+        n = name.lower().strip()
+        for suffix in (".local", ".lan", ".internal", ".home", ".localdomain"):
+            if n.endswith(suffix):
+                n = n[: -len(suffix)]
+                break
+        return n
+
+    for ep_key, ep_resp in ep_responses.items():
+        if ep_resp and isinstance(ep_resp, dict):
+            hdr = (ep_resp.get("csv", "") or "").split("\n", 1)[0]
+            agg_keys = list((ep_resp.get("names") or {}).get("aggregatesMap", {}).keys())
+            log.debug("EP metric=%s csv_header=%s aggregatesMap_keys=%s", ep_key, hdr[:120], agg_keys)
+
     latency_by_name = _parse_ep_csv(ep_responses.get("latency"))
     rssi_by_name = _parse_ep_csv(ep_responses.get("rssi"))
     gateway_latency_by_name = _parse_ep_csv(ep_responses.get("gateway_latency"))
@@ -1356,36 +1387,58 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         len(cpu_by_name), len(memory_by_name),
     )
 
+    # Build a normalized→canonical name index across all metric dicts so that name
+    # variants (e.g. "HOST" vs "HOST.local") collapse to a single ep_perf entry.
+    norm_to_canonical: dict[str, str] = {}
+    all_metric_dicts = (latency_by_name, rssi_by_name, gateway_latency_by_name,
+                        gateway_loss_by_name, cpu_by_name, memory_by_name)
+    for d in all_metric_dicts:
+        for name in d:
+            norm = _ep_norm(name)
+            existing = norm_to_canonical.get(norm)
+            # Prefer the shorter, cleaner name (no domain suffix) as canonical
+            if existing is None or len(name) < len(existing):
+                norm_to_canonical[norm] = name
+
+    def _ep_get(d: dict, norm: str):
+        """Look up a value by normalized name, trying exact then normalized match."""
+        canonical = norm_to_canonical.get(norm, "")
+        if canonical in d:
+            return d[canonical]
+        # Fallback: check all keys in d for a normalized match
+        for k, v in d.items():
+            if _ep_norm(k) == norm:
+                return v
+        return None
+
     with _cache_lock:
         ep_agents = list(_base_cache.get("ENDPOINT_AGENTS") or [])
 
-    all_names = set()
-    for m in (latency_by_name, rssi_by_name, gateway_latency_by_name, gateway_loss_by_name, cpu_by_name, memory_by_name):
-        all_names |= set(m.keys())
     ep_perf = []
-    seen_names = set()
-    for comp_name in all_names:
-        lat_val = latency_by_name.get(comp_name)
-        rssi_val = rssi_by_name.get(comp_name)
-        gw_lat = gateway_latency_by_name.get(comp_name)
-        gw_loss = gateway_loss_by_name.get(comp_name)
-        cpu_val = cpu_by_name.get(comp_name)
-        mem_val = memory_by_name.get(comp_name)
+    seen_norms = set()
+    for norm, comp_name in norm_to_canonical.items():
+        if norm in seen_norms:
+            continue
+        seen_norms.add(norm)
+        lat_val = _ep_get(latency_by_name, norm)
+        rssi_val = _ep_get(rssi_by_name, norm)
+        gw_lat = _ep_get(gateway_latency_by_name, norm)
+        gw_loss = _ep_get(gateway_loss_by_name, norm)
+        cpu_val = _ep_get(cpu_by_name, norm)
+        mem_val = _ep_get(memory_by_name, norm)
         loc = ""
         agent_id = ""
         device = ""
         display_name = comp_name
         for ep in ep_agents:
             ep_name = ep.get("name", "")
-            if ep_name == comp_name or ep_name.split(".")[0] == comp_name:
+            if _ep_norm(ep_name) == norm or ep_name == comp_name:
                 loc = ep.get("loc", "")
                 agent_id = ep.get("id", "")
                 device = ep.get("device", "")
                 display_name = ep_name
                 break
-        if display_name not in seen_names:
-            seen_names.add(display_name)
-            ep_perf.append({
+        ep_perf.append({
                 "name": display_name,
                 "loc": loc,
                 "id": agent_id,
