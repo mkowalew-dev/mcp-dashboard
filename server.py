@@ -1158,7 +1158,9 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         extra["resp_by_test"] = resp_detail
 
     loss_by_test = {}
-    loss_metric_order = ["NET_LOSS"]
+    # Include ONE_WAY_NET_LOSS_TO_TARGET so agent-to-agent tests get loss data
+    # (_merge_parsed_first_wins uses the first metric that returns a value per test)
+    loss_metric_order = ["NET_LOSS", "ONE_WAY_NET_LOSS_TO_TARGET"]
     await asyncio.sleep(delay * 0.5)
     for i in range(0, len(synth_ids), batch_size):
         batch = synth_ids[i : i + batch_size]
@@ -1185,7 +1187,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         extra["loss_by_test"] = loss_detail
 
     jitter_by_test = {}
-    jitter_order = ["NET_JITTER"]
+    jitter_order = ["NET_JITTER", "ONE_WAY_NET_JITTER_TO_TARGET"]
     await asyncio.sleep(delay * 0.5)
     for i in range(0, len(synth_ids), batch_size):
         batch = synth_ids[i : i + batch_size]
@@ -1203,7 +1205,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         extra["jitter_by_test"] = jitter_detail
 
     latency_by_test = {}
-    lat_order = ["NET_LATENCY"]
+    lat_order = ["NET_LATENCY", "ONE_WAY_NET_LATENCY_TO_TARGET"]
     await asyncio.sleep(delay * 0.5)
     for i in range(0, len(synth_ids), batch_size):
         batch = synth_ids[i : i + batch_size]
@@ -1438,6 +1440,9 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
                 device = ep.get("device", "")
                 display_name = ep_name
                 break
+        if all(v is None for v in (lat_val, rssi_val, gw_lat, gw_loss, cpu_val, mem_val)):
+            log.debug("EP perf: skipping %s — all metrics None", display_name)
+            continue
         ep_perf.append({
                 "name": display_name,
                 "loc": loc,
@@ -1658,7 +1663,7 @@ def api_fetch_window():
 
 METRIC_FOR_TYPE = {
     "agent-to-server": "NET_LOSS",
-    "agent-to-agent": "NET_LOSS",
+    "agent-to-agent": "ONE_WAY_NET_LOSS_TO_TARGET",
     "http-server": "WEB_AVAILABILITY",
     "ftp-server": "FTP_AVAILABILITY",
     "web-transactions": "WEB_TRANSACTION_COMPLETION",
