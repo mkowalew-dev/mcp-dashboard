@@ -756,13 +756,26 @@ async def refresh_base_data_async():
         if start_time:
             try:
                 if isinstance(start_time, (int, float)):
-                    dt = datetime.fromtimestamp(start_time, tz=timezone.utc)
+                    ts = float(start_time)
+                    # ThousandEyes sometimes returns epoch days rather than epoch seconds.
+                    # Epoch seconds for any recent date are > 1 billion; values < 50000
+                    # are almost certainly day counts (e.g. 17738 days ≈ 2018-07-26).
+                    if ts < 50_000:
+                        ts *= 86400
+                    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
                 else:
-                    dt = datetime.fromisoformat(str(start_time).replace("Z", "+00:00"))
-                time_str = dt.strftime("%H:%M")
+                    try:
+                        dt = datetime.fromisoformat(str(start_time).replace("Z", "+00:00"))
+                    except (ValueError, TypeError):
+                        # Numeric string (e.g. "17738") — parse and apply day/second heuristic
+                        ts = float(str(start_time))
+                        if ts < 50_000:
+                            ts *= 86400
+                        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                time_str = dt.strftime("%b %d %H:%M")
                 time_iso = dt.isoformat().replace("+00:00", "Z")
             except (ValueError, TypeError, OSError):
-                time_str = str(start_time)[:5]
+                time_str = ""
         sev_color = "red" if severity.upper() in ("MAJOR", "CRITICAL") else "yellow" if severity.upper() == "MINOR" else "green"
         alert_id = str(a.get("alertId", a.get("id", "")))
         alert_feed.append({
