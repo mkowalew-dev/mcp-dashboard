@@ -282,7 +282,7 @@
   <div class="header-right">
     <button class="refresh-btn" onclick="doRefresh()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-      Refresh Last 24h
+      Refresh
     </button>
   </div>
 </header>
@@ -1297,18 +1297,23 @@ document.getElementById('testModalOverlay').addEventListener('click', function(e
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && document.getElementById('testModalOverlay').classList.contains('visible')) closeTestModal(); });
 
 function doRefresh() {
+  var fetchWindow = '1h';
+  if (DATA && DATA.lastRefresh) {
+    var hoursSince = (Date.now() - new Date(DATA.lastRefresh).getTime()) / 3600000;
+    if (hoursSince >= 12) fetchWindow = '24h';
+    else if (hoursSince >= 6) fetchWindow = '12h';
+    else if (hoursSince >= 1) fetchWindow = '6h';
+    else fetchWindow = '1h';
+  }
   document.getElementById('loadingOverlay').classList.remove('hidden');
   document.querySelector('.loading-text').textContent = 'Refreshing data';
-  document.querySelector('.loading-sub').textContent = 'Please wait\u2026';
-  fetch('/api/refresh', { method: 'POST' })
-    .then(function(r) {
-      if (!r.ok) { console.error('Refresh request failed: ' + r.status); }
-      setTimeout(loadData, 3000);
-    })
+  document.querySelector('.loading-sub').textContent = 'Fetching latest metrics\u2026';
+  fetch('/api/fetch_window?window=' + encodeURIComponent(fetchWindow))
+    .then(function(r) { return r.json(); })
+    .then(function() { return loadData(); })
     .catch(function(e) {
-      console.error('Refresh request error:', e);
-      document.querySelector('.loading-sub').textContent = 'Refresh failed, retrying\u2026';
-      setTimeout(loadData, 5000);
+      console.error('Refresh error:', e);
+      loadData();
     });
 }
 
