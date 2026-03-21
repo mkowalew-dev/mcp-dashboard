@@ -280,7 +280,10 @@
     <span class="header-subtitle">Site Health Overview</span>
   </div>
   <div class="header-right">
-    <div class="live-indicator"><div class="live-dot"></div> LIVE DATA &middot; <span id="liveRefreshLabel">AUTO-REFRESH 15M</span></div>
+    <button class="refresh-btn" onclick="doRefresh()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Refresh Last 24h
+    </button>
   </div>
 </header>
 
@@ -291,10 +294,6 @@
   </div>
   <div class="controls-right">
     <span class="updated-label" id="updatedLabel">Updated --</span>
-    <button class="refresh-btn" onclick="doRefresh()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-      Refresh
-    </button>
   </div>
 </div>
 
@@ -472,17 +471,9 @@ async function fetchData(win) {
   return data;
 }
 
-var refreshIntervalMs = 15 * 60 * 1000;
-
 async function loadData() {
   try {
     DATA = await fetchData(currentWindow);
-    var rm = parseInt(DATA.refresh_interval_minutes, 10);
-    if (rm >= 1 && rm <= 120) {
-      refreshIntervalMs = rm * 60 * 1000;
-      var lr = document.getElementById('liveRefreshLabel');
-      if (lr) lr.textContent = 'AUTO-REFRESH ' + rm + 'M';
-    }
     populateSiteSelect();
     var params = new URLSearchParams(window.location.search);
     var siteParam = params.get('site');
@@ -1327,7 +1318,7 @@ function pollUntilReady() {
     .then(function(status) {
       var sub = document.getElementById('loadingSub');
       if (status.phase === 'done' || status.phase === 'error') {
-        loadData().finally(scheduleRefresh);
+        loadData();
         return;
       }
       if (sub && status.message) sub.textContent = status.message;
@@ -1336,16 +1327,10 @@ function pollUntilReady() {
     .catch(function() { setTimeout(pollUntilReady, 3000); });
 }
 
-function scheduleRefresh() {
-  setTimeout(function() {
-    loadData().finally(scheduleRefresh);
-  }, refreshIntervalMs);
-}
-
 fetch('/api/health')
   .then(function(r) { return r.json(); })
   .then(function(h) {
-    if (h.base_cache_ready) { loadData().finally(scheduleRefresh); }
+    if (h.base_cache_ready) { loadData(); }
     else { pollUntilReady(); }
   })
   .catch(function() { setTimeout(pollUntilReady, 3000); });
