@@ -1,6 +1,6 @@
 # mcp-dashboard
 
-NOC-style dashboard that pulls live ThousandEyes data over the **Model Context Protocol (MCP)** and serves a single-page UI. Includes a **Site Health Overview** for per-site monitoring.
+NOC-style dashboard that pulls live ThousandEyes data over the **Model Context Protocol (MCP)** and serves a single-page UI. Includes a **Site Health Overview** for per-site monitoring and an **Executive Dashboard** for network & application assurance.
 
 **Sales engineers:** See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the technical architecture guide and diagrams (system overview, MCP collection flow, request flow, deployment).
 
@@ -8,13 +8,13 @@ NOC-style dashboard that pulls live ThousandEyes data over the **Model Context P
 
 | Area | Behavior |
 |------|----------|
-| **Backend** | Flask app on `0.0.0.0:8000` (override with `PORT`); serves `noc_dashboard.html` at `/` and `site_health.html` at `/site-health`. |
+| **Backend** | Flask app on `0.0.0.0:8000` (override with `PORT`); serves `noc_dashboard.html` at `/`, `site_health.html` at `/site-health`, and `executive.html` at `/executive`. |
 | **Data source** | ThousandEyes MCP over HTTPS (`https://api.thousandeyes.com/mcp`) using a Bearer token. |
 | **MCP tools used** | Lists synthetics tests, endpoint tests, account groups, cloud/enterprise/endpoint agents; triggered alerts; events; outages; batch synthetics metrics (availability, loss, TTFB, VoIP, BGP/API/page metrics); per-test agent breakdown; endpoint agent metrics (latency, Wi‑Fi RSSI, loss). |
 | **Caching** | In-memory base + per-window metrics; TTL defaults to one refresh cycle (min 5m, max 60m). |
 | **Refresh** | Single scheduled job: **base MCP pull first**, then **24h metrics** (avoids racing on stale test IDs). Same interval for UI (`refresh_interval_minutes` in `/api/data`). |
 | **API** | `GET /api/data?window=…`, `GET /api/health`, `GET /api/refresh-status`, `GET /api/fetch_window`, `GET /api/agent_perf/<test_id>` (validated id), `POST /api/refresh`. |
-| **Dashboards** | **NOC Performance Overview** (`/`) — global view of all tests, agents, alerts, events, outages. **Site Health Overview** (`/site-health`) — per-site view showing tests grouped by category (DNS, Web & App, Network, Voice) for each enterprise agent location. |
+| **Dashboards** | **NOC Performance Overview** (`/`) — global view of all tests, agents, alerts, events, outages. **Site Health Overview** (`/site-health`) — per-site view showing tests grouped by category (DNS, Web & App, Network, Voice) for each enterprise agent location. **Executive Dashboard** (`/executive`) — C-suite network & application assurance view with assurance score gauge, business service health grid, top issues, alert/event feed, and infrastructure coverage. |
 
 ### MCP collection (design)
 
@@ -30,7 +30,7 @@ NOC-style dashboard that pulls live ThousandEyes data over the **Model Context P
 | **Python** | **3.10+** recommended (code uses `dict \| None` style unions). |
 | **Network** | Outbound HTTPS to `api.thousandeyes.com` for MCP. |
 | **Credentials** | ThousandEyes API token with MCP access, supplied only via environment (see below). **Do not commit tokens.** |
-| **Files** | `server.py`, `noc_dashboard.html`, `site_health.html`, and dependencies from `requirements.txt` in the project root. |
+| **Files** | `server.py`, `noc_dashboard.html`, `site_health.html`, `executive.html`, and dependencies from `requirements.txt` in the project root. |
 
 ### Environment variables
 
@@ -110,7 +110,7 @@ From the project root, with the venv activated and environment configured:
 ./scripts/start-stop.sh --startup
 ```
 
-The script checks that `TE_TOKEN` is set, then starts the server in the background. Open **http://127.0.0.1:8000/** for the NOC dashboard or **http://127.0.0.1:8000/site-health** for the Site Health Overview (or `http://<host>:8000/` from another machine; port is from `PORT` or 8000).
+The script checks that `TE_TOKEN` is set, then starts the server in the background. Open **http://127.0.0.1:8000/** for the NOC dashboard, **http://127.0.0.1:8000/site-health** for the Site Health Overview, or **http://127.0.0.1:8000/executive** for the Executive Dashboard (or `http://<host>:8000/` from another machine; port is from `PORT` or 8000). All dashboards share a sidebar navigation.
 
 To stop the server:
 
@@ -139,6 +139,7 @@ See **scripts/README.md** for more detail.
 ## Repository layout (typical)
 
 - `server.py` — Flask + MCP aggregation  
-- `noc_dashboard.html` — NOC Performance Overview dashboard  
-- `site_health.html` — Site Health Overview dashboard (per-site view)  
+- `noc_dashboard.html` — NOC Performance Overview dashboard
+- `site_health.html` — Site Health Overview dashboard (per-site view)
+- `executive.html` — Executive Dashboard for network & application assurance
 - `requirements.txt` — Python packages  

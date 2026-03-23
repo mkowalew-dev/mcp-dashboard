@@ -1584,6 +1584,11 @@ def site_health():
     return send_file("site_health.html")
 
 
+@app.route("/executive")
+def executive():
+    return send_file("executive.html")
+
+
 @app.route("/api/health")
 def api_health():
     """Liveness + whether MCP base cache has been populated."""

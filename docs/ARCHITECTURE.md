@@ -8,7 +8,7 @@ This guide is for **sales engineers** who install, run, and demonstrate the NOC 
 
 | Item | Description |
 |------|-------------|
-| **What it is** | A set of NOC-style dashboards that display live ThousandEyes data (synthetics, agents, alerts, events, outages, endpoint metrics) using the **Model Context Protocol (MCP)**. Includes a global **NOC Performance Overview** and a per-site **Site Health Overview**. |
+| **What it is** | A set of dashboards that display live ThousandEyes data (synthetics, agents, alerts, events, outages, endpoint metrics) using the **Model Context Protocol (MCP)**. Includes a global **NOC Performance Overview**, a per-site **Site Health Overview**, and an **Executive Dashboard** for network & application assurance. |
 | **Who uses it** | Sales engineers for customer demos; optionally internal NOC teams. |
 | **How data is obtained** | The **server** (Python/Flask) calls the ThousandEyes MCP API over HTTPS. The **browser** only talks to the server; it never contacts ThousandEyes directly. |
 
@@ -22,7 +22,7 @@ The system has three main parts: the **customer’s browser**, the **Flask serve
 
 | Component | Role |
 |-----------|------|
-| **Browser** | Loads `noc_dashboard.html` (NOC Overview) or `site_health.html` (Site Health Overview), renders map (Leaflet), KPIs, tabs/categories, modals. Polls `GET /api/data?window=…` on an interval driven by the server’s `refresh_interval_minutes`. |
+| **Browser** | Loads `noc_dashboard.html` (NOC Overview), `site_health.html` (Site Health), or `executive.html` (Executive Dashboard). Renders maps, KPIs, tabs/categories, modals, gauges, and business service grids. All dashboards share a sidebar navigation and poll `GET /api/data?window=…` on an interval driven by the server’s `refresh_interval_minutes`. |
 | **Flask server** | Serves the HTML, exposes JSON APIs, holds **in-memory caches** (base data, per-window metrics, extra KPIs), and runs an **APScheduler** job that periodically refreshes base data then 24h metrics. |
 | **ThousandEyes MCP** | Streamable HTTP API at `https://api.thousandeyes.com/mcp`. Authenticated with `TE_TOKEN`. Provides “tools” such as listing tests/agents/alerts/events/outages and fetching synthetics/endpoint metrics (often in batches). |
 
@@ -78,6 +78,16 @@ Both dashboards are standalone HTML files with embedded CSS and JavaScript; no b
 - **Agents at Site:** List of enterprise agents at the selected location.
 - **Test categories:** Tests are grouped into service categories — DNS Services, Web & Application, Network Connectivity, Voice & Collaboration, Other Monitoring — each showing a status dot, healthy/total count, health label, availability bar, and per-test tiles with availability percentage and type label. Test tiles link to ThousandEyes drill-down views.
 - **Data:** Uses the same `GET /api/data?window=…` endpoint. Site derivation, test grouping, and category classification are done client-side using `ALL_AGENTS`, `AGENT_TESTS`, `ALL_TESTS`, `TEST_AVAILABILITY`, and `EXTRA_KPI` from the API response.
+
+#### Executive Dashboard (`executive.html`, served at `/executive`)
+
+- **Purpose:** C-suite / VP-level network & application assurance view. Designed for a 30-second glance at overall health with no deep technical drill-downs.
+- **Assurance Score:** Circular gauge showing composite availability across all active synthetic tests, color-coded green (>=99%), yellow (>=95%), red (<95%). Accompanied by summary stats: Monitored Services, Active Alerts, Internet Outages, Enterprise Sites.
+- **Executive KPI cards (4):** Network Availability (mean test availability), Application Performance (avg response time + P95), Packet Loss (avg % + affected paths), Mean Time to Detect (combined alert + event count).
+- **Business Service Health grid:** Tests are grouped into business services (Collaboration - Microsoft, Collaboration - Webex, Microsoft O365, Retail Operations, AI Services, AWS/Azure, Salesforce & CRM, Workday HR, Network Infrastructure, etc.) using the same pattern matching as the NOC dashboard. Cards show service name, availability %, status dot, test count, and mini bar — sorted worst-first.
+- **Risk & Attention (two columns):** Left panel shows the 8 worst tests by availability. Right panel shows a combined alert/event feed (up to 8 items), severity-ranked then time-sorted.
+- **Infrastructure Coverage (3 cards):** Monitoring Coverage (total tests + type breakdown), Agent Deployment (enterprise/endpoint/cloud counts), Internet Insights (outage count + top affected providers).
+- **Data:** Uses the same `GET /api/data?window=24h` endpoint. All aggregation (mean availability, business service grouping, worst-test ranking, alert/event merging) is done client-side.
 
 ---
 
@@ -156,6 +166,7 @@ Results are written to **metrics_cache** and **extra_kpi_cache** for the corresp
 |----------|--------|---------|
 | `/` | GET | Serves `noc_dashboard.html` (NOC Performance Overview). |
 | `/site-health` | GET | Serves `site_health.html` (Site Health Overview — per-site dashboard). |
+| `/executive` | GET | Serves `executive.html` (Executive Dashboard — network & application assurance). |
 | `/api/data` | GET | Query: `window` (1h, 6h, 12h, 24h, 2d, 7d). Returns merged base + metrics + extra KPIs for that window, plus `refresh_interval_minutes` and `metrics_ttl_seconds`. 503 if base_cache not yet loaded. |
 | `/api/health` | GET | Liveness; `base_cache_ready`; `last_base_refresh`; `refresh_interval_minutes`. For load balancers or monitoring. |
 | `/api/fetch_window` | GET | Query: `window`. On-demand metrics for that window if cache is stale. |
@@ -172,8 +183,8 @@ The following diagram shows how a user loads the dashboard and how the browser p
 
 ![Request flow](diagrams/03-request-flow.png)
 
-1. User opens `http://<host>:8000/` (NOC Overview) or `http://<host>:8000/site-health` (Site Health Overview).
-2. Server responds with the corresponding HTML file (`noc_dashboard.html` or `site_health.html`).
+1. User opens `http://<host>:8000/` (NOC Overview), `http://<host>:8000/site-health` (Site Health), or `http://<host>:8000/executive` (Executive Dashboard). All dashboards share a sidebar navigation for switching between views.
+2. Server responds with the corresponding HTML file (`noc_dashboard.html`, `site_health.html`, or `executive.html`).
 3. Browser runs JavaScript: calls `GET /api/data?window=24h` (or last selected window).
 4. Server reads from base_cache and, for the requested window, from metrics_cache and extra_kpi_cache; returns JSON (or 503 if base not ready).
 5. UI renders map, KPIs, tabs, etc., and sets the next poll interval from `DATA.refresh_interval_minutes`.
@@ -254,4 +265,4 @@ All diagrams are in **docs/diagrams/** as PNGs and render reliably on GitHub and
 
 ---
 
-*Document version: 1.1 — for use by sales engineers installing and demonstrating the MCP NOC dashboard and Site Health Overview with customers.*
+*Document version: 1.2 — for use by sales engineers installing and demonstrating the MCP NOC dashboard, Site Health Overview, and Executive Dashboard with customers.*

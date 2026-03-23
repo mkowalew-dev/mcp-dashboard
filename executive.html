@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Executive network and application assurance overview from ThousandEyes.">
+<title>ThousandEyes — Network &amp; Application Assurance</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+    --te-blue: #049FD9;
+    --te-blue-dark: #037BAA;
+    --te-blue-dim: rgba(4,159,217,0.12);
+    --te-dark: #0B1120;
+    --te-dark-2: #111827;
+    --te-dark-3: #1A2332;
+    --te-dark-4: #243044;
+    --te-border: rgba(255,255,255,0.08);
+    --te-text: #E8ECF4;
+    --te-text-dim: #7B8FAD;
+    --te-green: #00D68F;
+    --te-green-dim: rgba(0,214,143,0.15);
+    --te-yellow: #F7B500;
+    --te-yellow-dim: rgba(247,181,0,0.15);
+    --te-red: #EF4444;
+    --te-red-dim: rgba(239,68,68,0.15);
+    --te-orange: #F97316;
+    --te-purple: #A78BFA;
+    --te-cyan: #58A6FF;
+    --te-surface: rgba(4,159,217,0.10);
+    --te-surface-border: rgba(4,159,217,0.28);
+    --radius: 10px;
+    --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background: var(--te-dark); color: var(--te-text); font-family: var(--font-body); overflow-x: hidden; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+.app-layout { display: flex; min-height: 100vh; }
+.nav-sidebar { width: 56px; flex-shrink: 0; background: var(--te-dark-2); border-right: 1px solid var(--te-border); display: flex; flex-direction: column; align-items: center; padding: 16px 0; gap: 4px; }
+.nav-link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; padding: 10px 0; color: var(--te-text-dim); text-decoration: none; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; transition: color 0.2s, background 0.2s; text-align: center; }
+.nav-link:hover { color: var(--te-text); background: var(--te-dark-3); }
+.nav-link.active { color: var(--te-blue); background: var(--te-blue-dim); }
+.nav-link svg { width: 22px; height: 22px; flex-shrink: 0; }
+.app-content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outline-offset: 2px; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--te-dark); }
+::-webkit-scrollbar-thumb { background: var(--te-dark-4); border-radius: 3px; }
+
+.loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--te-dark); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; transition: opacity 0.5s; }
+.loading-overlay.hidden { opacity: 0; pointer-events: none; }
+.loading-spinner { width: 48px; height: 48px; border: 3px solid var(--te-dark-4); border-top-color: var(--te-blue); border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { margin-top: 20px; font-size: 14px; color: var(--te-text-dim); letter-spacing: 1px; }
+.loading-sub { margin-top: 8px; font-size: 11px; color: var(--te-text-dim); opacity: 0.6; }
+
+.header { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; height: 58px; background: rgba(11,17,32,0.94); backdrop-filter: blur(20px); border-bottom: 1px solid var(--te-border); flex-wrap: wrap; gap: 8px; }
+.header-left { display:flex; align-items:center; gap:16px; flex-wrap: wrap; min-width: 0; }
+.te-logo { display:flex; align-items:center; gap:8px; min-width: 0; }
+.te-logo-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.te-logo-icon svg { height: 28px; width: auto; }
+.header-brand { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--te-text-dim); margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--te-dark-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.header-subtitle { font-size: 11px; color: var(--te-text); letter-spacing: 2px; text-transform: uppercase; font-weight: 700; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--te-dark-4); }
+.header-right { display:flex; align-items:center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
+.live-indicator { display:flex; align-items:center; gap:7px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--te-green); font-weight: 600; }
+.live-dot { width:7px; height:7px; border-radius:50%; background: var(--te-green); animation: pulse 2s ease-in-out infinite; box-shadow: 0 0 8px var(--te-green); }
+@keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
+.refresh-meta { font-size: 11px; color: var(--te-text-dim); font-family: var(--font-mono); text-align: right; line-height: 1.4; }
+.refresh-btn { font-family: var(--font-body); font-size: 11px; font-weight: 600; padding: 7px 16px; border: 1px solid var(--te-border); border-radius: 8px; background: var(--te-dark-3); color: var(--te-text-dim); cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+.refresh-btn:hover { border-color: var(--te-blue); color: var(--te-text); }
+.refresh-btn svg { width: 14px; height: 14px; }
+
+.stale-banner { display: none; align-items: center; gap: 8px; padding: 8px 28px; background: rgba(247,181,0,0.12); border-bottom: 1px solid rgba(247,181,0,0.3); font-size: 11px; color: var(--te-yellow); font-weight: 600; letter-spacing: 0.3px; }
+.stale-banner.visible { display: flex; }
+
+.page-scroll { flex: 1; overflow-y: auto; padding: 24px 28px 32px; display: flex; flex-direction: column; gap: 24px; }
+
+.health-banner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 24px; align-items: stretch; background: linear-gradient(135deg, var(--te-dark-2) 0%, var(--te-dark-3) 100%); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 24px 28px; }
+.health-banner-left { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+.gauge-wrap { position: relative; width: 140px; height: 140px; flex-shrink: 0; }
+.gauge-wrap svg { width: 140px; height: 140px; display: block; }
+.gauge-score { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+.gauge-score-val { font-family: var(--font-mono); font-size: 32px; font-weight: 700; line-height: 1; color: #fff; }
+.gauge-score-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--te-text-dim); margin-top: 6px; font-weight: 600; }
+.health-banner-title { font-size: 14px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--te-text); margin-bottom: 6px; }
+.health-banner-desc { font-size: 12px; color: var(--te-text-dim); max-width: 420px; line-height: 1.5; }
+.health-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.health-stat { background: var(--te-dark); border: 1px solid var(--te-border); border-radius: 8px; padding: 14px 16px; }
+.health-stat-val { font-family: var(--font-mono); font-size: 22px; font-weight: 700; color: #fff; }
+.health-stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--te-text-dim); margin-top: 4px; font-weight: 600; }
+
+.kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.kpi-exec { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 18px 20px; position: relative; overflow: hidden; }
+.kpi-exec::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--te-blue); opacity: 0.35; }
+.kpi-exec-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); margin-bottom: 8px; font-weight: 600; }
+.kpi-exec-value { font-size: 28px; font-weight: 700; font-family: var(--font-mono); color: #fff; line-height: 1.1; }
+.kpi-exec-value.green { color: var(--te-green); }
+.kpi-exec-value.yellow { color: var(--te-yellow); }
+.kpi-exec-value.red { color: var(--te-red); }
+.kpi-exec-sub { font-size: 11px; color: var(--te-text-dim); margin-top: 8px; font-family: var(--font-mono); line-height: 1.4; }
+
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.section-title { font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--te-text); }
+
+.biz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.biz-card { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-height: 110px; }
+.biz-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.biz-card-name { font-size: 13px; font-weight: 700; color: #fff; line-height: 1.35; }
+.biz-card-avail { font-family: var(--font-mono); font-size: 18px; font-weight: 700; }
+.biz-card-meta { font-size: 11px; color: var(--te-text-dim); font-family: var(--font-mono); }
+.biz-bar { height: 4px; background: var(--te-dark); border-radius: 2px; overflow: hidden; }
+.biz-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+
+.risk-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: stretch; }
+.risk-panel { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 18px 20px; display: flex; flex-direction: column; min-height: 320px; }
+.risk-panel-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); font-weight: 700; margin-bottom: 14px; }
+.issue-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--te-border); font-size: 12px; }
+.issue-row:last-child { border-bottom: none; }
+.issue-left { min-width: 0; flex: 1; }
+.issue-name { font-weight: 600; color: var(--te-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.issue-type { font-size: 10px; color: var(--te-text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+.issue-avail { font-family: var(--font-mono); font-weight: 700; flex-shrink: 0; }
+
+.feed-list { display: flex; flex-direction: column; gap: 0; max-height: 360px; overflow-y: auto; }
+.feed-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--te-border); align-items: flex-start; }
+.feed-item:last-child { border-bottom: none; }
+.feed-sev { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; flex-shrink: 0; margin-top: 2px; }
+.feed-body { min-width: 0; flex: 1; }
+.feed-time { font-family: var(--font-mono); font-size: 10px; color: var(--te-text-dim); margin-bottom: 4px; }
+.feed-msg { font-size: 12px; color: var(--te-text); line-height: 1.45; }
+
+.infra-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.infra-card { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 18px 20px; }
+.infra-card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); font-weight: 700; margin-bottom: 14px; }
+.infra-stat { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 12px; }
+.infra-lines { font-size: 12px; color: var(--te-text-dim); line-height: 1.65; }
+.infra-lines strong { color: var(--te-text); font-weight: 600; }
+
+.footer { text-align: center; padding: 20px 28px 28px; border-top: 1px solid var(--te-border); font-size: 12px; color: var(--te-text-dim); }
+.footer a { color: var(--te-blue); text-decoration: none; }
+
+.status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.status-green { background: var(--te-green); box-shadow: 0 0 6px var(--te-green); }
+.status-yellow { background: var(--te-yellow); box-shadow: 0 0 6px var(--te-yellow); }
+.status-red { background: var(--te-red); box-shadow: 0 0 6px var(--te-red); }
+
+.sev-high, .feed-sev-high { background: var(--te-red-dim); color: var(--te-red); }
+.sev-medium, .feed-sev-medium { background: var(--te-yellow-dim); color: var(--te-yellow); }
+.sev-low, .feed-sev-low { background: var(--te-green-dim); color: var(--te-green); }
+
+@media (max-width: 1100px) {
+  .health-banner { grid-template-columns: 1fr; }
+  .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .risk-row { grid-template-columns: 1fr; }
+  .infra-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .page-scroll { padding: 16px 16px 24px; }
+  .header { padding: 0 16px; height: auto; min-height: 58px; padding-top: 10px; padding-bottom: 10px; }
+  .kpi-row { grid-template-columns: 1fr; }
+  .health-stats { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app-layout">
+<nav class="nav-sidebar" aria-label="Dashboard navigation">
+  <a href="/" class="nav-link" title="NOC Performance Overview">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    <span>NOC</span>
+  </a>
+  <a href="/site-health" class="nav-link" title="Site Health Overview">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+    <span>Site Health</span>
+  </a>
+  <a href="/executive" class="nav-link active" title="Executive Dashboard">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+    <span>Executive</span>
+  </a>
+</nav>
+<div class="app-content">
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Connecting to ThousandEyes MCP</div>
+  <div class="loading-sub" id="loadingSub">Fetching live data...</div>
+</div>
+
+<header class="header">
+  <div class="header-left">
+    <div class="te-logo">
+      <div class="te-logo-icon">
+        <svg viewBox="0 0 251 55" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.84 2.78h-2.586v10.629h2.587V2.779ZM38.794 5.822c-.087-.044-.964-.573-2.191-.573-1.666 0-2.85 1.19-2.85 2.823 0 1.632 1.096 2.823 2.85 2.823 1.227 0 2.06-.486 2.191-.574v2.867c-.307.088-1.227.397-2.367.397-2.937 0-5.48-2.073-5.48-5.513 0-3.176 2.324-5.513 5.48-5.513 1.227 0 2.104.308 2.367.397v2.866ZM11.704 5.822c-.088-.044-.92-.573-2.192-.573-1.666 0-2.85 1.19-2.85 2.823 0 1.632 1.097 2.823 2.85 2.823 1.227 0 2.06-.486 2.192-.574v2.867c-.307.088-1.228.397-2.367.397-2.937 0-5.48-2.073-5.48-5.513 0-3.176 2.324-5.513 5.48-5.513 1.227 0 2.104.308 2.367.397v2.866ZM52.383 8.072c0 3.043-2.28 5.513-5.436 5.513s-5.435-2.47-5.435-5.513c0-3.043 2.28-5.513 5.435-5.513 3.2 0 5.436 2.47 5.436 5.513Zm-5.436-2.779c-1.534 0-2.674 1.235-2.674 2.779 0 1.544 1.14 2.779 2.674 2.779s2.674-1.235 2.674-2.78c.044-1.543-1.096-2.778-2.674-2.778ZM27.704 5.16c-.044 0-1.14-.308-2.017-.308-1.052 0-1.622.353-1.622.882 0 .662.746.882 1.184 1.015l.701.22c1.666.574 2.455 1.764 2.455 3.043 0 2.69-2.28 3.573-4.252 3.573-1.403 0-2.674-.265-2.805-.309v-2.425c.219.044 1.315.396 2.454.396 1.272 0 1.885-.396 1.885-1.014 0-.53-.526-.838-1.14-1.059-.175-.044-.394-.132-.57-.176-1.446-.485-2.63-1.367-2.63-3.131 0-1.985 1.447-3.308 3.814-3.308 1.271 0 2.455.308 2.543.352v2.25Z" fill="#E8ECF4"/><path d="M8.898 25.934H3.507c-.702 0-1.008-.529-1.008-1.72v-1.058c0-1.191.306-1.72 1.008-1.72h16.087c.702 0 1.008.529 1.008 1.72v1.058c0 1.191-.306 1.72-1.008 1.72H14.16v18.437c0 .705-.614 1.102-2.06 1.102h-1.184c-1.447 0-2.06-.397-2.06-1.102l.043-18.437ZM22.444 20.73c0-.706.613-1.103 2.06-1.103h.964c1.447 0 2.06.397 2.06 1.103v8.82c1.053-1.278 2.762-2.337 4.822-2.337 3.42 0 5.13 1.764 5.13 5.557v11.556c0 .706-.614 1.103-2.061 1.103h-.964c-1.447 0-2.06-.397-2.06-1.103V33.52c0-1.323-.702-2.117-2.192-2.117-1.403 0-2.324 1.191-2.718 1.985v10.938c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103l.044-23.596ZM50.805 36.431c0-3.44-.964-5.204-3.112-5.204s-3.157 1.764-3.157 5.204 0 3.44 1.009 5.249 3.157 5.249s3.112-1.809 3.112-5.249Zm-3.112-9.218c5.435 0 8.24 3.264 8.24 9.218 0 5.954-2.805 9.262-8.24 9.262-5.436 0-8.241-3.308-8.241-9.262 0-5.954 2.849-9.218 8.24-9.218ZM58.695 28.536c0-.706.614-1.102 2.06-1.102h.965c1.447 0 2.06.396 2.06 1.102v10.806c0 1.323.526 2.117 2.06 2.117 1.403 0 2.324-1.19 2.718-1.985V28.536c0-.706.614-1.102 2.06-1.102h.965c1.446 0 2.06.396 2.06 1.102v10.806c0 3.529.395 4.234.395 4.984 0 .838-2.981 1.103-3.814 1.103-1.096 0-1.14-1.456-1.359-2.382-1.008 1.28-2.85 2.602-5.085 2.602-3.419 0-4.997-1.764-4.997-5.557V28.536h-.088ZM77.763 40.71c.438 0 1.753.97 3.331.97 1.447 0 2.06-.53 2.06-1.544 0-3-6.794-1.235-6.794-7.366 0-3.44 2.411-5.557 6.269-5.557 1.14 0 5.04.22 5.04 2.161 0 .441-.788 2.558-1.446 2.558-.35 0-1.359-.705-2.893-.705-1.14 0-1.841.396-1.841 1.235 0 2.513 6.794 1.19 6.794 7.321 0 3.617-2.542 5.954-6.356 5.954-2.98 0-5.961-.794-5.961-2.425 0-.75 1.096-2.603 1.797-2.603ZM97.094 41.68c1.272 0 2.5-.927 3.069-2.162v-1.896c-3.244 0-4.778.882-4.778 2.558 0 .838.57 1.5 1.71 1.5Zm3.069-7.366v-1.147c0-1.323-.79-1.94-2.674-1.94-2.499 0-3.945 1.102-4.34 1.102-.701 0-1.753-2.029-1.753-2.734 0-1.147 2.718-2.382 6.487-2.382 5.392 0 7.321 2.382 7.321 5.734v6.44c0 3.528.394 4.233.394 4.983 0 .838-2.98 1.103-3.813 1.103-1.096 0-1.14-1.456-1.359-2.382-.219.441-1.885 2.602-4.997 2.602-3.682 0-5.041-2.205-5.041-4.984 0-2.778 1.096-6.395 9.775-6.395ZM108.887 33.52c0-3.44-.395-4.146-.395-4.852 0-.837 2.981-1.102 3.814-1.102 1.096 0 1.14 1.367 1.359 2.205 1.008-1.323 2.849-2.602 5.085-2.602 3.419 0 4.997 1.764 4.997 5.557v11.556c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103V33.52c0-1.323-.526-2.117-2.06-2.117-1.403 0-2.324 1.191-2.718 1.985v10.938c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103V33.52h.088ZM136.458 39.519v-7.63a4.595 4.595 0 0 0-2.367-.662c-2.148 0-3.156 1.764-3.156 5.204 0 3.44.877 5.117 2.762 5.117 1.227 0 2.148-.97 2.761-2.03Zm-10.695-3.088c0-5.601 2.586-9.218 7.189-9.218 1.622 0 2.761.53 3.463 1.059V20.73c0-.706.613-1.103 2.06-1.103h.964c1.447 0 2.061.397 2.061 1.103v18.656c0 3.529.394 4.234.394 4.984 0 .838-2.981 1.103-3.814 1.103-1.096 0-1.139-1.456-1.359-2.338-.789 1.456-2.454 2.559-4.558 2.559-3.683-.045-6.4-3.264-6.4-9.263Z" fill="#E8ECF4"/><path d="M145.226 22.803c0-.97.394-1.367 1.358-1.367h12.406c.701 0 1.008.529 1.008 1.72v1.058c0 1.191-.307 1.72-1.008 1.72h-8.592v4.984h7.671c.702 0 1.008.53 1.008 1.72v1.059c0 1.19-.306 1.72-1.008 1.72h-7.671v5.557h8.636c.701 0 1.008.53 1.008 1.72v.97c0 1.192-.307 1.721-1.008 1.721h-12.45c-.964 0-1.358-.397-1.358-1.367V22.803ZM161.269 28.8a1.754 1.754 0 0 1-.131-.617c0-.485.657-.75 2.06-.75h1.096c1.008 0 1.753.177 1.929.706l2.016 6.351c.219.794.658 2.691.964 4.146h.132c.307-1.455.701-3.396.964-4.146l2.017-6.35c.175-.53.92-.706 1.928-.706h.833c1.447 0 2.061.264 2.061.75 0 .176-.044.396-.088.617l-7.803 22.935c-.219.53-.92.706-1.929.706h-.569c-1.403 0-2.061-.265-2.061-.706 0-.176.044-.397.132-.618l2.148-5.733-5.699-16.584ZM187.877 34.71c0-1.984-.745-3.483-2.455-3.483-1.446 0-2.674.838-3.068 3.484h5.523Zm-2.455-7.497c5.348 0 7.365 4.058 7.365 8.821 0 .573-1.315 2.029-1.754 2.029h-8.679c.219 2.734 1.71 3.617 3.901 3.617 2.192 0 3.639-1.059 4.121-1.059.745 0 1.753 1.897 1.753 2.602 0 1.72-4.208 2.47-6.137 2.47-6.18 0-8.898-3.616-8.898-9.13.087-6.748 3.507-9.35 8.328-9.35ZM195.592 40.71c.439 0 1.754.97 3.332.97 1.446 0 2.06-.53 2.06-1.544 0-3-6.794-1.235-6.794-7.366 0-3.44 2.411-5.557 6.268-5.557 1.14 0 5.041.22 5.041 2.161 0 .441-.789 2.558-1.446 2.558-.351 0-1.359-.705-2.893-.705-1.14 0-1.842.396-1.842 1.235 0 2.513 6.795 1.19 6.795 7.321 0 3.617-2.543 5.954-6.356 5.954-2.981 0-5.962-.794-5.962-2.425-.044-.75 1.052-2.603 1.797-2.603Z" fill="#FF682E"/><path d="M217.422 33.168c1.797 2.426 6.882 8.248 13.238 8.248 4.428 0 8.855-2.779 13.063-8.248-4.296-5.337-8.679-8.072-13.063-8.072-6.356.045-11.397 5.734-13.238 8.072Zm13.282 11.997c-10.082 0-16.876-10.542-17.139-10.983l-.658-1.014.658-1.015c.263-.44 7.057-10.761 17.139-10.761 5.962 0 11.66 3.572 16.964 10.63l.833 1.102-.833 1.146c-5.304 7.278-11.002 10.895-16.964 10.895Z" fill="#FF682E"/><path d="M222.989 45.165c-9.862-.31-16.219-10.63-16.482-11.07l-.526-1.015.614-1.015c.263-.44 6.532-10.32 16.307-10.673-7.628 3.528-12.888 11.864-12.888 11.864s4.428 7.498 12.975 11.909ZM229.214 39.386c2.455-1.367 5.348-3.175 7.759-6.218-2.367-2.956-5.655-4.676-8.066-5.999 5.83-1.279 10.871 4.499 10.871 4.499l1.359 1.5-1.359 1.543c-5.26 5.822-10.564 4.675-10.564 4.675Z" fill="#FF682E"/><path d="M226.935 36.035a2.726 2.726 0 0 0 2.717-2.735 2.726 2.726 0 0 0-2.717-2.735 2.726 2.726 0 0 0-2.718 2.735 2.726 2.726 0 0 0 2.718 2.735Z" fill="#FF682E"/></svg>
+      </div>
+      <div class="header-subtitle">Network &amp; Application Assurance</div>
+    </div>
+    <div class="header-brand" id="headerBrand" title=""></div>
+  </div>
+  <div class="header-right">
+    <div class="live-indicator"><span class="live-dot" aria-hidden="true"></span> Live</div>
+    <div class="refresh-meta" id="refreshMeta"></div>
+    <button type="button" class="refresh-btn" onclick="doRefresh()" title="Refresh metrics">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Refresh
+    </button>
+  </div>
+</header>
+
+<div class="stale-banner" id="staleBanner" role="status">Metrics for the selected window are not fully available yet; showing the closest available window (<span id="staleBannerWindow">24h</span>).</div>
+
+<div class="page-scroll">
+  <section class="health-banner" aria-labelledby="assuranceHeading">
+    <div class="health-banner-left">
+      <div class="gauge-wrap" id="gaugeWrap" aria-hidden="true"></div>
+      <div>
+        <h1 class="health-banner-title" id="assuranceHeading">Assurance score</h1>
+        <p class="health-banner-desc">Composite availability across all active synthetic tests in the selected window. Use business service tiles below to prioritize follow-up.</p>
+      </div>
+    </div>
+    <div class="health-stats">
+      <div class="health-stat"><div class="health-stat-val" id="statServices">0</div><div class="health-stat-lbl">Monitored services</div></div>
+      <div class="health-stat"><div class="health-stat-val" id="statAlerts">0</div><div class="health-stat-lbl">Active alerts</div></div>
+      <div class="health-stat"><div class="health-stat-val" id="statOutages">0</div><div class="health-stat-lbl">Internet outages</div></div>
+      <div class="health-stat"><div class="health-stat-val" id="statSites">0</div><div class="health-stat-lbl">Enterprise sites</div></div>
+    </div>
+  </section>
+
+  <section class="kpi-row" aria-label="Executive KPIs">
+    <div class="kpi-exec">
+      <div class="kpi-exec-label">Network availability</div>
+      <div class="kpi-exec-value" id="kpiAvail">--</div>
+      <div class="kpi-exec-sub" id="kpiAvailSub">Mean test availability</div>
+    </div>
+    <div class="kpi-exec">
+      <div class="kpi-exec-label">Application performance</div>
+      <div class="kpi-exec-value" id="kpiResp">--</div>
+      <div class="kpi-exec-sub" id="kpiRespSub">P95 response time</div>
+    </div>
+    <div class="kpi-exec">
+      <div class="kpi-exec-label">Packet loss</div>
+      <div class="kpi-exec-value" id="kpiLoss">--</div>
+      <div class="kpi-exec-sub" id="kpiLossSub">Affected paths</div>
+    </div>
+    <div class="kpi-exec">
+      <div class="kpi-exec-label">Mean time to detect</div>
+      <div class="kpi-exec-value" id="kpiMttd">--</div>
+      <div class="kpi-exec-sub" id="kpiMttdSub">Detection signal count</div>
+    </div>
+  </section>
+
+  <div class="section-head">
+    <h2 class="section-title">Business service health</h2>
+  </div>
+  <section class="biz-grid" id="bizGrid" aria-label="Business service health"></section>
+
+  <div class="risk-row">
+    <section class="risk-panel" aria-labelledby="topIssuesHeading">
+      <h3 class="risk-panel-title" id="topIssuesHeading">Top issues</h3>
+      <div id="topIssuesBody"></div>
+    </section>
+    <section class="risk-panel" aria-labelledby="feedHeading">
+      <h3 class="risk-panel-title" id="feedHeading">Active alerts &amp; events</h3>
+      <div class="feed-list" id="feedBody"></div>
+    </section>
+  </div>
+
+  <section class="infra-row" aria-label="Infrastructure coverage">
+    <div class="infra-card">
+      <div class="infra-card-title">Monitoring coverage</div>
+      <div class="infra-stat" id="infraTestsTotal">0</div>
+      <div class="infra-lines" id="infraTestTypes"></div>
+    </div>
+    <div class="infra-card">
+      <div class="infra-card-title">Agent deployment</div>
+      <div class="infra-stat" id="infraAgentsTotal">0</div>
+      <div class="infra-lines" id="infraAgentsBreakdown"></div>
+    </div>
+    <div class="infra-card">
+      <div class="infra-card-title">Internet insights</div>
+      <div class="infra-stat" id="infraOutageCount">0</div>
+      <div class="infra-lines" id="infraProviders"></div>
+    </div>
+  </section>
+</div>
+
+<div class="footer" id="footer"></div>
+</div>
+</div>
+
+<script>
+var DATA = null;
+var currentWindow = '24h';
+var refreshTimer = null;
+
+var BUSINESS_SERVICES = [
+  { name: 'Collaboration - Microsoft', patterns: [/^MSTeams(?!.*RetailDemo)/i] },
+  { name: 'Collaboration - Webex', patterns: [/^Webex/i] },
+  { name: 'Microsoft O365', patterns: [/^MSO365/i, /^MS O365/i, /^SD-WAN DIA.*O365/i] },
+  { name: 'Retail Operations', patterns: [/^RetailDemo/i, /^RetailSite/i, /^Public_Sector/i] },
+  { name: 'Pseudoco Platform', patterns: [/^Pseudoco/i, /^Psuedoco/i, /pseudoco\./i] },
+  { name: 'AI Services', patterns: [/Bedrock/i] },
+  { name: 'AWS Cloud Services', patterns: [/^AWS/i] },
+  { name: 'Azure Cloud Services', patterns: [/^Azure/i] },
+  { name: 'Salesforce & CRM', patterns: [/^Salesforce/i, /^SAP/i, /salesforce\.com/i, /lightning\.force/i] },
+  { name: 'Workday HR', patterns: [/^Workday/i, /^RetailDemo_Workday/i] },
+  { name: 'Network Infrastructure', patterns: [/^SD-WAN/i, /^DataCenter/i, /^Site-DC/i, /^Stores/i, /^TOR-NYC/i, /^SIP/i, /^SFTP/i] },
+];
+
+function getBusinessService(testName) {
+  for (var s = 0; s < BUSINESS_SERVICES.length; s++) {
+    for (var p = 0; p < BUSINESS_SERVICES[s].patterns.length; p++) {
+      if (BUSINESS_SERVICES[s].patterns[p].test(testName)) return BUSINESS_SERVICES[s].name;
+    }
+  }
+  return 'Other Services';
+}
+
+var TYPE_LABELS = {
+  'http-server': 'HTTP Server', 'page-load': 'Page Load', 'dns-server': 'DNS Server',
+  'agent-to-server': 'Agent-to-Server', 'agent-to-agent': 'Agent-to-Agent',
+  'web-transactions': 'Web Transaction', 'api': 'API', 'voice': 'Voice/RTP',
+  'bgp': 'BGP', 'DnsTrace': 'DNS Trace', 'sip-server': 'SIP Server',
+  'ftp-server': 'FTP Server', 'Dnssec': 'DNSSEC',
+};
+
+function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function availClass(v) {
+  if (v == null || isNaN(v)) return 'yellow';
+  if (v >= 99) return 'green';
+  if (v >= 95) return 'yellow';
+  return 'red';
+}
+
+function availDotClass(v) {
+  if (v == null || isNaN(v)) return 'status-yellow';
+  if (v >= 99) return 'status-green';
+  if (v >= 95) return 'status-yellow';
+  return 'status-red';
+}
+
+function strokeForScore(score) {
+  if (score >= 99) return 'var(--te-green)';
+  if (score >= 95) return 'var(--te-yellow)';
+  return 'var(--te-red)';
+}
+
+function renderGauge(score) {
+  var wrap = document.getElementById('gaugeWrap');
+  if (!wrap) return;
+  var r = 52;
+  var c = 2 * Math.PI * r;
+  if (score == null || isNaN(score)) {
+    wrap.innerHTML = '<svg viewBox="0 0 120 120" aria-label="Assurance score gauge">' +
+      '<circle cx="60" cy="60" r="' + r + '" fill="none" stroke="var(--te-dark-4)" stroke-width="10"/>' +
+      '</svg>' +
+      '<div class="gauge-score"><div class="gauge-score-val" style="font-size:22px">' + escHtml('N/A') + '</div><div class="gauge-score-lbl">Score</div></div>';
+    return;
+  }
+  var s = Math.max(0, Math.min(100, score));
+  var offset = c * (1 - s / 100);
+  var stroke = strokeForScore(s);
+  wrap.innerHTML = '<svg viewBox="0 0 120 120" aria-label="Assurance score gauge">' +
+    '<circle cx="60" cy="60" r="' + r + '" fill="none" stroke="var(--te-dark-4)" stroke-width="10"/>' +
+    '<circle cx="60" cy="60" r="' + r + '" fill="none" stroke="' + stroke + '" stroke-width="10" ' +
+    'stroke-dasharray="' + c + '" stroke-dashoffset="' + offset + '" transform="rotate(-90 60 60)" stroke-linecap="round"/>' +
+    '</svg>' +
+    '<div class="gauge-score"><div class="gauge-score-val">' + escHtml(s.toFixed(1)) + '%</div><div class="gauge-score-lbl">Score</div></div>';
+}
+
+function meanAvailability(avail) {
+  var vals = [];
+  for (var k in avail) {
+    if (Object.prototype.hasOwnProperty.call(avail, k)) {
+      var v = avail[k];
+      if (typeof v === 'number' && !isNaN(v)) vals.push(v);
+    }
+  }
+  if (vals.length === 0) return null;
+  var sum = 0;
+  for (var i = 0; i < vals.length; i++) sum += vals[i];
+  return sum / vals.length;
+}
+
+function updateStaleBanner() {
+  var banner = document.getElementById('staleBanner');
+  if (!DATA || !banner) return;
+  var requestedWindow = DATA.window || '24h';
+  var servedMetrics = DATA.served_metrics_window || requestedWindow;
+  var servedExtra = DATA.served_extra_window || requestedWindow;
+  var isStale = (servedMetrics !== requestedWindow || servedExtra !== requestedWindow) && requestedWindow !== '24h';
+  var wEl = document.getElementById('staleBannerWindow');
+  if (isStale) {
+    if (wEl) wEl.textContent = requestedWindow;
+    banner.classList.add('visible');
+  } else {
+    banner.classList.remove('visible');
+  }
+}
+
+function formatLocalTime(isoOrTimestamp) {
+  if (!isoOrTimestamp) return '';
+  try {
+    var d = new Date(isoOrTimestamp);
+    if (isNaN(d.getTime())) return String(isoOrTimestamp);
+    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', hour12: true });
+  } catch (e) {
+    return String(isoOrTimestamp);
+  }
+}
+
+function alertSeverityRank(sev) {
+  var u = String(sev || '').toUpperCase();
+  if (u === 'CRITICAL' || u === 'MAJOR') return 5;
+  if (u === 'MINOR' || u === 'WARNING') return 3;
+  if (u === 'INFO') return 1;
+  return 2;
+}
+
+function eventImpactRank(imp) {
+  var u = String(imp || '').toUpperCase();
+  if (u === 'HIGH') return 4;
+  if (u === 'MEDIUM') return 2;
+  if (u === 'LOW') return 1;
+  return 0;
+}
+
+function parseIsoMs(iso) {
+  if (!iso) return 0;
+  try {
+    var d = new Date(iso);
+    return isNaN(d.getTime()) ? 0 : d.getTime();
+  } catch (e) { return 0; }
+}
+
+function renderFooter() {
+  var ts = DATA.lastRefresh || '';
+  var label = 'Live Data via MCP';
+  if (ts) {
+    try {
+      var d = new Date(ts);
+      label = 'Last refresh: ' + d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', hour12: true });
+    } catch (e) {}
+  }
+  var orgName = (DATA.ACCOUNT_GROUP || 'ThousandEyes');
+  document.getElementById('footer').innerHTML = '<strong>Powered by <a href="https://www.thousandeyes.com" target="_blank" rel="noopener noreferrer">Cisco ThousandEyes</a></strong> &mdash; ' + escHtml(orgName) + ' \u00B7 ' + escHtml(label);
+}
+
+function renderHeaderMeta() {
+  var org = DATA.ACCOUNT_GROUP || 'ThousandEyes';
+  document.getElementById('headerBrand').textContent = org;
+  document.getElementById('headerBrand').setAttribute('title', org);
+  var mins = DATA.refresh_interval_minutes;
+  if (mins == null || isNaN(mins)) mins = 15;
+  var lr = '';
+  if (DATA.lastRefresh) {
+    try {
+      lr = new Date(DATA.lastRefresh).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', hour12: true });
+    } catch (e) { lr = ''; }
+  }
+  document.getElementById('refreshMeta').innerHTML = escHtml('Auto-refresh every ' + mins + ' min') + (lr ? '<br>' + escHtml('Data as of ' + lr) : '');
+}
+
+function renderAll() {
+  updateStaleBanner();
+  var orgName = DATA.ACCOUNT_GROUP || 'ThousandEyes';
+  document.title = 'ThousandEyes ' + orgName + ' \u2014 Network & Application Assurance';
+  var loadSub = document.getElementById('loadingSub');
+  if (loadSub) loadSub.textContent = 'Fetching live data from ' + orgName + '...';
+  renderHeaderMeta();
+
+  var avail = DATA.TEST_AVAILABILITY || {};
+  var ex = DATA.EXTRA_KPI || {};
+  var c = DATA.COUNTS || {};
+  var tests = DATA.ALL_TESTS || [];
+  var testTypes = DATA.TEST_TYPES || {};
+
+  var score = meanAvailability(avail);
+  renderGauge(score);
+
+  document.getElementById('statServices').textContent = String(c.tests != null ? c.tests : tests.length);
+  document.getElementById('statAlerts').textContent = String(c.alerts != null ? c.alerts : 0);
+  var inetOut = (c.app_outages != null ? c.app_outages : 0) + (c.net_outages != null ? c.net_outages : 0);
+  document.getElementById('statOutages').textContent = String(inetOut);
+  document.getElementById('statSites').textContent = String(c.enterprise_agents != null ? c.enterprise_agents : 0);
+
+  var kpiAvail = document.getElementById('kpiAvail');
+  if (score != null) {
+    kpiAvail.textContent = score.toFixed(2) + '%';
+    kpiAvail.className = 'kpi-exec-value ' + availClass(score);
+  } else {
+    kpiAvail.textContent = 'N/A';
+    kpiAvail.className = 'kpi-exec-value yellow';
+  }
+
+  var avgMs = ex.avg_response_ms;
+  var p95 = ex.p95_response_ms;
+  var kpiResp = document.getElementById('kpiResp');
+  var kpiRespSub = document.getElementById('kpiRespSub');
+  if (avgMs != null && !isNaN(avgMs)) {
+    kpiResp.textContent = Math.round(avgMs) + ' ms';
+    kpiResp.className = 'kpi-exec-value ' + (avgMs <= 200 ? 'green' : avgMs <= 500 ? 'yellow' : 'red');
+  } else {
+    kpiResp.textContent = 'N/A';
+    kpiResp.className = 'kpi-exec-value yellow';
+  }
+  if (p95 != null && !isNaN(p95)) {
+    kpiRespSub.textContent = 'P95 ' + Math.round(p95) + ' ms';
+  } else {
+    kpiRespSub.textContent = 'P95 response time';
+  }
+
+  var loss = ex.avg_packet_loss;
+  var lossPaths = ex.loss_affected_paths;
+  var kpiLoss = document.getElementById('kpiLoss');
+  if (loss != null && !isNaN(loss)) {
+    kpiLoss.textContent = loss.toFixed(2) + '%';
+    kpiLoss.className = 'kpi-exec-value ' + (loss <= 0.5 ? 'green' : loss <= 2 ? 'yellow' : 'red');
+  } else {
+    kpiLoss.textContent = 'N/A';
+    kpiLoss.className = 'kpi-exec-value yellow';
+  }
+  var lpEl = document.getElementById('kpiLossSub');
+  if (lossPaths != null && !isNaN(lossPaths)) {
+    lpEl.textContent = lossPaths + ' affected paths';
+  } else {
+    lpEl.textContent = 'Affected paths';
+  }
+
+  var alertsN = (DATA.ALERT_FEED || []).length;
+  var eventsN = (DATA.LIVE_EVENTS || []).length;
+  var detCount = alertsN + eventsN;
+  document.getElementById('kpiMttd').textContent = String(detCount);
+  document.getElementById('kpiMttd').className = 'kpi-exec-value ' + (detCount === 0 ? 'green' : detCount <= 5 ? 'yellow' : 'red');
+  document.getElementById('kpiMttdSub').textContent = alertsN + ' alerts, ' + eventsN + ' live events';
+
+  var groups = {};
+  for (var gi = 0; gi < BUSINESS_SERVICES.length; gi++) {
+    groups[BUSINESS_SERVICES[gi].name] = { avails: [], count: 0 };
+  }
+  groups['Other Services'] = { avails: [], count: 0 };
+
+  for (var ti = 0; ti < tests.length; ti++) {
+    var tn = tests[ti].name;
+    var gname = getBusinessService(tn);
+    if (!groups[gname]) groups[gname] = { avails: [], count: 0 };
+    groups[gname].count++;
+    if (avail[tn] != null && typeof avail[tn] === 'number') {
+      groups[gname].avails.push(avail[tn]);
+    }
+  }
+
+  var bizRows = [];
+  for (var gk in groups) {
+    if (!Object.prototype.hasOwnProperty.call(groups, gk)) continue;
+    var g = groups[gk];
+    if (g.count === 0) continue;
+    var ga = null;
+    if (g.avails.length > 0) {
+      var gsum = 0;
+      for (var j = 0; j < g.avails.length; j++) gsum += g.avails[j];
+      ga = gsum / g.avails.length;
+    }
+    bizRows.push({ name: gk, avail: ga, count: g.count });
+  }
+  bizRows.sort(function(a, b) {
+    var av = a.avail;
+    var bv = b.avail;
+    if (av == null && bv == null) return a.name.localeCompare(b.name);
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return av - bv;
+  });
+
+  var bizHtml = '';
+  for (var bi = 0; bi < bizRows.length; bi++) {
+    var row = bizRows[bi];
+    var pct = row.avail != null ? row.avail : 0;
+    var barW = row.avail != null ? Math.max(0, Math.min(100, pct)) : 0;
+    var barColor = row.avail == null ? 'var(--te-text-dim)' : strokeForScore(row.avail);
+    bizHtml += '<article class="biz-card">';
+    bizHtml += '<div class="biz-card-top"><div class="biz-card-name">' + escHtml(row.name) + '</div>';
+    bizHtml += '<span class="' + availDotClass(row.avail) + ' status-dot" title="Status"></span></div>';
+    bizHtml += '<div class="biz-card-avail" style="color:' + (row.avail != null ? (availClass(row.avail) === 'green' ? 'var(--te-green)' : availClass(row.avail) === 'yellow' ? 'var(--te-yellow)' : 'var(--te-red)') : 'var(--te-text-dim)') + '">';
+    bizHtml += row.avail != null ? escHtml(row.avail.toFixed(2) + '%') : 'N/A';
+    bizHtml += '</div>';
+    bizHtml += '<div class="biz-card-meta">' + row.count + ' tests</div>';
+    bizHtml += '<div class="biz-bar"><div class="biz-bar-fill" style="width:' + barW + '%;background:' + barColor + '"></div></div>';
+    bizHtml += '</article>';
+  }
+  document.getElementById('bizGrid').innerHTML = bizHtml || '<div style="color:var(--te-text-dim);font-size:12px;">No business services mapped to active tests.</div>';
+
+  var worst = [];
+  for (var name in avail) {
+    if (!Object.prototype.hasOwnProperty.call(avail, name)) continue;
+    var v = avail[name];
+    if (typeof v === 'number' && !isNaN(v)) worst.push({ name: name, avail: v, type: testTypes[name] || '' });
+  }
+  worst.sort(function(a, b) { return a.avail - b.avail; });
+  worst = worst.slice(0, 8);
+
+  var issuesHtml = '';
+  for (var wi = 0; wi < worst.length; wi++) {
+    var w = worst[wi];
+    var tl = TYPE_LABELS[w.type] || w.type || 'Test';
+    issuesHtml += '<div class="issue-row">';
+    issuesHtml += '<div class="issue-left"><div class="issue-name">' + escHtml(w.name) + '</div><div class="issue-type">' + escHtml(tl) + '</div></div>';
+    issuesHtml += '<div class="issue-avail" style="color:' + (availClass(w.avail) === 'green' ? 'var(--te-green)' : availClass(w.avail) === 'yellow' ? 'var(--te-yellow)' : 'var(--te-red)') + '">' + escHtml(w.avail.toFixed(2) + '%') + '</div>';
+    issuesHtml += '</div>';
+  }
+  document.getElementById('topIssuesBody').innerHTML = issuesHtml || '<div style="color:var(--te-text-dim);font-size:12px;padding:8px 0;">No availability samples in this window.</div>';
+
+  var combined = [];
+  var af = DATA.ALERT_FEED || [];
+  for (var ai = 0; ai < af.length; ai++) {
+    var a = af[ai];
+    combined.push({
+      kind: 'alert',
+      rank: alertSeverityRank(a.severity),
+      t: parseIsoMs(a.timeISO) || 0,
+      sevLabel: String(a.severity || 'INFO'),
+      timeDisp: a.time || formatLocalTime(a.timeISO),
+      msg: a.msg || '',
+      sevClass: (a.sev === 'red' ? 'high' : a.sev === 'yellow' ? 'medium' : 'low')
+    });
+  }
+  var evs = DATA.LIVE_EVENTS || [];
+  for (var ei = 0; ei < evs.length; ei++) {
+    var ev = evs[ei];
+    var imp = eventImpactRank(ev.impact);
+    combined.push({
+      kind: 'event',
+      rank: imp,
+      t: parseIsoMs(ev.timeISO) || 0,
+      sevLabel: String(ev.impact || 'INFO'),
+      timeDisp: formatLocalTime(ev.timeISO) || String(ev.time || ''),
+      msg: (ev.title || 'Event') + (ev.agentsAffected ? ' \u00B7 ' + ev.agentsAffected + ' agents' : ''),
+      sevClass: ev.impact === 'HIGH' ? 'high' : ev.impact === 'MEDIUM' ? 'medium' : 'low'
+    });
+  }
+  combined.sort(function(x, y) {
+    if (y.rank !== x.rank) return y.rank - x.rank;
+    return y.t - x.t;
+  });
+  combined = combined.slice(0, 8);
+
+  var feedHtml = '';
+  for (var fi = 0; fi < combined.length; fi++) {
+    var f = combined[fi];
+    feedHtml += '<div class="feed-item">';
+    var fc = f.sevClass === 'high' ? 'high' : f.sevClass === 'medium' ? 'medium' : 'low';
+    feedHtml += '<span class="feed-sev feed-sev-' + fc + '">' + escHtml(f.sevLabel) + '</span>';
+    feedHtml += '<div class="feed-body"><div class="feed-time">' + escHtml(f.timeDisp) + '</div><div class="feed-msg">' + escHtml(f.msg) + '</div></div>';
+    feedHtml += '</div>';
+  }
+  document.getElementById('feedBody').innerHTML = feedHtml || '<div style="color:var(--te-text-dim);font-size:12px;">No active alerts or ongoing events.</div>';
+
+  var typeCounts = {};
+  for (var ci = 0; ci < tests.length; ci++) {
+    var tt = tests[ci].type || 'unknown';
+    typeCounts[tt] = (typeCounts[tt] || 0) + 1;
+  }
+  var typeLines = '';
+  var typeKeys = Object.keys(typeCounts).sort(function(a, b) { return typeCounts[b] - typeCounts[a]; });
+  for (var tki = 0; tki < typeKeys.length && tki < 8; tki++) {
+    var tk = typeKeys[tki];
+    var lab = TYPE_LABELS[tk] || tk;
+    typeLines += '<div><strong>' + escHtml(lab) + '</strong>: ' + typeCounts[tk] + '</div>';
+  }
+  document.getElementById('infraTestsTotal').textContent = String(tests.length);
+  document.getElementById('infraTestTypes').innerHTML = typeLines || '<span style="color:var(--te-text-dim)">No test types</span>';
+
+  var ent = c.enterprise_agents != null ? c.enterprise_agents : 0;
+  var ep = c.endpoint_agents != null ? c.endpoint_agents : 0;
+  var clo = c.cloud_agents != null ? c.cloud_agents : 0;
+  var agentSum = ent + ep + clo;
+  document.getElementById('infraAgentsTotal').textContent = String(agentSum);
+  document.getElementById('infraAgentsBreakdown').innerHTML =
+    '<div><strong>Enterprise</strong>: ' + ent + '</div>' +
+    '<div><strong>Endpoint</strong>: ' + ep + '</div>' +
+    '<div><strong>Cloud</strong>: ' + clo + '</div>';
+
+  var outs = DATA.OUTAGES || [];
+  document.getElementById('infraOutageCount').textContent = String(outs.length);
+  var provMap = {};
+  for (var oi = 0; oi < outs.length; oi++) {
+    var pr = outs[oi].provider || 'Unknown';
+    provMap[pr] = (provMap[pr] || 0) + 1;
+  }
+  var provList = [];
+  for (var pk in provMap) {
+    if (Object.prototype.hasOwnProperty.call(provMap, pk)) provList.push({ name: pk, n: provMap[pk] });
+  }
+  provList.sort(function(a, b) { return b.n - a.n; });
+  var provLines = '';
+  for (var pi = 0; pi < provList.length && pi < 5; pi++) {
+    provLines += '<div><strong>' + escHtml(provList[pi].name) + '</strong>: ' + provList[pi].n + '</div>';
+  }
+  document.getElementById('infraProviders').innerHTML = outs.length ? (provLines || '<span style="color:var(--te-text-dim)">No provider breakdown</span>') : '<span style="color:var(--te-text-dim)">No provider-impacting outages in view</span>';
+
+  renderFooter();
+  scheduleRefresh();
+}
+
+function scheduleRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+  var mins = DATA && DATA.refresh_interval_minutes;
+  if (mins == null || isNaN(mins) || mins <= 0) mins = 15;
+  refreshTimer = setInterval(function() { loadData(); }, mins * 60 * 1000);
+}
+
+async function fetchData(win) {
+  var resp = await fetch('/api/data?window=' + encodeURIComponent(win));
+  var data;
+  try { data = await resp.json(); } catch (e) { data = {}; }
+  if (!resp.ok) {
+    var err = new Error(data.error || 'API returned ' + resp.status);
+    err.status = resp.status;
+    throw err;
+  }
+  return data;
+}
+
+async function loadData() {
+  try {
+    DATA = await fetchData(currentWindow);
+    renderAll();
+    document.getElementById('loadingOverlay').classList.add('hidden');
+  } catch (e) {
+    console.error('Failed to load data:', e);
+    if (e.status === 503) {
+      document.querySelector('.loading-text').textContent = 'Waiting for first data load\u2026';
+      document.querySelector('.loading-sub').textContent = 'Retrying in 3 seconds\u2026';
+      setTimeout(loadData, 3000);
+    } else {
+      document.querySelector('.loading-text').textContent = 'Connection error';
+      document.querySelector('.loading-sub').textContent = 'Retrying in 5 seconds\u2026';
+      setTimeout(loadData, 5000);
+    }
+  }
+}
+
+function doRefresh() {
+  var fetchWindow = '1h';
+  if (DATA && DATA.lastRefresh) {
+    var hoursSince = (Date.now() - new Date(DATA.lastRefresh).getTime()) / 3600000;
+    if (hoursSince >= 12) fetchWindow = '24h';
+    else if (hoursSince >= 6) fetchWindow = '12h';
+    else if (hoursSince >= 1) fetchWindow = '6h';
+    else fetchWindow = '1h';
+  }
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  document.querySelector('.loading-text').textContent = 'Refreshing data';
+  document.querySelector('.loading-sub').textContent = 'Fetching latest metrics\u2026';
+  fetch('/api/fetch_window?window=' + encodeURIComponent(fetchWindow))
+    .then(function(r) { return r.json(); })
+    .then(function() { return loadData(); })
+    .catch(function(err) {
+      console.error('Refresh error:', err);
+      loadData();
+    });
+}
+
+function pollUntilReady() {
+  fetch('/api/refresh-status')
+    .then(function(r) { return r.json(); })
+    .then(function(status) {
+      var sub = document.getElementById('loadingSub');
+      if (status.phase === 'done' || status.phase === 'error') {
+        loadData();
+        return;
+      }
+      if (sub && status.message) sub.textContent = status.message;
+      setTimeout(pollUntilReady, 2000);
+    })
+    .catch(function() { setTimeout(pollUntilReady, 3000); });
+}
+
+fetch('/api/health')
+  .then(function(r) { return r.json(); })
+  .then(function(h) {
+    if (h.base_cache_ready) { loadData(); }
+    else { pollUntilReady(); }
+  })
+  .catch(function() { setTimeout(pollUntilReady, 3000); });
+</script>
+</body>
+</html>
