@@ -54,14 +54,14 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 .loading-text { margin-top: 20px; font-size: 14px; color: var(--te-text-dim); letter-spacing: 1px; }
 .loading-sub { margin-top: 8px; font-size: 11px; color: var(--te-text-dim); opacity: 0.6; }
 
-.header { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; height: 58px; background: rgba(11,17,32,0.94); backdrop-filter: blur(20px); border-bottom: 1px solid var(--te-border); flex-wrap: wrap; gap: 8px; }
-.header-left { display:flex; align-items:center; gap:16px; flex-wrap: wrap; min-width: 0; }
-.te-logo { display:flex; align-items:center; gap:8px; min-width: 0; }
-.te-logo-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.header { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; height: 58px; background: rgba(11,17,32,0.94); backdrop-filter: blur(20px); border-bottom: 1px solid var(--te-border); }
+.header-left { display:flex; align-items:center; gap:16px; }
+.te-logo { display:flex; align-items:center; gap:8px; }
+.te-logo-icon { display: flex; align-items: center; justify-content: center; }
 .te-logo-icon svg { height: 28px; width: auto; }
-.header-brand { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--te-text-dim); margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--te-dark-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
-.header-subtitle { font-size: 11px; color: var(--te-text); letter-spacing: 2px; text-transform: uppercase; font-weight: 700; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--te-dark-4); }
-.header-right { display:flex; align-items:center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
+.header-brand { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--te-text-dim); margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--te-dark-4); }
+.header-subtitle { font-size: 11px; color: var(--te-text-dim); letter-spacing: 2px; text-transform: uppercase; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--te-dark-4); }
+.header-right { display:flex; align-items:center; gap: 20px; }
 .live-indicator { display:flex; align-items:center; gap:7px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--te-green); font-weight: 600; }
 .live-dot { width:7px; height:7px; border-radius:50%; background: var(--te-green); animation: pulse 2s ease-in-out infinite; box-shadow: 0 0 8px var(--te-green); }
 @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
@@ -76,7 +76,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 .page-scroll { flex: 1; overflow-y: auto; padding: 24px 28px 32px; display: flex; flex-direction: column; gap: 24px; }
 
 .health-banner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 24px; align-items: stretch; background: linear-gradient(135deg, var(--te-dark-2) 0%, var(--te-dark-3) 100%); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 24px 28px; }
-.health-banner-left { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+.health-banner-left { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; overflow: visible; }
 .gauge-wrap { position: relative; width: 140px; height: 140px; flex-shrink: 0; }
 .gauge-wrap svg { width: 140px; height: 140px; display: block; }
 .gauge-score { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
@@ -90,8 +90,8 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 .health-stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--te-text-dim); margin-top: 4px; font-weight: 600; }
 
 .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-.kpi-exec { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 18px 20px; position: relative; overflow: hidden; }
-.kpi-exec::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--te-blue); opacity: 0.35; }
+.kpi-exec { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 18px 20px; position: relative; overflow: visible; }
+.kpi-exec::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--te-blue); opacity: 0.35; border-radius: var(--radius) var(--radius) 0 0; }
 .kpi-exec-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); margin-bottom: 8px; font-weight: 600; }
 .kpi-exec-value { font-size: 28px; font-weight: 700; font-family: var(--font-mono); color: #fff; line-height: 1.1; }
 .kpi-exec-value.green { color: var(--te-green); }
@@ -129,12 +129,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 .feed-time { font-family: var(--font-mono); font-size: 10px; color: var(--te-text-dim); margin-bottom: 4px; }
 .feed-msg { font-size: 12px; color: var(--te-text); line-height: 1.45; }
 
-.infra-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.infra-card { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 18px 20px; }
-.infra-card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); font-weight: 700; margin-bottom: 14px; }
-.infra-stat { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 12px; }
-.infra-lines { font-size: 12px; color: var(--te-text-dim); line-height: 1.65; }
-.infra-lines strong { color: var(--te-text); font-weight: 600; }
 
 .footer { text-align: center; padding: 20px 28px 28px; border-top: 1px solid var(--te-border); font-size: 12px; color: var(--te-text-dim); }
 .footer a { color: var(--te-blue); text-decoration: none; }
@@ -148,11 +142,24 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 .sev-medium, .feed-sev-medium { background: var(--te-yellow-dim); color: var(--te-yellow); }
 .sev-low, .feed-sev-low { background: var(--te-green-dim); color: var(--te-green); }
 
+[data-tip] { position: relative; cursor: help; }
+[data-tip]::after { content: attr(data-tip); position: absolute; left: 50%; transform: translateX(-50%) translateY(6px); top: 100%; z-index: 200; background: var(--te-dark-3); color: var(--te-text); border: 1px solid var(--te-border); border-radius: 8px; padding: 10px 14px; font-size: 11px; font-weight: 400; font-family: var(--font-body); line-height: 1.55; letter-spacing: normal; text-transform: none; white-space: normal; width: 280px; pointer-events: none; opacity: 0; transition: opacity 0.2s ease, transform 0.2s ease; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+[data-tip]:hover::after { opacity: 1; transform: translateX(-50%) translateY(8px); }
+[data-tip].tip-left::after { left: 0; transform: translateX(0) translateY(6px); }
+[data-tip].tip-left:hover::after { transform: translateX(0) translateY(8px); }
+[data-tip].tip-right::after { left: auto; right: 0; transform: translateX(0) translateY(6px); }
+[data-tip].tip-right:hover::after { transform: translateX(0) translateY(8px); }
+[data-tip].tip-up::after { top: auto; bottom: 100%; transform: translateX(-50%) translateY(-6px); }
+[data-tip].tip-up:hover::after { transform: translateX(-50%) translateY(-8px); }
+.kpi-exec[data-tip] { cursor: help; }
+.health-stat[data-tip] { cursor: help; }
+.biz-card[data-tip] { cursor: help; }
+.risk-panel-title[data-tip] { cursor: help; display: inline-block; border-bottom: 1px dashed var(--te-dark-4); }
+
 @media (max-width: 1100px) {
   .health-banner { grid-template-columns: 1fr; }
   .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .risk-row { grid-template-columns: 1fr; }
-  .infra-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .page-scroll { padding: 16px 16px 24px; }
@@ -189,11 +196,11 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
   <div class="header-left">
     <div class="te-logo">
       <div class="te-logo-icon">
-        <svg viewBox="0 0 251 55" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.84 2.78h-2.586v10.629h2.587V2.779ZM38.794 5.822c-.087-.044-.964-.573-2.191-.573-1.666 0-2.85 1.19-2.85 2.823 0 1.632 1.096 2.823 2.85 2.823 1.227 0 2.06-.486 2.191-.574v2.867c-.307.088-1.227.397-2.367.397-2.937 0-5.48-2.073-5.48-5.513 0-3.176 2.324-5.513 5.48-5.513 1.227 0 2.104.308 2.367.397v2.866ZM11.704 5.822c-.088-.044-.92-.573-2.192-.573-1.666 0-2.85 1.19-2.85 2.823 0 1.632 1.097 2.823 2.85 2.823 1.227 0 2.06-.486 2.192-.574v2.867c-.307.088-1.228.397-2.367.397-2.937 0-5.48-2.073-5.48-5.513 0-3.176 2.324-5.513 5.48-5.513 1.227 0 2.104.308 2.367.397v2.866ZM52.383 8.072c0 3.043-2.28 5.513-5.436 5.513s-5.435-2.47-5.435-5.513c0-3.043 2.28-5.513 5.435-5.513 3.2 0 5.436 2.47 5.436 5.513Zm-5.436-2.779c-1.534 0-2.674 1.235-2.674 2.779 0 1.544 1.14 2.779 2.674 2.779s2.674-1.235 2.674-2.78c.044-1.543-1.096-2.778-2.674-2.778ZM27.704 5.16c-.044 0-1.14-.308-2.017-.308-1.052 0-1.622.353-1.622.882 0 .662.746.882 1.184 1.015l.701.22c1.666.574 2.455 1.764 2.455 3.043 0 2.69-2.28 3.573-4.252 3.573-1.403 0-2.674-.265-2.805-.309v-2.425c.219.044 1.315.396 2.454.396 1.272 0 1.885-.396 1.885-1.014 0-.53-.526-.838-1.14-1.059-.175-.044-.394-.132-.57-.176-1.446-.485-2.63-1.367-2.63-3.131 0-1.985 1.447-3.308 3.814-3.308 1.271 0 2.455.308 2.543.352v2.25Z" fill="#E8ECF4"/><path d="M8.898 25.934H3.507c-.702 0-1.008-.529-1.008-1.72v-1.058c0-1.191.306-1.72 1.008-1.72h16.087c.702 0 1.008.529 1.008 1.72v1.058c0 1.191-.306 1.72-1.008 1.72H14.16v18.437c0 .705-.614 1.102-2.06 1.102h-1.184c-1.447 0-2.06-.397-2.06-1.102l.043-18.437ZM22.444 20.73c0-.706.613-1.103 2.06-1.103h.964c1.447 0 2.06.397 2.06 1.103v8.82c1.053-1.278 2.762-2.337 4.822-2.337 3.42 0 5.13 1.764 5.13 5.557v11.556c0 .706-.614 1.103-2.061 1.103h-.964c-1.447 0-2.06-.397-2.06-1.103V33.52c0-1.323-.702-2.117-2.192-2.117-1.403 0-2.324 1.191-2.718 1.985v10.938c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103l.044-23.596ZM50.805 36.431c0-3.44-.964-5.204-3.112-5.204s-3.157 1.764-3.157 5.204 0 3.44 1.009 5.249 3.157 5.249s3.112-1.809 3.112-5.249Zm-3.112-9.218c5.435 0 8.24 3.264 8.24 9.218 0 5.954-2.805 9.262-8.24 9.262-5.436 0-8.241-3.308-8.241-9.262 0-5.954 2.849-9.218 8.24-9.218ZM58.695 28.536c0-.706.614-1.102 2.06-1.102h.965c1.447 0 2.06.396 2.06 1.102v10.806c0 1.323.526 2.117 2.06 2.117 1.403 0 2.324-1.19 2.718-1.985V28.536c0-.706.614-1.102 2.06-1.102h.965c1.446 0 2.06.396 2.06 1.102v10.806c0 3.529.395 4.234.395 4.984 0 .838-2.981 1.103-3.814 1.103-1.096 0-1.14-1.456-1.359-2.382-1.008 1.28-2.85 2.602-5.085 2.602-3.419 0-4.997-1.764-4.997-5.557V28.536h-.088ZM77.763 40.71c.438 0 1.753.97 3.331.97 1.447 0 2.06-.53 2.06-1.544 0-3-6.794-1.235-6.794-7.366 0-3.44 2.411-5.557 6.269-5.557 1.14 0 5.04.22 5.04 2.161 0 .441-.788 2.558-1.446 2.558-.35 0-1.359-.705-2.893-.705-1.14 0-1.841.396-1.841 1.235 0 2.513 6.794 1.19 6.794 7.321 0 3.617-2.542 5.954-6.356 5.954-2.98 0-5.961-.794-5.961-2.425 0-.75 1.096-2.603 1.797-2.603ZM97.094 41.68c1.272 0 2.5-.927 3.069-2.162v-1.896c-3.244 0-4.778.882-4.778 2.558 0 .838.57 1.5 1.71 1.5Zm3.069-7.366v-1.147c0-1.323-.79-1.94-2.674-1.94-2.499 0-3.945 1.102-4.34 1.102-.701 0-1.753-2.029-1.753-2.734 0-1.147 2.718-2.382 6.487-2.382 5.392 0 7.321 2.382 7.321 5.734v6.44c0 3.528.394 4.233.394 4.983 0 .838-2.98 1.103-3.813 1.103-1.096 0-1.14-1.456-1.359-2.382-.219.441-1.885 2.602-4.997 2.602-3.682 0-5.041-2.205-5.041-4.984 0-2.778 1.096-6.395 9.775-6.395ZM108.887 33.52c0-3.44-.395-4.146-.395-4.852 0-.837 2.981-1.102 3.814-1.102 1.096 0 1.14 1.367 1.359 2.205 1.008-1.323 2.849-2.602 5.085-2.602 3.419 0 4.997 1.764 4.997 5.557v11.556c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103V33.52c0-1.323-.526-2.117-2.06-2.117-1.403 0-2.324 1.191-2.718 1.985v10.938c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103V33.52h.088ZM136.458 39.519v-7.63a4.595 4.595 0 0 0-2.367-.662c-2.148 0-3.156 1.764-3.156 5.204 0 3.44.877 5.117 2.762 5.117 1.227 0 2.148-.97 2.761-2.03Zm-10.695-3.088c0-5.601 2.586-9.218 7.189-9.218 1.622 0 2.761.53 3.463 1.059V20.73c0-.706.613-1.103 2.06-1.103h.964c1.447 0 2.061.397 2.061 1.103v18.656c0 3.529.394 4.234.394 4.984 0 .838-2.981 1.103-3.814 1.103-1.096 0-1.139-1.456-1.359-2.338-.789 1.456-2.454 2.559-4.558 2.559-3.683-.045-6.4-3.264-6.4-9.263Z" fill="#E8ECF4"/><path d="M145.226 22.803c0-.97.394-1.367 1.358-1.367h12.406c.701 0 1.008.529 1.008 1.72v1.058c0 1.191-.307 1.72-1.008 1.72h-8.592v4.984h7.671c.702 0 1.008.53 1.008 1.72v1.059c0 1.19-.306 1.72-1.008 1.72h-7.671v5.557h8.636c.701 0 1.008.53 1.008 1.72v.97c0 1.192-.307 1.721-1.008 1.721h-12.45c-.964 0-1.358-.397-1.358-1.367V22.803ZM161.269 28.8a1.754 1.754 0 0 1-.131-.617c0-.485.657-.75 2.06-.75h1.096c1.008 0 1.753.177 1.929.706l2.016 6.351c.219.794.658 2.691.964 4.146h.132c.307-1.455.701-3.396.964-4.146l2.017-6.35c.175-.53.92-.706 1.928-.706h.833c1.447 0 2.061.264 2.061.75 0 .176-.044.396-.088.617l-7.803 22.935c-.219.53-.92.706-1.929.706h-.569c-1.403 0-2.061-.265-2.061-.706 0-.176.044-.397.132-.618l2.148-5.733-5.699-16.584ZM187.877 34.71c0-1.984-.745-3.483-2.455-3.483-1.446 0-2.674.838-3.068 3.484h5.523Zm-2.455-7.497c5.348 0 7.365 4.058 7.365 8.821 0 .573-1.315 2.029-1.754 2.029h-8.679c.219 2.734 1.71 3.617 3.901 3.617 2.192 0 3.639-1.059 4.121-1.059.745 0 1.753 1.897 1.753 2.602 0 1.72-4.208 2.47-6.137 2.47-6.18 0-8.898-3.616-8.898-9.13.087-6.748 3.507-9.35 8.328-9.35ZM195.592 40.71c.439 0 1.754.97 3.332.97 1.446 0 2.06-.53 2.06-1.544 0-3-6.794-1.235-6.794-7.366 0-3.44 2.411-5.557 6.268-5.557 1.14 0 5.041.22 5.041 2.161 0 .441-.789 2.558-1.446 2.558-.351 0-1.359-.705-2.893-.705-1.14 0-1.842.396-1.842 1.235 0 2.513 6.795 1.19 6.795 7.321 0 3.617-2.543 5.954-6.356 5.954-2.981 0-5.962-.794-5.962-2.425-.044-.75 1.052-2.603 1.797-2.603Z" fill="#FF682E"/><path d="M217.422 33.168c1.797 2.426 6.882 8.248 13.238 8.248 4.428 0 8.855-2.779 13.063-8.248-4.296-5.337-8.679-8.072-13.063-8.072-6.356.045-11.397 5.734-13.238 8.072Zm13.282 11.997c-10.082 0-16.876-10.542-17.139-10.983l-.658-1.014.658-1.015c.263-.44 7.057-10.761 17.139-10.761 5.962 0 11.66 3.572 16.964 10.63l.833 1.102-.833 1.146c-5.304 7.278-11.002 10.895-16.964 10.895Z" fill="#FF682E"/><path d="M222.989 45.165c-9.862-.31-16.219-10.63-16.482-11.07l-.526-1.015.614-1.015c.263-.44 6.532-10.32 16.307-10.673-7.628 3.528-12.888 11.864-12.888 11.864s4.428 7.498 12.975 11.909ZM229.214 39.386c2.455-1.367 5.348-3.175 7.759-6.218-2.367-2.956-5.655-4.676-8.066-5.999 5.83-1.279 10.871 4.499 10.871 4.499l1.359 1.5-1.359 1.543c-5.26 5.822-10.564 4.675-10.564 4.675Z" fill="#FF682E"/><path d="M226.935 36.035a2.726 2.726 0 0 0 2.717-2.735 2.726 2.726 0 0 0-2.717-2.735 2.726 2.726 0 0 0-2.718 2.735 2.726 2.726 0 0 0 2.718 2.735Z" fill="#FF682E"/></svg>
+        <svg viewBox="0 0 251 55" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.84 2.78h-2.586v10.629h2.587V2.779ZM38.794 5.822c-.087-.044-.964-.573-2.191-.573-1.666 0-2.85 1.19-2.85 2.823 0 1.632 1.096 2.823 2.85 2.823 1.227 0 2.06-.486 2.191-.574v2.867c-.307.088-1.227.397-2.367.397-2.937 0-5.48-2.073-5.48-5.513 0-3.176 2.324-5.513 5.48-5.513 1.227 0 2.104.308 2.367.397v2.866ZM11.704 5.822c-.088-.044-.92-.573-2.192-.573-1.666 0-2.85 1.19-2.85 2.823 0 1.632 1.097 2.823 2.85 2.823 1.227 0 2.06-.486 2.192-.574v2.867c-.307.088-1.228.397-2.367.397-2.937 0-5.48-2.073-5.48-5.513 0-3.176 2.324-5.513 5.48-5.513 1.227 0 2.104.308 2.367.397v2.866ZM52.383 8.072c0 3.043-2.28 5.513-5.436 5.513s-5.435-2.47-5.435-5.513c0-3.043 2.28-5.513 5.435-5.513 3.2 0 5.436 2.47 5.436 5.513Zm-5.436-2.779c-1.534 0-2.674 1.235-2.674 2.779 0 1.544 1.14 2.779 2.674 2.779s2.674-1.235 2.674-2.78c.044-1.543-1.096-2.778-2.674-2.778ZM27.704 5.16c-.044 0-1.14-.308-2.017-.308-1.052 0-1.622.353-1.622.882 0 .662.746.882 1.184 1.015l.701.22c1.666.574 2.455 1.764 2.455 3.043 0 2.69-2.28 3.573-4.252 3.573-1.403 0-2.674-.265-2.805-.309v-2.425c.219.044 1.315.396 2.454.396 1.272 0 1.885-.396 1.885-1.014 0-.53-.526-.838-1.14-1.059-.175-.044-.394-.132-.57-.176-1.446-.485-2.63-1.367-2.63-3.131 0-1.985 1.447-3.308 3.814-3.308 1.271 0 2.455.308 2.543.352v2.25Z" fill="#E8ECF4"/><path d="M8.898 25.934H3.507c-.702 0-1.008-.529-1.008-1.72v-1.058c0-1.191.306-1.72 1.008-1.72h16.087c.702 0 1.008.529 1.008 1.72v1.058c0 1.191-.306 1.72-1.008 1.72H14.16v18.437c0 .705-.614 1.102-2.06 1.102h-1.184c-1.447 0-2.06-.397-2.06-1.102l.043-18.437ZM22.444 20.73c0-.706.613-1.103 2.06-1.103h.964c1.447 0 2.06.397 2.06 1.103v8.82c1.053-1.278 2.762-2.337 4.822-2.337 3.42 0 5.13 1.764 5.13 5.557v11.556c0 .706-.614 1.103-2.061 1.103h-.964c-1.447 0-2.06-.397-2.06-1.103V33.52c0-1.323-.702-2.117-2.192-2.117-1.403 0-2.324 1.191-2.718 1.985v10.938c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103l.044-23.596ZM50.805 36.431c0-3.44-.964-5.204-3.112-5.204s-3.157 1.764-3.157 5.204c0 3.44 1.009 5.249 3.157 5.249s3.112-1.809 3.112-5.249Zm-3.112-9.218c5.435 0 8.24 3.264 8.24 9.218 0 5.954-2.805 9.262-8.24 9.262-5.436 0-8.241-3.308-8.241-9.262 0-5.954 2.849-9.218 8.24-9.218ZM58.695 28.536c0-.706.614-1.102 2.06-1.102h.965c1.447 0 2.06.396 2.06 1.102v10.806c0 1.323.526 2.117 2.06 2.117 1.403 0 2.324-1.19 2.718-1.985V28.536c0-.706.614-1.102 2.06-1.102h.965c1.446 0 2.06.396 2.06 1.102v10.806c0 3.529.395 4.234.395 4.984 0 .838-2.981 1.103-3.814 1.103-1.096 0-1.14-1.456-1.359-2.382-1.008 1.28-2.85 2.602-5.085 2.602-3.419 0-4.997-1.764-4.997-5.557V28.536h-.088ZM77.763 40.71c.438 0 1.753.97 3.331.97 1.447 0 2.06-.53 2.06-1.544 0-3-6.794-1.235-6.794-7.366 0-3.44 2.411-5.557 6.269-5.557 1.14 0 5.04.22 5.04 2.161 0 .441-.788 2.558-1.446 2.558-.35 0-1.359-.705-2.893-.705-1.14 0-1.841.396-1.841 1.235 0 2.513 6.794 1.19 6.794 7.321 0 3.617-2.542 5.954-6.356 5.954-2.98 0-5.961-.794-5.961-2.425 0-.75 1.096-2.603 1.797-2.603ZM97.094 41.68c1.272 0 2.5-.927 3.069-2.162v-1.896c-3.244 0-4.778.882-4.778 2.558 0 .838.57 1.5 1.71 1.5Zm3.069-7.366v-1.147c0-1.323-.79-1.94-2.674-1.94-2.499 0-3.945 1.102-4.34 1.102-.701 0-1.753-2.029-1.753-2.734 0-1.147 2.718-2.382 6.487-2.382 5.392 0 7.321 2.382 7.321 5.734v6.44c0 3.528.394 4.233.394 4.983 0 .838-2.98 1.103-3.813 1.103-1.096 0-1.14-1.456-1.359-2.382-.219.441-1.885 2.602-4.997 2.602-3.682 0-5.041-2.205-5.041-4.984 0-2.778 1.096-6.395 9.775-6.395ZM108.887 33.52c0-3.44-.395-4.146-.395-4.852 0-.837 2.981-1.102 3.814-1.102 1.096 0 1.14 1.367 1.359 2.205 1.008-1.323 2.849-2.602 5.085-2.602 3.419 0 4.997 1.764 4.997 5.557v11.556c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103V33.52c0-1.323-.526-2.117-2.06-2.117-1.403 0-2.324 1.191-2.718 1.985v10.938c0 .706-.614 1.103-2.06 1.103h-.965c-1.446 0-2.06-.397-2.06-1.103V33.52h.088ZM136.458 39.519v-7.63a4.595 4.595 0 0 0-2.367-.662c-2.148 0-3.156 1.764-3.156 5.204 0 3.44.877 5.117 2.762 5.117 1.227 0 2.148-.97 2.761-2.03Zm-10.695-3.088c0-5.601 2.586-9.218 7.189-9.218 1.622 0 2.761.53 3.463 1.059V20.73c0-.706.613-1.103 2.06-1.103h.964c1.447 0 2.061.397 2.061 1.103v18.656c0 3.529.394 4.234.394 4.984 0 .838-2.981 1.103-3.814 1.103-1.096 0-1.139-1.456-1.359-2.338-.789 1.456-2.454 2.559-4.558 2.559-3.683-.045-6.4-3.264-6.4-9.263Z" fill="#E8ECF4"/><path d="M145.226 22.803c0-.97.394-1.367 1.358-1.367h12.406c.701 0 1.008.529 1.008 1.72v1.058c0 1.191-.307 1.72-1.008 1.72h-8.592v4.984h7.671c.702 0 1.008.53 1.008 1.72v1.059c0 1.19-.306 1.72-1.008 1.72h-7.671v5.557h8.636c.701 0 1.008.53 1.008 1.72v.97c0 1.192-.307 1.721-1.008 1.721h-12.45c-.964 0-1.358-.397-1.358-1.367V22.803ZM161.269 28.8a1.754 1.754 0 0 1-.131-.617c0-.485.657-.75 2.06-.75h1.096c1.008 0 1.753.177 1.929.706l2.016 6.351c.219.794.658 2.691.964 4.146h.132c.307-1.455.701-3.396.964-4.146l2.017-6.35c.175-.53.92-.706 1.928-.706h.833c1.447 0 2.061.264 2.061.75 0 .176-.044.396-.088.617l-7.803 22.935c-.219.53-.92.706-1.929.706h-.569c-1.403 0-2.061-.265-2.061-.706 0-.176.044-.397.132-.618l2.148-5.733-5.699-16.584ZM187.877 34.71c0-1.984-.745-3.483-2.455-3.483-1.446 0-2.674.838-3.068 3.484h5.523Zm-2.455-7.497c5.348 0 7.365 4.058 7.365 8.821 0 .573-1.315 2.029-1.754 2.029h-8.679c.219 2.734 1.71 3.617 3.901 3.617 2.192 0 3.639-1.059 4.121-1.059.745 0 1.753 1.897 1.753 2.602 0 1.72-4.208 2.47-6.137 2.47-6.18 0-8.898-3.616-8.898-9.13.087-6.748 3.507-9.35 8.328-9.35ZM195.592 40.71c.439 0 1.754.97 3.332.97 1.446 0 2.06-.53 2.06-1.544 0-3-6.794-1.235-6.794-7.366 0-3.44 2.411-5.557 6.268-5.557 1.14 0 5.041.22 5.041 2.161 0 .441-.789 2.558-1.446 2.558-.351 0-1.359-.705-2.893-.705-1.14 0-1.842.396-1.842 1.235 0 2.513 6.795 1.19 6.795 7.321 0 3.617-2.543 5.954-6.356 5.954-2.981 0-5.962-.794-5.962-2.425-.044-.75 1.052-2.603 1.797-2.603Z" fill="#FF682E"/><path d="M217.422 33.168c1.797 2.426 6.882 8.248 13.238 8.248 4.428 0 8.855-2.779 13.063-8.248-4.296-5.337-8.679-8.072-13.063-8.072-6.356.045-11.397 5.734-13.238 8.072Zm13.282 11.997c-10.082 0-16.876-10.542-17.139-10.983l-.658-1.014.658-1.015c.263-.44 7.057-10.761 17.139-10.761 5.962 0 11.66 3.572 16.964 10.63l.833 1.102-.833 1.146c-5.304 7.278-11.002 10.895-16.964 10.895Z" fill="#FF682E"/><path d="M222.989 45.165c-9.862-.31-16.219-10.63-16.482-11.07l-.526-1.015.614-1.015c.263-.44 6.532-10.32 16.307-10.673-7.628 3.528-12.888 11.864-12.888 11.864s4.428 7.498 12.975 11.909ZM229.214 39.386c2.455-1.367 5.348-3.175 7.759-6.218-2.367-2.956-5.655-4.676-8.066-5.999 5.83-1.279 10.871 4.499 10.871 4.499l1.359 1.5-1.359 1.543c-5.26 5.822-10.564 4.675-10.564 4.675Z" fill="#FF682E"/><path d="M226.935 36.035a2.726 2.726 0 0 0 2.717-2.735 2.726 2.726 0 0 0-2.717-2.735 2.726 2.726 0 0 0-2.718 2.735 2.726 2.726 0 0 0 2.718 2.735Z" fill="#FF682E"/></svg>
       </div>
-      <div class="header-subtitle">Network &amp; Application Assurance</div>
+      <div class="header-brand" id="headerBrand">ThousandEyes</div>
     </div>
-    <div class="header-brand" id="headerBrand" title=""></div>
+    <span class="header-subtitle">Network &amp; Application Assurance</span>
   </div>
   <div class="header-right">
     <div class="live-indicator"><span class="live-dot" aria-hidden="true"></span> Live</div>
@@ -210,37 +217,37 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 <div class="page-scroll">
   <section class="health-banner" aria-labelledby="assuranceHeading">
     <div class="health-banner-left">
-      <div class="gauge-wrap" id="gaugeWrap" aria-hidden="true"></div>
+      <div class="gauge-wrap tip-left" id="gaugeWrap" aria-hidden="true" data-tip="The ring gauge shows the overall assurance score as a percentage. It is the arithmetic mean of all individual test availability values in the selected time window. Green >= 99%, Yellow >= 95%, Red < 95%. The arc fills proportionally to the score."></div>
       <div>
         <h1 class="health-banner-title" id="assuranceHeading">Assurance score</h1>
         <p class="health-banner-desc">Composite availability across all active synthetic tests in the selected window. Use business service tiles below to prioritize follow-up.</p>
       </div>
     </div>
     <div class="health-stats">
-      <div class="health-stat"><div class="health-stat-val" id="statServices">0</div><div class="health-stat-lbl">Monitored services</div></div>
-      <div class="health-stat"><div class="health-stat-val" id="statAlerts">0</div><div class="health-stat-lbl">Active alerts</div></div>
-      <div class="health-stat"><div class="health-stat-val" id="statOutages">0</div><div class="health-stat-lbl">Internet outages</div></div>
-      <div class="health-stat"><div class="health-stat-val" id="statSites">0</div><div class="health-stat-lbl">Enterprise sites</div></div>
+      <div class="health-stat" data-tip="Total number of active ThousandEyes synthetic tests (HTTP, DNS, network, page load, API, voice, BGP) configured across your account."><div class="health-stat-val" id="statServices">0</div><div class="health-stat-lbl">Monitored services</div></div>
+      <div class="health-stat" data-tip="Number of ThousandEyes alert rules currently in a triggered state. Derived from the active alerts feed returned by the MCP API."><div class="health-stat-val" id="statAlerts">0</div><div class="health-stat-lbl">Active alerts</div></div>
+      <div class="health-stat" data-tip="Combined count of application-layer and network-layer Internet outages detected by ThousandEyes Internet Insights in the current window."><div class="health-stat-val" id="statOutages">0</div><div class="health-stat-lbl">Internet outages</div></div>
+      <div class="health-stat" data-tip="Number of Enterprise Agent locations deployed across your infrastructure. Each location typically represents a branch office, data center, or cloud region."><div class="health-stat-val" id="statSites">0</div><div class="health-stat-lbl">Enterprise sites</div></div>
     </div>
   </section>
 
   <section class="kpi-row" aria-label="Executive KPIs">
-    <div class="kpi-exec">
+    <div class="kpi-exec tip-left" data-tip="Arithmetic mean of availability percentages across all active synthetic tests. For HTTP/DNS/page-load tests this is the server-reported availability. For network tests (agent-to-server, agent-to-agent) it is calculated as 100% minus average packet loss. Green >= 99%, Yellow >= 95%, Red < 95%.">
       <div class="kpi-exec-label">Network availability</div>
       <div class="kpi-exec-value" id="kpiAvail">--</div>
       <div class="kpi-exec-sub" id="kpiAvailSub">Mean test availability</div>
     </div>
-    <div class="kpi-exec">
+    <div class="kpi-exec" data-tip="Average HTTP response time across all web-type tests (HTTP Server, Page Load, Web Transactions, API) in the selected window. The sub-line shows the 95th percentile (P95) value, meaning 95% of measured responses were faster. Green <= 200ms, Yellow <= 500ms, Red > 500ms.">
       <div class="kpi-exec-label">Application performance</div>
       <div class="kpi-exec-value" id="kpiResp">--</div>
       <div class="kpi-exec-sub" id="kpiRespSub">P95 response time</div>
     </div>
-    <div class="kpi-exec">
+    <div class="kpi-exec" data-tip="Average packet loss percentage across all agent-to-server and agent-to-agent network tests. The sub-line shows how many distinct network paths are experiencing non-zero loss. Green <= 0.5%, Yellow <= 2%, Red > 2%.">
       <div class="kpi-exec-label">Packet loss</div>
       <div class="kpi-exec-value" id="kpiLoss">--</div>
       <div class="kpi-exec-sub" id="kpiLossSub">Affected paths</div>
     </div>
-    <div class="kpi-exec">
+    <div class="kpi-exec tip-right" data-tip="Total number of active detection signals: the sum of currently firing alert rules plus ongoing Internet Insights events. A higher count indicates more issues are being detected simultaneously. The sub-line breaks this into alert count and live event count. Green = 0, Yellow <= 5, Red > 5.">
       <div class="kpi-exec-label">Mean time to detect</div>
       <div class="kpi-exec-value" id="kpiMttd">--</div>
       <div class="kpi-exec-sub" id="kpiMttdSub">Detection signal count</div>
@@ -248,38 +255,21 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
   </section>
 
   <div class="section-head">
-    <h2 class="section-title">Business service health</h2>
+    <h2 class="section-title" data-tip="Tests are automatically grouped into business services by matching test names against known patterns (e.g. 'MSTeams' maps to Collaboration - Microsoft). Network and voice tests are grouped by test type. Each tile shows the mean availability of all tests in that service, sorted worst-first so degraded services surface immediately.">Business service health</h2>
   </div>
   <section class="biz-grid" id="bizGrid" aria-label="Business service health"></section>
 
   <div class="risk-row">
     <section class="risk-panel" aria-labelledby="topIssuesHeading">
-      <h3 class="risk-panel-title" id="topIssuesHeading">Top issues</h3>
+      <h3 class="risk-panel-title tip-left" id="topIssuesHeading" data-tip="The 8 tests with the lowest availability in the current window, sorted ascending. Availability is derived from ThousandEyes synthetic test metrics: server availability for web/DNS tests, or 100% minus packet loss for network path tests.">Top issues</h3>
       <div id="topIssuesBody"></div>
     </section>
     <section class="risk-panel" aria-labelledby="feedHeading">
-      <h3 class="risk-panel-title" id="feedHeading">Active alerts &amp; events</h3>
+      <h3 class="risk-panel-title tip-right" id="feedHeading" data-tip="Combined feed of ThousandEyes alert rules currently firing and active Internet Insights events. Sorted by severity (Critical/Major first), then by time. Alert severity comes from your configured alert rules; event impact is assigned by ThousandEyes Internet Insights based on scope of affected networks.">Active alerts &amp; events</h3>
       <div class="feed-list" id="feedBody"></div>
     </section>
   </div>
 
-  <section class="infra-row" aria-label="Infrastructure coverage">
-    <div class="infra-card">
-      <div class="infra-card-title">Monitoring coverage</div>
-      <div class="infra-stat" id="infraTestsTotal">0</div>
-      <div class="infra-lines" id="infraTestTypes"></div>
-    </div>
-    <div class="infra-card">
-      <div class="infra-card-title">Agent deployment</div>
-      <div class="infra-stat" id="infraAgentsTotal">0</div>
-      <div class="infra-lines" id="infraAgentsBreakdown"></div>
-    </div>
-    <div class="infra-card">
-      <div class="infra-card-title">Internet insights</div>
-      <div class="infra-stat" id="infraOutageCount">0</div>
-      <div class="infra-lines" id="infraProviders"></div>
-    </div>
-  </section>
 </div>
 
 <div class="footer" id="footer"></div>
@@ -291,25 +281,56 @@ var DATA = null;
 var currentWindow = '24h';
 var refreshTimer = null;
 
-var BUSINESS_SERVICES = [
-  { name: 'Collaboration - Microsoft', patterns: [/^MSTeams(?!.*RetailDemo)/i] },
-  { name: 'Collaboration - Webex', patterns: [/^Webex/i] },
-  { name: 'Microsoft O365', patterns: [/^MSO365/i, /^MS O365/i, /^SD-WAN DIA.*O365/i] },
-  { name: 'Retail Operations', patterns: [/^RetailDemo/i, /^RetailSite/i, /^Public_Sector/i] },
-  { name: 'Pseudoco Platform', patterns: [/^Pseudoco/i, /^Psuedoco/i, /pseudoco\./i] },
-  { name: 'AI Services', patterns: [/Bedrock/i] },
-  { name: 'AWS Cloud Services', patterns: [/^AWS/i] },
-  { name: 'Azure Cloud Services', patterns: [/^Azure/i] },
-  { name: 'Salesforce & CRM', patterns: [/^Salesforce/i, /^SAP/i, /salesforce\.com/i, /lightning\.force/i] },
-  { name: 'Workday HR', patterns: [/^Workday/i, /^RetailDemo_Workday/i] },
-  { name: 'Network Infrastructure', patterns: [/^SD-WAN/i, /^DataCenter/i, /^Site-DC/i, /^Stores/i, /^TOR-NYC/i, /^SIP/i, /^SFTP/i] },
-];
+function getDefaultBusinessServicesConfig() {
+  return {
+    type_rules: { 'Network Infrastructure': ['agent-to-agent', 'agent-to-server', 'bgp'], Voice: ['voice', 'sip-server'] },
+    services: [
+      { name: 'Collaboration - Microsoft', patterns: ['MSTeams'] },
+      { name: 'Health Care', patterns: ['MyChart', 'BSWHealth'] },
+      { name: 'Voice', patterns: [] },
+      { name: 'Collaboration - Webex', patterns: ['Webex'] },
+      { name: 'Microsoft O365', patterns: ['MSO365', 'MS O365', 'O365'] },
+      { name: 'Retail Operations', patterns: ['RetailDemo', 'RetailSite', 'Public_Sector'] },
+      { name: 'Pseudoco Platform', patterns: ['Pseudoco', 'Psuedoco', 'pseudoco.'] },
+      { name: 'AI Services', patterns: ['Bedrock'] },
+      { name: 'AWS Cloud Services', patterns: ['AWS'] },
+      { name: 'Azure Cloud Services', patterns: ['Azure'] },
+      { name: 'Salesforce & CRM', patterns: ['Salesforce', 'SAP', 'salesforce.com', 'lightning.force'] },
+      { name: 'Workday HR', patterns: ['Workday'] },
+      { name: 'Facebook & Social', patterns: ['Facebook'] },
+      { name: 'Network Infrastructure', patterns: ['SD-WAN', 'DataCenter', 'Site-DC', 'Stores', 'TOR-NYC', 'SFTP'] },
+      { name: 'Data Center Management', patterns: ['ESXi', 'TrueNAS', 'Splunk'] },
+      { name: 'Demo & Monitoring', patterns: ['Mar Demo', 'Boutique', 'Internet Test', 'ThousandEyes', 'thousandeyes.com'] },
+      { name: 'Other Services', patterns: [] },
+    ],
+  };
+}
 
-function getBusinessService(testName) {
-  for (var s = 0; s < BUSINESS_SERVICES.length; s++) {
-    for (var p = 0; p < BUSINESS_SERVICES[s].patterns.length; p++) {
-      if (BUSINESS_SERVICES[s].patterns[p].test(testName)) return BUSINESS_SERVICES[s].name;
+function getBusinessServicesConfig() {
+  if (typeof DATA !== 'undefined' && DATA && DATA.business_services_config && DATA.business_services_config.services) {
+    return DATA.business_services_config;
+  }
+  return getDefaultBusinessServicesConfig();
+}
+
+function getBusinessService(test) {
+  var cfg = getBusinessServicesConfig();
+  var testName = (test && test.name) ? test.name : '';
+  var testType = (test && test.type) ? String(test.type).toLowerCase() : '';
+  for (var s = 0; s < (cfg.services || []).length; s++) {
+    var svc = cfg.services[s];
+    var patterns = svc.patterns || [];
+    for (var p = 0; p < patterns.length; p++) {
+      var pat = String(patterns[p]);
+      if (pat && testName.toLowerCase().indexOf(pat.toLowerCase()) !== -1) return svc.name;
     }
+  }
+  var typeRules = cfg.type_rules || {};
+  var typeRuleNames = Object.keys(typeRules);
+  for (var r = 0; r < typeRuleNames.length; r++) {
+    var svcName = typeRuleNames[r];
+    var types = typeRules[svcName];
+    if (types && types.indexOf(testType) !== -1) return svcName;
   }
   return 'Other Services';
 }
@@ -323,6 +344,7 @@ var TYPE_LABELS = {
 };
 
 function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function availClass(v) {
   if (v == null || isNaN(v)) return 'yellow';
@@ -533,15 +555,18 @@ function renderAll() {
   document.getElementById('kpiMttd').className = 'kpi-exec-value ' + (detCount === 0 ? 'green' : detCount <= 5 ? 'yellow' : 'red');
   document.getElementById('kpiMttdSub').textContent = alertsN + ' alerts, ' + eventsN + ' live events';
 
+  var bsvcConfig = getBusinessServicesConfig();
+  var svcOrder = (bsvcConfig.services || []).map(function(s) { return s.name; });
+  if (svcOrder.indexOf('Other Services') === -1) svcOrder.push('Other Services');
+
   var groups = {};
-  for (var gi = 0; gi < BUSINESS_SERVICES.length; gi++) {
-    groups[BUSINESS_SERVICES[gi].name] = { avails: [], count: 0 };
+  for (var gi = 0; gi < svcOrder.length; gi++) {
+    groups[svcOrder[gi]] = { avails: [], count: 0 };
   }
-  groups['Other Services'] = { avails: [], count: 0 };
 
   for (var ti = 0; ti < tests.length; ti++) {
     var tn = tests[ti].name;
-    var gname = getBusinessService(tn);
+    var gname = getBusinessService(tests[ti]);
     if (!groups[gname]) groups[gname] = { avails: [], count: 0 };
     groups[gname].count++;
     if (avail[tn] != null && typeof avail[tn] === 'number') {
@@ -577,9 +602,10 @@ function renderAll() {
     var pct = row.avail != null ? row.avail : 0;
     var barW = row.avail != null ? Math.max(0, Math.min(100, pct)) : 0;
     var barColor = row.avail == null ? 'var(--te-text-dim)' : strokeForScore(row.avail);
-    bizHtml += '<article class="biz-card">';
+    var bizTip = escAttr(row.name) + ': Mean availability across ' + row.count + ' test' + (row.count !== 1 ? 's' : '') + ' matched to this service by name pattern or test type. ' + (row.avail != null ? escAttr(row.avail.toFixed(2) + '%') + ' average.' : 'No availability data.') + ' Green &gt;= 99%, Yellow &gt;= 95%, Red &lt; 95%.';
+    bizHtml += '<article class="biz-card" data-tip="' + bizTip + '">';
     bizHtml += '<div class="biz-card-top"><div class="biz-card-name">' + escHtml(row.name) + '</div>';
-    bizHtml += '<span class="' + availDotClass(row.avail) + ' status-dot" title="Status"></span></div>';
+    bizHtml += '<span class="' + availDotClass(row.avail) + ' status-dot"></span></div>';
     bizHtml += '<div class="biz-card-avail" style="color:' + (row.avail != null ? (availClass(row.avail) === 'green' ? 'var(--te-green)' : availClass(row.avail) === 'yellow' ? 'var(--te-yellow)' : 'var(--te-red)') : 'var(--te-text-dim)') + '">';
     bizHtml += row.avail != null ? escHtml(row.avail.toFixed(2) + '%') : 'N/A';
     bizHtml += '</div>';
@@ -653,49 +679,6 @@ function renderAll() {
     feedHtml += '</div>';
   }
   document.getElementById('feedBody').innerHTML = feedHtml || '<div style="color:var(--te-text-dim);font-size:12px;">No active alerts or ongoing events.</div>';
-
-  var typeCounts = {};
-  for (var ci = 0; ci < tests.length; ci++) {
-    var tt = tests[ci].type || 'unknown';
-    typeCounts[tt] = (typeCounts[tt] || 0) + 1;
-  }
-  var typeLines = '';
-  var typeKeys = Object.keys(typeCounts).sort(function(a, b) { return typeCounts[b] - typeCounts[a]; });
-  for (var tki = 0; tki < typeKeys.length && tki < 8; tki++) {
-    var tk = typeKeys[tki];
-    var lab = TYPE_LABELS[tk] || tk;
-    typeLines += '<div><strong>' + escHtml(lab) + '</strong>: ' + typeCounts[tk] + '</div>';
-  }
-  document.getElementById('infraTestsTotal').textContent = String(tests.length);
-  document.getElementById('infraTestTypes').innerHTML = typeLines || '<span style="color:var(--te-text-dim)">No test types</span>';
-
-  var ent = c.enterprise_agents != null ? c.enterprise_agents : 0;
-  var ep = c.endpoint_agents != null ? c.endpoint_agents : 0;
-  var clo = c.cloud_agents != null ? c.cloud_agents : 0;
-  var agentSum = ent + ep + clo;
-  document.getElementById('infraAgentsTotal').textContent = String(agentSum);
-  document.getElementById('infraAgentsBreakdown').innerHTML =
-    '<div><strong>Enterprise</strong>: ' + ent + '</div>' +
-    '<div><strong>Endpoint</strong>: ' + ep + '</div>' +
-    '<div><strong>Cloud</strong>: ' + clo + '</div>';
-
-  var outs = DATA.OUTAGES || [];
-  document.getElementById('infraOutageCount').textContent = String(outs.length);
-  var provMap = {};
-  for (var oi = 0; oi < outs.length; oi++) {
-    var pr = outs[oi].provider || 'Unknown';
-    provMap[pr] = (provMap[pr] || 0) + 1;
-  }
-  var provList = [];
-  for (var pk in provMap) {
-    if (Object.prototype.hasOwnProperty.call(provMap, pk)) provList.push({ name: pk, n: provMap[pk] });
-  }
-  provList.sort(function(a, b) { return b.n - a.n; });
-  var provLines = '';
-  for (var pi = 0; pi < provList.length && pi < 5; pi++) {
-    provLines += '<div><strong>' + escHtml(provList[pi].name) + '</strong>: ' + provList[pi].n + '</div>';
-  }
-  document.getElementById('infraProviders').innerHTML = outs.length ? (provLines || '<span style="color:var(--te-text-dim)">No provider breakdown</span>') : '<span style="color:var(--te-text-dim)">No provider-impacting outages in view</span>';
 
   renderFooter();
   scheduleRefresh();
