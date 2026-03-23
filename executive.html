@@ -151,10 +151,37 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 [data-tip].tip-right:hover::after { transform: translateX(0) translateY(8px); }
 [data-tip].tip-up::after { top: auto; bottom: 100%; transform: translateX(-50%) translateY(-6px); }
 [data-tip].tip-up:hover::after { transform: translateX(-50%) translateY(-8px); }
-.kpi-exec[data-tip] { cursor: help; }
 .health-stat[data-tip] { cursor: help; }
 .biz-card[data-tip] { cursor: help; }
 .risk-panel-title[data-tip] { cursor: help; display: inline-block; border-bottom: 1px dashed var(--te-dark-4); }
+
+.kpi-exec[data-tip] { cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
+.kpi-exec[data-tip]:hover { border-color: var(--te-blue); box-shadow: 0 0 0 1px var(--te-blue); }
+.kpi-exec-label { display: flex; align-items: center; gap: 6px; }
+.kpi-drill-hint { font-size: 9px; font-weight: 500; letter-spacing: 0.3px; color: var(--te-blue); opacity: 0; transition: opacity 0.2s; text-transform: none; }
+.kpi-exec:hover .kpi-drill-hint { opacity: 1; }
+
+.drill-overlay { position: fixed; inset: 0; z-index: 500; display: flex; justify-content: flex-end; pointer-events: none; opacity: 0; transition: opacity 0.25s ease; }
+.drill-overlay.open { pointer-events: auto; opacity: 1; }
+.drill-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
+.drill-panel { position: relative; width: 480px; max-width: 92vw; height: 100%; background: var(--te-dark-2); border-left: 1px solid var(--te-border); display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); box-shadow: -8px 0 32px rgba(0,0,0,0.4); }
+.drill-overlay.open .drill-panel { transform: translateX(0); }
+.drill-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--te-border); flex-shrink: 0; }
+.drill-title { font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--te-text); }
+.drill-close { background: none; border: 1px solid var(--te-border); border-radius: 6px; color: var(--te-text-dim); cursor: pointer; padding: 6px 10px; font-size: 11px; font-weight: 600; transition: all 0.2s; display: flex; align-items: center; gap: 4px; font-family: var(--font-body); }
+.drill-close:hover { border-color: var(--te-blue); color: var(--te-text); }
+.drill-body { flex: 1; overflow-y: auto; padding: 16px 22px 24px; }
+.drill-table { width: 100%; border-collapse: collapse; }
+.drill-table th { text-align: left; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--te-text-dim); padding: 8px 10px; border-bottom: 1px solid var(--te-dark-4); white-space: nowrap; }
+.drill-table th:last-child { text-align: right; }
+.drill-table td { padding: 10px 10px; font-size: 12px; color: var(--te-text); border-bottom: 1px solid var(--te-border); vertical-align: top; }
+.drill-table td:last-child { text-align: right; white-space: nowrap; font-family: var(--font-mono); font-weight: 600; }
+.drill-table tr:last-child td { border-bottom: none; }
+.drill-test-name { font-weight: 600; color: #fff; line-height: 1.35; word-break: break-word; }
+.drill-test-type { font-size: 10px; color: var(--te-text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+.drill-bar-wrap { height: 4px; background: var(--te-dark); border-radius: 2px; margin-top: 6px; width: 100%; max-width: 160px; }
+.drill-bar-fill { height: 100%; border-radius: 2px; }
+.drill-empty { font-size: 12px; color: var(--te-text-dim); padding: 24px 0; text-align: center; }
 
 @media (max-width: 1100px) {
   .health-banner { grid-template-columns: 1fr; }
@@ -232,25 +259,25 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
   </section>
 
   <section class="kpi-row" aria-label="Executive KPIs">
-    <div class="kpi-exec tip-left" data-tip="Arithmetic mean of availability percentages across all active synthetic tests. For HTTP/DNS/page-load tests this is the server-reported availability. For network tests (agent-to-server, agent-to-agent) it is calculated as 100% minus average packet loss. Green >= 99%, Yellow >= 95%, Red < 95%.">
-      <div class="kpi-exec-label">Network availability</div>
+    <div class="kpi-exec tip-left" data-tip="Arithmetic mean of availability percentages across all active synthetic tests. For HTTP/DNS/page-load tests this is the server-reported availability. For network tests (agent-to-server, agent-to-agent) it is calculated as 100% minus average packet loss. Green >= 99%, Yellow >= 95%, Red < 95%." onclick="drillAvail()">
+      <div class="kpi-exec-label">Network availability <span class="kpi-drill-hint">click to drill down</span></div>
       <div class="kpi-exec-value" id="kpiAvail">--</div>
       <div class="kpi-exec-sub" id="kpiAvailSub">Mean test availability</div>
     </div>
-    <div class="kpi-exec" data-tip="Average HTTP response time across all web-type tests (HTTP Server, Page Load, Web Transactions, API) in the selected window. The sub-line shows the 95th percentile (P95) value, meaning 95% of measured responses were faster. Green <= 200ms, Yellow <= 500ms, Red > 500ms.">
-      <div class="kpi-exec-label">Application performance</div>
+    <div class="kpi-exec" data-tip="Average HTTP response time across all web-type tests (HTTP Server, Page Load, Web Transactions, API) in the selected window. The sub-line shows the 95th percentile (P95) value, meaning 95% of measured responses were faster. Green <= 200ms, Yellow <= 500ms, Red > 500ms." onclick="drillResponse()">
+      <div class="kpi-exec-label">Application performance <span class="kpi-drill-hint">click to drill down</span></div>
       <div class="kpi-exec-value" id="kpiResp">--</div>
       <div class="kpi-exec-sub" id="kpiRespSub">P95 response time</div>
     </div>
-    <div class="kpi-exec" data-tip="Average packet loss percentage across all agent-to-server and agent-to-agent network tests. The sub-line shows how many distinct network paths are experiencing non-zero loss. Green <= 0.5%, Yellow <= 2%, Red > 2%.">
-      <div class="kpi-exec-label">Packet loss</div>
+    <div class="kpi-exec" data-tip="Average packet loss percentage across all agent-to-server and agent-to-agent network tests. The sub-line shows how many distinct network paths are experiencing non-zero loss. Green <= 0.5%, Yellow <= 2%, Red > 2%." onclick="drillLoss()">
+      <div class="kpi-exec-label">Packet loss <span class="kpi-drill-hint">click to drill down</span></div>
       <div class="kpi-exec-value" id="kpiLoss">--</div>
       <div class="kpi-exec-sub" id="kpiLossSub">Affected paths</div>
     </div>
-    <div class="kpi-exec tip-right" data-tip="Total number of active detection signals: the sum of currently firing alert rules plus ongoing Internet Insights events. A higher count indicates more issues are being detected simultaneously. The sub-line breaks this into alert count and live event count. Green = 0, Yellow <= 5, Red > 5.">
-      <div class="kpi-exec-label">Mean time to detect</div>
+    <div class="kpi-exec tip-right" data-tip="Total number of open incidents: the sum of currently firing ThousandEyes alert rules plus ongoing Internet Insights events. A higher count indicates more concurrent issues requiring attention. The sub-line breaks this into alert count and live event count. Green = 0, Yellow <= 5, Red > 5." onclick="drillMttd()">
+      <div class="kpi-exec-label">Open incidents <span class="kpi-drill-hint">click to drill down</span></div>
       <div class="kpi-exec-value" id="kpiMttd">--</div>
-      <div class="kpi-exec-sub" id="kpiMttdSub">Detection signal count</div>
+      <div class="kpi-exec-sub" id="kpiMttdSub">Alerts &amp; events</div>
     </div>
   </section>
 
@@ -274,6 +301,17 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 
 <div class="footer" id="footer"></div>
 </div>
+</div>
+
+<div class="drill-overlay" id="drillOverlay">
+  <div class="drill-backdrop" id="drillBackdrop"></div>
+  <div class="drill-panel">
+    <div class="drill-header">
+      <span class="drill-title" id="drillTitle"></span>
+      <button class="drill-close" id="drillClose"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Close</button>
+    </div>
+    <div class="drill-body" id="drillBody"></div>
+  </div>
 </div>
 
 <script>
@@ -744,6 +782,114 @@ function doRefresh() {
       console.error('Refresh error:', err);
       loadData();
     });
+}
+
+function openDrill(title, html) {
+  document.getElementById('drillTitle').textContent = title;
+  document.getElementById('drillBody').innerHTML = html;
+  document.getElementById('drillOverlay').classList.add('open');
+}
+function closeDrill() {
+  document.getElementById('drillOverlay').classList.remove('open');
+}
+document.getElementById('drillBackdrop').addEventListener('click', closeDrill);
+document.getElementById('drillClose').addEventListener('click', closeDrill);
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeDrill(); });
+
+function drillTableWrap(headCols, bodyRows) {
+  var h = '<table class="drill-table"><thead><tr>';
+  for (var i = 0; i < headCols.length; i++) h += '<th>' + escHtml(headCols[i]) + '</th>';
+  h += '</tr></thead><tbody>';
+  if (bodyRows.length === 0) {
+    h += '<tr><td colspan="' + headCols.length + '" class="drill-empty">No data available in this window.</td></tr>';
+  } else {
+    h += bodyRows.join('');
+  }
+  h += '</tbody></table>';
+  return h;
+}
+
+function drillAvail() {
+  if (!DATA) return;
+  var avail = DATA.TEST_AVAILABILITY || {};
+  var testTypes = DATA.TEST_TYPES || {};
+  var items = [];
+  for (var name in avail) {
+    if (!Object.prototype.hasOwnProperty.call(avail, name)) continue;
+    var v = avail[name];
+    if (typeof v === 'number' && !isNaN(v)) items.push({ name: name, val: v, type: testTypes[name] || '' });
+  }
+  items.sort(function(a, b) { return a.val - b.val; });
+  items = items.slice(0, 5);
+  var rows = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var tl = TYPE_LABELS[it.type] || it.type || 'Test';
+    var clr = availClass(it.val) === 'green' ? 'var(--te-green)' : availClass(it.val) === 'yellow' ? 'var(--te-yellow)' : 'var(--te-red)';
+    var barW = Math.max(0, Math.min(100, it.val));
+    rows.push('<tr><td><div class="drill-test-name">' + escHtml(it.name) + '</div><div class="drill-test-type">' + escHtml(tl) + '</div><div class="drill-bar-wrap"><div class="drill-bar-fill" style="width:' + barW + '%;background:' + clr + '"></div></div></td><td style="color:' + clr + '">' + escHtml(it.val.toFixed(2) + '%') + '</td></tr>');
+  }
+  openDrill('Lowest availability — Top 5', drillTableWrap(['Test', 'Availability'], rows));
+}
+
+function drillResponse() {
+  if (!DATA) return;
+  var ex = DATA.EXTRA_KPI || {};
+  var detail = ex.resp_by_test || [];
+  var testTypes = DATA.TEST_TYPES || {};
+  var items = detail.slice(0, 5);
+  var rows = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var tl = TYPE_LABELS[testTypes[it.test] || ''] || testTypes[it.test] || 'Test';
+    var ms = it.ms;
+    var clr = ms <= 200 ? 'var(--te-green)' : ms <= 500 ? 'var(--te-yellow)' : 'var(--te-red)';
+    var barW = Math.min(100, (ms / 2000) * 100);
+    rows.push('<tr><td><div class="drill-test-name">' + escHtml(it.test) + '</div><div class="drill-test-type">' + escHtml(tl) + '</div><div class="drill-bar-wrap"><div class="drill-bar-fill" style="width:' + barW + '%;background:' + clr + '"></div></div></td><td style="color:' + clr + '">' + escHtml(ms + ' ms') + '</td></tr>');
+  }
+  openDrill('Slowest response — Top 5', drillTableWrap(['Test', 'Response'], rows));
+}
+
+function drillLoss() {
+  if (!DATA) return;
+  var ex = DATA.EXTRA_KPI || {};
+  var detail = ex.loss_by_test || [];
+  var testTypes = DATA.TEST_TYPES || {};
+  var items = detail.slice(0, 5);
+  var rows = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var tl = TYPE_LABELS[testTypes[it.test] || ''] || testTypes[it.test] || 'Test';
+    var loss = it.loss;
+    var clr = loss <= 0.5 ? 'var(--te-green)' : loss <= 2 ? 'var(--te-yellow)' : 'var(--te-red)';
+    var barW = Math.min(100, loss * 10);
+    rows.push('<tr><td><div class="drill-test-name">' + escHtml(it.test) + '</div><div class="drill-test-type">' + escHtml(tl) + '</div><div class="drill-bar-wrap"><div class="drill-bar-fill" style="width:' + barW + '%;background:' + clr + '"></div></div></td><td style="color:' + clr + '">' + escHtml(loss.toFixed(3) + '%') + '</td></tr>');
+  }
+  openDrill('Highest packet loss — Top 5', drillTableWrap(['Test', 'Loss'], rows));
+}
+
+function drillMttd() {
+  if (!DATA) return;
+  var combined = [];
+  var af = DATA.ALERT_FEED || [];
+  for (var ai = 0; ai < af.length; ai++) {
+    var a = af[ai];
+    combined.push({ rank: alertSeverityRank(a.severity), sev: String(a.severity || 'INFO'), msg: a.msg || '', time: a.time || formatLocalTime(a.timeISO), kind: 'Alert', sevClass: a.sev === 'red' ? 'high' : a.sev === 'yellow' ? 'medium' : 'low' });
+  }
+  var evs = DATA.LIVE_EVENTS || [];
+  for (var ei = 0; ei < evs.length; ei++) {
+    var ev = evs[ei];
+    combined.push({ rank: eventImpactRank(ev.impact), sev: String(ev.impact || 'INFO'), msg: (ev.title || 'Event') + (ev.agentsAffected ? ' \u00B7 ' + ev.agentsAffected + ' agents' : ''), time: formatLocalTime(ev.timeISO) || String(ev.time || ''), kind: 'Event', sevClass: ev.impact === 'HIGH' ? 'high' : ev.impact === 'MEDIUM' ? 'medium' : 'low' });
+  }
+  combined.sort(function(x, y) { if (y.rank !== x.rank) return y.rank - x.rank; return 0; });
+  combined = combined.slice(0, 5);
+  var rows = [];
+  for (var i = 0; i < combined.length; i++) {
+    var c = combined[i];
+    var sc = c.sevClass === 'high' ? 'sev-high' : c.sevClass === 'medium' ? 'sev-medium' : 'sev-low';
+    rows.push('<tr><td><div class="drill-test-name">' + escHtml(c.msg) + '</div><div class="drill-test-type">' + escHtml(c.kind) + ' \u00B7 ' + escHtml(c.time) + '</div></td><td><span class="feed-sev ' + sc + '" style="font-size:9px;padding:3px 8px;border-radius:4px">' + escHtml(c.sev) + '</span></td></tr>');
+  }
+  openDrill('Open incidents — Top 5', drillTableWrap(['Alert / Event', 'Severity'], rows));
 }
 
 function pollUntilReady() {
