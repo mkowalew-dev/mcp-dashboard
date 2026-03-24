@@ -152,7 +152,8 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 [data-tip].tip-up::after { top: auto; bottom: 100%; transform: translateX(-50%) translateY(-6px); }
 [data-tip].tip-up:hover::after { transform: translateX(-50%) translateY(-8px); }
 .health-stat[data-tip] { cursor: help; }
-.biz-card[data-tip] { cursor: help; }
+.biz-card[data-tip] { cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
+.biz-card[data-tip]:hover { border-color: var(--te-blue); box-shadow: 0 0 0 1px var(--te-blue); }
 .risk-panel-title[data-tip] { cursor: help; display: inline-block; border-bottom: 1px dashed var(--te-dark-4); }
 
 .kpi-exec[data-tip] { cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
@@ -641,7 +642,7 @@ function renderAll() {
     var barW = row.avail != null ? Math.max(0, Math.min(100, pct)) : 0;
     var barColor = row.avail == null ? 'var(--te-text-dim)' : strokeForScore(row.avail);
     var bizTip = escAttr(row.name) + ': Mean availability across ' + row.count + ' test' + (row.count !== 1 ? 's' : '') + ' matched to this service by name pattern or test type. ' + (row.avail != null ? escAttr(row.avail.toFixed(2) + '%') + ' average.' : 'No availability data.') + ' Green &gt;= 99%, Yellow &gt;= 95%, Red &lt; 95%.';
-    bizHtml += '<article class="biz-card" data-tip="' + bizTip + '">';
+    bizHtml += '<article class="biz-card" data-tip="' + bizTip + '" onclick="drillBizService(\'' + escAttr(row.name).replace(/'/g, "\\'") + '\')">';
     bizHtml += '<div class="biz-card-top"><div class="biz-card-name">' + escHtml(row.name) + '</div>';
     bizHtml += '<span class="' + availDotClass(row.avail) + ' status-dot"></span></div>';
     bizHtml += '<div class="biz-card-avail" style="color:' + (row.avail != null ? (availClass(row.avail) === 'green' ? 'var(--te-green)' : availClass(row.avail) === 'yellow' ? 'var(--te-yellow)' : 'var(--te-red)') : 'var(--te-text-dim)') + '">';
@@ -866,6 +867,33 @@ function drillLoss() {
     rows.push('<tr><td><div class="drill-test-name">' + escHtml(it.test) + '</div><div class="drill-test-type">' + escHtml(tl) + '</div><div class="drill-bar-wrap"><div class="drill-bar-fill" style="width:' + barW + '%;background:' + clr + '"></div></div></td><td style="color:' + clr + '">' + escHtml(loss.toFixed(3) + '%') + '</td></tr>');
   }
   openDrill('Highest packet loss — Top 5', drillTableWrap(['Test', 'Loss'], rows));
+}
+
+function drillBizService(svcName) {
+  if (!DATA) return;
+  var avail = DATA.TEST_AVAILABILITY || {};
+  var testTypes = DATA.TEST_TYPES || {};
+  var tests = DATA.ALL_TESTS || [];
+  var items = [];
+  for (var i = 0; i < tests.length; i++) {
+    var t = tests[i];
+    if (getBusinessService(t) !== svcName) continue;
+    var v = avail[t.name];
+    if (typeof v === 'number' && !isNaN(v)) {
+      items.push({ name: t.name, val: v, type: testTypes[t.name] || t.type || '' });
+    }
+  }
+  items.sort(function(a, b) { return a.val - b.val; });
+  items = items.slice(0, 5);
+  var rows = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var tl = TYPE_LABELS[it.type] || it.type || 'Test';
+    var clr = availClass(it.val) === 'green' ? 'var(--te-green)' : availClass(it.val) === 'yellow' ? 'var(--te-yellow)' : 'var(--te-red)';
+    var barW = Math.max(0, Math.min(100, it.val));
+    rows.push('<tr><td><div class="drill-test-name">' + escHtml(it.name) + '</div><div class="drill-test-type">' + escHtml(tl) + '</div><div class="drill-bar-wrap"><div class="drill-bar-fill" style="width:' + barW + '%;background:' + clr + '"></div></div></td><td style="color:' + clr + '">' + escHtml(it.val.toFixed(2) + '%') + '</td></tr>');
+  }
+  openDrill(escHtml(svcName) + ' — Worst 5', drillTableWrap(['Test', 'Availability'], rows));
 }
 
 function drillMttd() {
