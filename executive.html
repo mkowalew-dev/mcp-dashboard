@@ -100,8 +100,24 @@ a.logout-link:hover { color: var(--te-text); }
 .kpi-exec-value.yellow { color: var(--te-yellow); }
 .kpi-exec-value.red { color: var(--te-red); }
 .kpi-exec-sub { font-size: 11px; color: var(--te-text-dim); margin-top: 8px; font-family: var(--font-mono); line-height: 1.4; }
-.kpi-trend { margin-top: 8px; min-height: 24px; opacity: 0.8; }
-.kpi-trend svg { display: block; max-width: 100%; }
+.kpi-trend { margin-top: 8px; min-height: 24px; opacity: 0.8; position: relative; }
+.kpi-spark-host { position: relative; display: inline-block; vertical-align: top; }
+.kpi-spark-svg { display: block; max-width: 100%; }
+.kpi-spark-tooltip {
+  position: fixed;
+  z-index: 400;
+  display: none;
+  pointer-events: none;
+  background: var(--te-dark-3);
+  border: 1px solid var(--te-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--te-text);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+  white-space: nowrap;
+}
 
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .section-title { font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--te-text); }
@@ -736,9 +752,25 @@ function renderAll() {
   loadKpiHistoryTrends();
 }
 
-function sparklineSvg(points, w, h, strokeVar) {
+function formatTrendValue(kind, v) {
+  if (v == null || isNaN(v)) return 'N/A';
+  if (kind === 'ms') return Math.round(v) + ' ms';
+  return v.toFixed(2) + '%';
+}
+
+function formatTrendTime(iso) {
+  if (!iso) return '';
+  try {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', hour12: true });
+  } catch (e) {
+    return String(iso);
+  }
+}
+
+function sparklinePolylinePoints(points, w, h) {
   if (!points || points.length < 2) return '';
-  strokeVar = strokeVar || 'var(--te-blue)';
   var vs = points.map(function(p) { return p.v; });
   var min = Math.min.apply(null, vs);
   var max = Math.max.apply(null, vs);
@@ -751,15 +783,63 @@ function sparklineSvg(points, w, h, strokeVar) {
     var y = pad + (1 - (vs[i] - min) / (max - min)) * (h - 2 * pad);
     pts.push(x.toFixed(2) + ',' + y.toFixed(2));
   }
-  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline fill="none" stroke="' + strokeVar + '" stroke-width="1.25" points="' + pts.join(' ') + '"/></svg>';
+  return pts.join(' ');
 }
 
-function setTrendEl(id, points) {
+function setTrendEl(id, points, kind) {
   var el = document.getElementById(id);
   if (!el) return;
-  if (!points || points.length < 2) { el.innerHTML = ''; el.removeAttribute('title'); return; }
-  el.innerHTML = sparklineSvg(points, 116, 24, 'var(--te-blue)');
-  el.setAttribute('title', 'Trend from /api/kpi_history (24h rollup samples stored locally; ' + points.length + ' points).');
+  if (!points || points.length < 2) { el.innerHTML = ''; return; }
+  var w = 116;
+  var h = 24;
+  var strokeVar = 'var(--te-blue)';
+  var ptsStr = sparklinePolylinePoints(points, w, h);
+  if (!ptsStr) { el.innerHTML = ''; return; }
+
+  el.innerHTML =
+    '<div class="kpi-spark-host">' +
+    '<svg class="kpi-spark-svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<polyline fill="none" stroke="' + strokeVar + '" stroke-width="1.25" points="' + ptsStr + '"/>' +
+    '<rect class="kpi-spark-hit" x="0" y="0" width="' + w + '" height="' + h + '" fill="rgba(0,0,0,0)" pointer-events="all"/>' +
+    '</svg>' +
+    '<div class="kpi-spark-tooltip" role="tooltip" hidden></div></div>';
+
+  var host = el.querySelector('.kpi-spark-host');
+  var tip = el.querySelector('.kpi-spark-tooltip');
+  var svg = el.querySelector('.kpi-spark-svg');
+  if (!host || !tip || !svg) return;
+
+  host.addEventListener('click', function(e) { e.stopPropagation(); });
+
+  function hideTip() {
+    tip.style.display = 'none';
+    tip.setAttribute('hidden', '');
+  }
+
+  svg.addEventListener('mousemove', function(e) {
+    var rect = svg.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    var mx = e.clientX - rect.left;
+    mx = Math.max(0, Math.min(rect.width, mx));
+    var n = points.length;
+    var idx = Math.round((mx / rect.width) * (n - 1));
+    idx = Math.max(0, Math.min(n - 1, idx));
+    var pt = points[idx];
+    tip.textContent = formatTrendValue(kind, pt.v) + ' \u00B7 ' + formatTrendTime(pt.t);
+    tip.style.display = 'block';
+    tip.removeAttribute('hidden');
+    var tx = e.clientX + 12;
+    var ty = e.clientY + 12;
+    tip.style.left = tx + 'px';
+    tip.style.top = ty + 'px';
+    var tw = tip.offsetWidth;
+    var th = tip.offsetHeight;
+    if (tx + tw > window.innerWidth - 8) tip.style.left = Math.max(8, e.clientX - tw - 12) + 'px';
+    if (ty + th > window.innerHeight - 8) tip.style.top = Math.max(8, e.clientY - th - 12) + 'px';
+  });
+
+  svg.addEventListener('mouseleave', hideTip);
+  host.addEventListener('mouseleave', hideTip);
 }
 
 function loadKpiHistoryTrends() {
@@ -769,9 +849,9 @@ function loadKpiHistoryTrends() {
     .then(function(j) {
       if (!j || !j.series) return;
       var s = j.series;
-      setTrendEl('kpiTrendAvail', s.availability_mean);
-      setTrendEl('kpiTrendResp', s.avg_response_ms);
-      setTrendEl('kpiTrendLoss', s.avg_packet_loss);
+      setTrendEl('kpiTrendAvail', s.availability_mean, 'avail');
+      setTrendEl('kpiTrendResp', s.avg_response_ms, 'ms');
+      setTrendEl('kpiTrendLoss', s.avg_packet_loss, 'loss');
     })
     .catch(function() {
       ['kpiTrendAvail', 'kpiTrendResp', 'kpiTrendLoss'].forEach(function(id) {
