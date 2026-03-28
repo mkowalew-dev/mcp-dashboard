@@ -81,6 +81,23 @@
   .kpi-value.red { color: var(--te-red); }
   .kpi-value.blue { color: var(--te-blue); }
   .kpi-sub { font-size: 11px; color: var(--te-text-dim); margin-top: 4px; font-family: var(--font-mono); }
+  .kpi-trend-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    min-height: 18px;
+    letter-spacing: 0.02em;
+  }
+  .kpi-trend-row .kpi-trend-icon { flex-shrink: 0; line-height: 1; font-size: 12px; }
+  .kpi-trend-row .kpi-trend-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi-trend-row.trend-good { color: var(--te-green); }
+  .kpi-trend-row.trend-bad { color: var(--te-red); }
+  .kpi-trend-row.trend-stable { color: var(--te-text-dim); }
+  .kpi-trend-row.trend-na { color: var(--te-text-dim); font-weight: 500; }
 
   .main { display: grid; grid-template-columns: 1fr 380px; min-height: calc(100vh - 58px); }
   .map-panel { padding: 20px; border-right: 1px solid var(--te-border); display: flex; flex-direction: column; }
@@ -427,12 +444,12 @@
 </div>
 
 <div class="kpi-strip" id="kpiStrip">
-  <div class="kpi-card" onclick="openModal('availability')"><div class="kpi-label">Overall Availability</div><div class="kpi-value green" id="kpiAvail">--</div><div class="kpi-sub" id="kpiAvailSub">loading...</div></div>
-  <div class="kpi-card" onclick="openModal('response')"><div class="kpi-label">Avg Response Time</div><div class="kpi-value blue" id="kpiResp">--</div><div class="kpi-sub" id="kpiRespSub">loading...</div></div>
-  <div class="kpi-card" onclick="openModal('loss')"><div class="kpi-label">Packet Loss</div><div class="kpi-value green" id="kpiLoss">--</div><div class="kpi-sub" id="kpiLossSub">loading...</div></div>
-  <div class="kpi-card" onclick="openModal('alerts')"><div class="kpi-label">Active Alerts</div><div class="kpi-value" id="kpiAlerts">--</div><div class="kpi-sub" id="kpiAlertsSub">loading...</div></div>
-  <div class="kpi-card" onclick="openModal('events')"><div class="kpi-label">Active Events</div><div class="kpi-value" id="kpiEvents">--</div><div class="kpi-sub" id="kpiEventsSub">loading...</div></div>
-  <div class="kpi-card" onclick="openModal('outages')"><div class="kpi-label">Internet Outages</div><div class="kpi-value" id="kpiOutages">--</div><div class="kpi-sub" id="kpiOutagesSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('availability')"><div class="kpi-label">Overall Availability</div><div class="kpi-value green" id="kpiAvail">--</div><div class="kpi-trend-row trend-na" id="kpiAvailTrend"><span class="kpi-trend-icon" aria-hidden="true"></span><span class="kpi-trend-text">—</span></div><div class="kpi-sub" id="kpiAvailSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('response')"><div class="kpi-label">Avg Response Time</div><div class="kpi-value blue" id="kpiResp">--</div><div class="kpi-trend-row trend-na" id="kpiRespTrend"><span class="kpi-trend-icon" aria-hidden="true"></span><span class="kpi-trend-text">—</span></div><div class="kpi-sub" id="kpiRespSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('loss')"><div class="kpi-label">Packet Loss</div><div class="kpi-value green" id="kpiLoss">--</div><div class="kpi-trend-row trend-na" id="kpiLossTrend"><span class="kpi-trend-icon" aria-hidden="true"></span><span class="kpi-trend-text">—</span></div><div class="kpi-sub" id="kpiLossSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('alerts')"><div class="kpi-label">Active Alerts</div><div class="kpi-value" id="kpiAlerts">--</div><div class="kpi-trend-row trend-na" id="kpiAlertsTrend"><span class="kpi-trend-icon" aria-hidden="true"></span><span class="kpi-trend-text">—</span></div><div class="kpi-sub" id="kpiAlertsSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('events')"><div class="kpi-label">Active Events</div><div class="kpi-value" id="kpiEvents">--</div><div class="kpi-trend-row trend-na" id="kpiEventsTrend"><span class="kpi-trend-icon" aria-hidden="true"></span><span class="kpi-trend-text">—</span></div><div class="kpi-sub" id="kpiEventsSub">loading...</div></div>
+  <div class="kpi-card" onclick="openModal('outages')"><div class="kpi-label">Internet Outages</div><div class="kpi-value" id="kpiOutages">--</div><div class="kpi-trend-row trend-na" id="kpiOutagesTrend"><span class="kpi-trend-icon" aria-hidden="true"></span><span class="kpi-trend-text">—</span></div><div class="kpi-sub" id="kpiOutagesSub">loading...</div></div>
 </div>
 
 <div class="main">
@@ -505,6 +522,9 @@ let DATA = null;
 let leafletMap = null;
 let currentWindow = '24h';
 let _full24Poll = null;
+/** Previous refresh counts for alert/event/outage strip trends */
+let _nocKpiTrendPrev = null;
+const NOC_KPI_STRIP_HISTORY_H = 168;
 
 const TYPE_LABELS = {
   'http-server': 'HTTP Server', 'page-load': 'Page Load', 'dns-server': 'DNS Server',
@@ -529,6 +549,74 @@ function escHtml(s) {
 
 function escAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function setKpiTrendRow(id, trend) {
+  var row = document.getElementById(id);
+  if (!row) return;
+  var icon = row.querySelector('.kpi-trend-icon');
+  var textEl = row.querySelector('.kpi-trend-text');
+  if (!trend) {
+    row.className = 'kpi-trend-row trend-na';
+    if (icon) icon.textContent = '';
+    if (textEl) textEl.textContent = '\u2014';
+    return;
+  }
+  row.className = 'kpi-trend-row ' + trend.cls;
+  if (icon) icon.textContent = trend.arrow;
+  if (textEl) textEl.textContent = trend.text;
+}
+
+function computeHistoryTrendDelta(series, opts) {
+  if (!series || series.length < 2) return null;
+  var sorted = series.slice().sort(function(a, b) {
+    return new Date(a.t).getTime() - new Date(b.t).getTime();
+  });
+  var prev = sorted[sorted.length - 2].v;
+  var last = sorted[sorted.length - 1].v;
+  if (prev == null || last == null || isNaN(prev) || isNaN(last)) return null;
+  var delta = last - prev;
+  var eps = opts.unit === 'ms' ? 5 : (opts.unit === 'losspct' ? 0.02 : 0.06);
+  if (Math.abs(delta) < eps) {
+    return { arrow: '\u2192', text: 'stable', cls: 'trend-stable' };
+  }
+  var up = delta > 0;
+  var good = opts.higherBetter ? up : !up;
+  var arrow = up ? '\u2191' : '\u2193';
+  var text;
+  if (opts.unit === 'ms') {
+    text = (delta > 0 ? '+' : '') + Math.round(delta) + ' ms';
+  } else {
+    text = (delta > 0 ? '+' : '') + delta.toFixed(2) + '%';
+  }
+  return { arrow: arrow, text: text, cls: good ? 'trend-good' : 'trend-bad' };
+}
+
+function computeCountTrend(prev, cur) {
+  if (prev == null || prev === undefined || typeof cur !== 'number') return null;
+  var d = cur - prev;
+  if (d === 0) {
+    return { arrow: '\u2192', text: 'stable', cls: 'trend-stable' };
+  }
+  var good = d < 0;
+  var arrow = d > 0 ? '\u2191' : '\u2193';
+  var text = (d > 0 ? '+' : '') + d;
+  return { arrow: arrow, text: text, cls: good ? 'trend-good' : 'trend-bad' };
+}
+
+function refreshNocKpiStripTrendsFromHistory() {
+  var win = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
+  var url = '/api/kpi_history?window=' + encodeURIComponent(win) + '&kpi=' + encodeURIComponent('availability_mean,avg_response_ms,avg_packet_loss') + '&since_hours=' + encodeURIComponent(String(NOC_KPI_STRIP_HISTORY_H));
+  fetch(url)
+    .then(function(r) { return r.ok ? r.json() : Promise.resolve(null); })
+    .then(function(j) {
+      if (!j || !j.series) return;
+      var s = j.series;
+      setKpiTrendRow('kpiAvailTrend', computeHistoryTrendDelta(s.availability_mean, { higherBetter: true, unit: 'pct' }));
+      setKpiTrendRow('kpiRespTrend', computeHistoryTrendDelta(s.avg_response_ms, { higherBetter: false, unit: 'ms' }));
+      setKpiTrendRow('kpiLossTrend', computeHistoryTrendDelta(s.avg_packet_loss, { higherBetter: false, unit: 'losspct' }));
+    })
+    .catch(function() { /* keep placeholder */ });
 }
 
 async function fetchData(win) {
@@ -588,6 +676,7 @@ function renderAll() {
   var loadSub = document.getElementById('loadingSub');
   if (loadSub) loadSub.textContent = 'Fetching live data from ' + orgName + '...';
   renderKPIs();
+  refreshNocKpiStripTrendsFromHistory();
   buildMap();
   renderCEATests();
   renderEPAData();
@@ -623,6 +712,7 @@ function scheduleUpgradeToFull24h() {
 }
 
 function renderKPIs() {
+  var prevSnap = _nocKpiTrendPrev;
   const c = DATA.COUNTS || {};
   const ex = DATA.EXTRA_KPI || {};
   const avail = DATA.TEST_AVAILABILITY || {};
@@ -699,6 +789,16 @@ function renderKPIs() {
   outEl.className = 'kpi-value ' + (totalOutages > 5 ? 'red' : totalOutages > 0 ? 'yellow' : 'green');
   var providers = (DATA.OUTAGES || []).length;
   document.getElementById('kpiOutagesSub').textContent = providers + ' providers affected';
+
+  setKpiTrendRow('kpiAlertsTrend', computeCountTrend(prevSnap ? prevSnap.alerts : null, alertCount));
+  setKpiTrendRow('kpiEventsTrend', computeCountTrend(prevSnap ? prevSnap.events : null, eventCount));
+  setKpiTrendRow('kpiOutagesTrend', computeCountTrend(prevSnap ? prevSnap.outages : null, totalOutages));
+
+  _nocKpiTrendPrev = {
+    alerts: alertCount,
+    events: eventCount,
+    outages: totalOutages,
+  };
 }
 
 var mapLayers = { enterprise: null, endpoint: null };
