@@ -86,6 +86,9 @@ MCP_SYNTH_CONCURRENCY = max(1, min(10, _env_int("MCP_SYNTH_CONCURRENCY", 1)))
 # Global MCP rate limit: max requests per minute (e.g. 240 rpm = 4 req/s); min interval between calls
 MCP_MAX_RPM = max(10, min(500, _env_int("MCP_MAX_RPM", 240)))
 _mcp_min_interval_sec = 60.0 / MCP_MAX_RPM
+# MCP uses httpx; ConnectTimeout = TCP/TLS to MCP_URL did not finish in time (firewall, proxy, slow egress).
+MCP_CONNECT_TIMEOUT_SEC = max(5.0, min(600.0, _env_float("MCP_CONNECT_TIMEOUT_SEC", 30.0)))
+MCP_READ_TIMEOUT_SEC = max(30.0, min(3600.0, _env_float("MCP_READ_TIMEOUT_SEC", 300.0)))
 
 # Optional dashboard login: set DASHBOARD_USERNAME and DASHBOARD_PASSWORD in .env
 AUTH_USERNAME = (os.getenv("DASHBOARD_USERNAME") or "").strip()
@@ -395,40 +398,94 @@ def _unwrap_exception(e: Exception) -> Exception:
     return e
 
 
+_mcp_streamable_fn = None
+_mcp_create_http_client_fn = None  # None = use legacy streamable client without custom httpx timeout
+
+
+def _ensure_mcp_streamable_helpers():
+    """Resolve MCP SDK entry points once; prefer custom httpx timeouts when supported."""
+    global _mcp_streamable_fn, _mcp_create_http_client_fn
+    if _mcp_streamable_fn is not None:
+        return
+    import inspect
+
+    mod = __import__("mcp.client.streamable_http", fromlist=["streamable_http_client"])
+    _mcp_streamable_fn = getattr(mod, "streamable_http_client", None) or getattr(
+        mod, "streamablehttp_client", None
+    )
+    if _mcp_streamable_fn is None:
+        raise RuntimeError("mcp.client.streamable_http has no streamable HTTP client function")
+    try:
+        from mcp.shared._httpx_utils import create_mcp_http_client as _create
+
+        if "http_client" in inspect.signature(_mcp_streamable_fn).parameters:
+            _mcp_create_http_client_fn = _create
+    except Exception:
+        _mcp_create_http_client_fn = None
+
+
+class _McpToolRateLimited(Exception):
+    """Tool response indicated HTTP 429; outer loop should backoff and retry."""
+
+
+async def _mcp_execute_tool(session, tool_name: str, arguments: dict | None) -> dict | list:
+    await session.initialize()
+    result = await session.call_tool(tool_name, arguments or {})
+    if getattr(result, "isError", False):
+        texts = [c.text for c in result.content if hasattr(c, "text")]
+        err_text = "\n".join(texts)
+        if "429" in err_text or "Too Many Requests" in err_text:
+            raise _McpToolRateLimited()
+        log.error("MCP tool error: tool=%s, error=%s", tool_name, err_text[:500])
+        raise RuntimeError(f"MCP tool error: {err_text[:200]}")
+    texts = [c.text for c in result.content if hasattr(c, "text")]
+    combined = "\n".join(texts)
+    try:
+        return json.loads(combined)
+    except json.JSONDecodeError:
+        return {"raw": combined}
+
+
 async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: int = 4):
-    from mcp.client.streamable_http import streamablehttp_client
     from mcp import ClientSession
+
+    _ensure_mcp_streamable_helpers()
+    streamable = _mcp_streamable_fn
+    create_mcp_http = _mcp_create_http_client_fn
 
     async def _do() -> dict | list:
         headers = {"Authorization": f"Bearer {MCP_TOKEN}"}
+        timeout = httpx.Timeout(
+            connect=MCP_CONNECT_TIMEOUT_SEC,
+            read=MCP_READ_TIMEOUT_SEC,
+            write=max(60.0, MCP_CONNECT_TIMEOUT_SEC),
+            pool=MCP_CONNECT_TIMEOUT_SEC,
+        )
         last_err = None
         for attempt in range(retries):
             await _mcp_rate_limit_wait()
             try:
-                async with streamablehttp_client(url=MCP_URL, headers=headers) as (read, write, _):
-                    async with ClientSession(read, write) as session:
-                        await session.initialize()
-                        result = await session.call_tool(tool_name, arguments or {})
-                        if getattr(result, "isError", False):
-                            texts = [c.text for c in result.content if hasattr(c, "text")]
-                            err_text = "\n".join(texts)
-                            if "429" in err_text or "Too Many Requests" in err_text:
-                                wait = min(60, 2 ** (attempt + 2))
-                                jitter = random.uniform(0, min(5, wait * 0.2))
-                                log.error(
-                                    "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%.1fs",
-                                    tool_name, attempt + 1, retries, wait + jitter,
-                                )
-                                await asyncio.sleep(wait + jitter)
-                                continue
-                            log.error("MCP tool error: tool=%s, error=%s", tool_name, err_text[:500])
-                            raise RuntimeError(f"MCP tool error: {err_text[:200]}")
-                        texts = [c.text for c in result.content if hasattr(c, "text")]
-                        combined = "\n".join(texts)
-                        try:
-                            return json.loads(combined)
-                        except json.JSONDecodeError:
-                            return {"raw": combined}
+                if create_mcp_http is not None:
+                    client = create_mcp_http(headers=headers, timeout=timeout)
+                    async with client:
+                        async with streamable(url=MCP_URL, http_client=client) as _streams:
+                            read, write = _streams[0], _streams[1]
+                            async with ClientSession(read, write) as session:
+                                return await _mcp_execute_tool(session, tool_name, arguments)
+                else:
+                    async with streamable(url=MCP_URL, headers=headers) as _streams:
+                        read, write = _streams[0], _streams[1]
+                        async with ClientSession(read, write) as session:
+                            return await _mcp_execute_tool(session, tool_name, arguments)
+            except _McpToolRateLimited:
+                wait = min(60, 2 ** (attempt + 2))
+                jitter = random.uniform(0, min(5, wait * 0.2))
+                log.error(
+                    "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%.1fs",
+                    tool_name, attempt + 1, retries, wait + jitter,
+                )
+                await asyncio.sleep(wait + jitter)
+                continue
             except RuntimeError:
                 raise
             except Exception as e:
@@ -446,6 +503,16 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                     log.warning(
                         "MCP connection broken (stream closed); will retry with fresh connection (attempt %d/%d).",
                         attempt + 1, retries,
+                    )
+                elif isinstance(root, (httpx.ConnectTimeout, httpx.ConnectError, httpx.ReadTimeout)):
+                    log.error(
+                        "MCP HTTP %s to %s (connect_timeout=%.1fs read_timeout=%.1fs). "
+                        "Check outbound HTTPS to this host, corporate proxy (HTTPS_PROXY), and firewall; "
+                        "increase MCP_CONNECT_TIMEOUT_SEC if the path is slow.",
+                        type(root).__name__,
+                        MCP_URL,
+                        MCP_CONNECT_TIMEOUT_SEC,
+                        MCP_READ_TIMEOUT_SEC,
                     )
                 is_429 = (
                     "429" in str(e) or "Too Many Requests" in str(e)
