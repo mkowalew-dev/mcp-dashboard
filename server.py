@@ -46,8 +46,13 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
-# Suppress Werkzeug's per-request access logs (no incoming API call logging)
-logging.getLogger("werkzeug").setLevel(logging.WARNING)
+# Werkzeug access logs: off unless LOG_LEVEL is INFO or DEBUG (reduces noise at default ERROR)
+if _LOG_LEVEL <= logging.DEBUG:
+    logging.getLogger("werkzeug").setLevel(logging.DEBUG)
+elif _LOG_LEVEL <= logging.INFO:
+    logging.getLogger("werkzeug").setLevel(logging.INFO)
+else:
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 # --- Config (env); no secrets logged ---
 MCP_URL = os.getenv("MCP_URL", "https://api.thousandeyes.com/mcp").strip()
@@ -1625,6 +1630,8 @@ def _require_dashboard_auth():
     if p.startswith("/static/") or p == "/login":
         return None
     if p == "/api/health":
+        return None
+    if p == "/api/refresh-status":
         return None
     if _session_authenticated():
         return None

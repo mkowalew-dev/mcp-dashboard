@@ -81,8 +81,9 @@ start_dashboard() {
     base_url="http://127.0.0.1:${port}"
     wait_sec=0
     max_wait=30
+    # Use /api/health (always 200 when up); GET / redirects to /login when dashboard auth is enabled.
     while [ $wait_sec -lt $max_wait ]; do
-        if curl -s -o /dev/null -w "%{http_code}" "$base_url/" 2>/dev/null | grep -q 200; then
+        if curl -s -o /dev/null -w "%{http_code}" "$base_url/api/health" 2>/dev/null | grep -q 200; then
             break
         fi
         sleep 1
