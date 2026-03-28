@@ -357,6 +357,10 @@
     font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
     color: var(--te-text-dim); font-weight: 600; margin-bottom: 12px;
   }
+  .noc-trend-caption {
+    font-size: 10px; color: var(--te-text-dim); margin: 0 0 10px 0; line-height: 1.45;
+  }
+  .noc-metric-trend-wrap { position: relative; min-height: 48px; }
   .modal-row {
     display: flex; align-items: center; justify-content: space-between;
     padding: 8px 0; border-bottom: 1px solid var(--te-border); font-size: 12px;
@@ -521,6 +525,10 @@ function escHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+function escAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function fetchData(win) {
@@ -1847,6 +1855,183 @@ function loadAgentPerf(wrap) {
 function toggleEpaCard(id) { document.getElementById(id).classList.toggle('expanded'); }
 
 // ═══════════════════════════════════════════
+// MODALS — KPI history time-series (/api/kpi_history)
+// ═══════════════════════════════════════════
+var NOC_TREND_SINCE_H = 720;
+
+function formatNocTrendValue(kind, v) {
+  if (v == null || isNaN(v)) return 'N/A';
+  if (kind === 'ms') return Math.round(v) + ' ms';
+  return v.toFixed(2) + '%';
+}
+
+function formatNocTrendAxisTime(iso) {
+  try {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+  } catch (e) {
+    return '';
+  }
+}
+
+function renderNocTimeSeriesChart(container, rawPoints, valueKind, strokeColor, gradientId) {
+  if (!container) return;
+  if (!rawPoints || rawPoints.length < 2) {
+    container.innerHTML = '<div style="font-size:12px;color:var(--te-text-dim);padding:16px;text-align:center;">Not enough local history for a trend yet. Points are added on each scheduled refresh (SQLite KPI store).</div>';
+    return;
+  }
+  var points = rawPoints.slice().sort(function(a, b) {
+    return new Date(a.t).getTime() - new Date(b.t).getTime();
+  });
+  var n = points.length;
+  var tMs = points.map(function(p) { return new Date(p.t).getTime(); });
+  var vs = points.map(function(p) { return p.v; });
+  var minV = Math.min.apply(null, vs);
+  var maxV = Math.max.apply(null, vs);
+  if (!isFinite(minV) || !isFinite(maxV)) {
+    container.innerHTML = '<div style="font-size:12px;color:var(--te-text-dim);padding:16px;">Invalid trend data.</div>';
+    return;
+  }
+  if (Math.abs(maxV - minV) < 1e-9) {
+    if (valueKind === 'ms') { minV -= 10; maxV += 10; } else { minV -= 0.5; maxV += 0.5; }
+  }
+  var t0 = tMs[0];
+  var t1 = tMs[n - 1];
+  var tSpan = t1 - t0 || 1;
+
+  var W = 760;
+  var H = 210;
+  var padL = 56;
+  var padR = 14;
+  var padT = 14;
+  var padB = 50;
+  var plotW = W - padL - padR;
+  var plotH = H - padT - padB;
+
+  var xy = points.map(function(p, i) {
+    var ti = tMs[i];
+    var x = padL + ((ti - t0) / tSpan) * plotW;
+    var y = padT + plotH - ((p.v - minV) / (maxV - minV)) * plotH;
+    return { x: x, y: y, v: p.v, t: p.t };
+  });
+
+  var pathD = 'M' + xy.map(function(p) { return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L');
+  var areaD = pathD + ' L' + xy[xy.length - 1].x.toFixed(1) + ',' + (padT + plotH) + ' L' + xy[0].x.toFixed(1) + ',' + (padT + plotH) + ' Z';
+
+  var tickSlots = Math.min(5, n);
+  var seenIdx = {};
+  var xTicks = [];
+  for (var xt = 0; xt < tickSlots; xt++) {
+    var idx = tickSlots === 1 ? 0 : Math.round((xt / (tickSlots - 1)) * (n - 1));
+    if (seenIdx[idx]) continue;
+    seenIdx[idx] = true;
+    xTicks.push({ x: xy[idx].x, label: formatNocTrendAxisTime(points[idx].t) });
+  }
+
+  var html = '';
+  html += '<svg class="noc-trend-svg" width="100%" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="display:block;max-width:100%;">';
+  html += '<defs><linearGradient id="' + escAttr(gradientId) + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + escAttr(strokeColor) + '" stop-opacity="0.22"/><stop offset="100%" stop-color="' + escAttr(strokeColor) + '" stop-opacity="0.02"/></linearGradient></defs>';
+
+  for (var g = 0; g <= 4; g++) {
+    var gy = padT + (plotH / 4) * g;
+    var gv = maxV - (g / 4) * (maxV - minV);
+    var gLabel = valueKind === 'ms' ? Math.round(gv) + ' ms' : gv.toFixed(2) + '%';
+    html += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--te-border)" stroke-width="0.5" stroke-dasharray="3,3"/>';
+    html += '<text x="' + (padL - 8) + '" y="' + (gy + 3) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)">' + escHtml(gLabel) + '</text>';
+  }
+
+  for (var xi = 0; xi < xTicks.length; xi++) {
+    var tk = xTicks[xi];
+    html += '<text x="' + tk.x.toFixed(1) + '" y="' + (H - 14) + '" text-anchor="middle" fill="var(--te-text-dim)" font-size="9" font-family="var(--font-body)">' + escHtml(tk.label) + '</text>';
+  }
+  html += '<text x="' + ((padL + W - padR) / 2).toFixed(1) + '" y="' + (H - 2) + '" text-anchor="middle" fill="var(--te-text-dim)" font-size="8" font-family="var(--font-body)" opacity="0.75">Sample time (local)</text>';
+
+  html += '<path d="' + areaD + '" fill="url(#' + escAttr(gradientId) + ')"/>';
+  html += '<path d="' + pathD + '" fill="none" stroke="' + escAttr(strokeColor) + '" stroke-width="2" stroke-linejoin="round"/>';
+  html += '<line class="noc-trend-crosshair" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + plotH) + '" stroke="var(--te-cyan)" stroke-width="1" stroke-dasharray="4,3" opacity="0"/>';
+  html += '<circle class="noc-trend-hitdot" cx="0" cy="0" r="5" fill="' + escAttr(strokeColor) + '" stroke="var(--te-dark-2)" stroke-width="2" opacity="0"/>';
+  html += '<rect class="noc-trend-hit" x="' + padL + '" y="' + padT + '" width="' + plotW + '" height="' + plotH + '" fill="rgba(0,0,0,0)" pointer-events="all" style="cursor:crosshair"/>';
+  html += '</svg>';
+  html += '<div class="noc-metric-trend-tooltip" role="tooltip" style="display:none;position:fixed;z-index:8000;background:var(--te-dark-3);border:1px solid var(--te-border);border-radius:6px;padding:8px 12px;font-size:11px;font-family:var(--font-mono);color:var(--te-text);box-shadow:0 8px 24px rgba(0,0,0,0.5);pointer-events:none;white-space:nowrap;"></div>';
+
+  container.innerHTML = html;
+
+  var svg = container.querySelector('.noc-trend-svg');
+  var hit = container.querySelector('.noc-trend-hit');
+  var cross = container.querySelector('.noc-trend-crosshair');
+  var dot = container.querySelector('.noc-trend-hitdot');
+  var tip = container.querySelector('.noc-metric-trend-tooltip');
+  if (!svg || !hit || !cross || !dot || !tip) return;
+
+  function hideHover() {
+    cross.setAttribute('opacity', '0');
+    dot.setAttribute('opacity', '0');
+    tip.style.display = 'none';
+  }
+
+  hit.addEventListener('mousemove', function(e) {
+    var rect = svg.getBoundingClientRect();
+    var sx = ((e.clientX - rect.left) / rect.width) * W;
+    if (sx < padL || sx > padL + plotW) { hideHover(); return; }
+    var frac = (sx - padL) / plotW;
+    var idx = Math.round(frac * (n - 1));
+    idx = Math.max(0, Math.min(n - 1, idx));
+    var pt = xy[idx];
+    cross.setAttribute('x1', pt.x);
+    cross.setAttribute('x2', pt.x);
+    cross.setAttribute('opacity', '0.9');
+    dot.setAttribute('cx', pt.x);
+    dot.setAttribute('cy', pt.y);
+    dot.setAttribute('opacity', '1');
+    tip.textContent = formatNocTrendValue(valueKind, pt.v) + ' \u00B7 ' + formatNocTrendAxisTime(pt.t);
+    tip.style.display = 'block';
+    var tx = e.clientX + 14;
+    var ty = e.clientY + 14;
+    tip.style.left = tx + 'px';
+    tip.style.top = ty + 'px';
+    var tw = tip.offsetWidth;
+    var th = tip.offsetHeight;
+    if (tx + tw > window.innerWidth - 8) tip.style.left = Math.max(8, e.clientX - tw - 14) + 'px';
+    if (ty + th > window.innerHeight - 8) tip.style.top = Math.max(8, e.clientY - th - 14) + 'px';
+  });
+  hit.addEventListener('mouseleave', hideHover);
+}
+
+function mountNocKpiTrend(mountId, kpiKey, valueKind, strokeColor, gradientId) {
+  var el = document.getElementById(mountId);
+  if (!el) return;
+  el.innerHTML = '<div style="font-size:11px;color:var(--te-text-dim);padding:12px;">Loading trend\u2026</div>';
+  var win = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
+  var url = '/api/kpi_history?window=' + encodeURIComponent(win) + '&kpi=' + encodeURIComponent(kpiKey) + '&since_hours=' + encodeURIComponent(String(NOC_TREND_SINCE_H));
+  fetch(url)
+    .then(function(r) {
+      if (r.status === 503) return { _disabled: true };
+      return r.json();
+    })
+    .then(function(j) {
+      if (!el.isConnected) return;
+      if (j && j._disabled) {
+        el.innerHTML = '<div style="font-size:12px;color:var(--te-text-dim);padding:16px;text-align:center;">KPI history is disabled. Set KPI_HISTORY_DISABLED=false and allow refreshes to populate SQLite.</div>';
+        return;
+      }
+      if (j && j.error) {
+        el.innerHTML = '<div style="font-size:12px;color:var(--te-text-dim);padding:16px;">' + escHtml(j.error) + '</div>';
+        return;
+      }
+      var series = j && j.series && j.series[kpiKey];
+      renderNocTimeSeriesChart(el, series, valueKind, strokeColor, gradientId);
+    })
+    .catch(function() {
+      if (el.isConnected) {
+        el.innerHTML = '<div style="font-size:12px;color:var(--te-text-dim);padding:16px;text-align:center;">Could not load trend history.</div>';
+      }
+    });
+}
+
+// ═══════════════════════════════════════════
 // MODALS — Drill-Down Views
 // ═══════════════════════════════════════════
 function openModal(type) {
@@ -1859,12 +2044,15 @@ function openModal(type) {
   if (type === 'availability') {
     title.textContent = 'Overall Availability \u2014 Drill-Down';
     body.innerHTML = buildAvailabilityModal();
+    mountNocKpiTrend('nocTrendMountAvail', 'availability_mean', 'pct', 'var(--te-green)', 'nocAvailHistGrad');
   } else if (type === 'response') {
     title.textContent = 'Response Time Analysis';
     body.innerHTML = buildResponseModal();
+    mountNocKpiTrend('nocTrendMountResp', 'avg_response_ms', 'ms', 'var(--te-red)', 'nocRespHistGrad');
   } else if (type === 'loss') {
     title.textContent = 'Packet Loss Analysis';
     body.innerHTML = buildLossModal();
+    mountNocKpiTrend('nocTrendMountLoss', 'avg_packet_loss', 'losspct', 'var(--te-orange)', 'nocLossHistGrad');
   } else if (type === 'alerts') {
     title.textContent = 'Active Alert Details';
     body.innerHTML = buildAlertModal();
@@ -1918,6 +2106,13 @@ function buildAvailabilityModal() {
   html += '<div class="modal-kpi"><div class="modal-kpi-label">Worst P1</div><div class="modal-kpi-val" style="color:' + aColor(p1) + '">' + (p1 !== '--' ? p1.toFixed(1) + '%' : '--') + '</div></div>';
   html += '</div>';
 
+  var twAvail = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
+  html += '<div class="modal-chart-area">';
+  html += '<div class="modal-chart-title">Aggregate mean availability over time</div>';
+  html += '<p class="noc-trend-caption">Local KPI history (' + escHtml(twAvail) + ' rollup, last ' + NOC_TREND_SINCE_H + 'h). Hover for value and time; x-axis shows sample times.</p>';
+  html += '<div class="noc-metric-trend-wrap" id="nocTrendMountAvail"></div>';
+  html += '</div>';
+
   var sorted = Object.keys(avail).map(function(name) {
     return { name: name, val: avail[name], id: idLookup[name] || '' };
   }).sort(function(a,b) { return a.val - b.val; });
@@ -1941,7 +2136,7 @@ function buildAvailabilityModal() {
     var areaD = pathD + ' L' + points[points.length-1].x.toFixed(1) + ',' + (padT + plotH) + ' L' + points[0].x.toFixed(1) + ',' + (padT + plotH) + ' Z';
 
     html += '<div class="modal-chart-area">';
-    html += '<div class="modal-chart-title">Availability Distribution &mdash; All Monitored Tests</div>';
+    html += '<div class="modal-chart-title">Per-test availability (current window)</div>';
     html += '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;">';
     html += '<defs><linearGradient id="availGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--te-green)" stop-opacity="0.25"/><stop offset="100%" stop-color="var(--te-green)" stop-opacity="0.02"/></linearGradient></defs>';
 
@@ -2018,6 +2213,13 @@ function buildResponseModal() {
   html += '<div class="modal-kpi"><div class="modal-kpi-label">P99</div><div class="modal-kpi-val" style="color:' + pColor(p99) + '">' + p99 + 'ms</div></div>';
   html += '</div>';
 
+  var twResp = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
+  html += '<div class="modal-chart-area">';
+  html += '<div class="modal-chart-title">Average HTTP response time over time</div>';
+  html += '<p class="noc-trend-caption">Local KPI history (' + escHtml(twResp) + ' rollup, last ' + NOC_TREND_SINCE_H + 'h). Hover for value and time; x-axis shows sample times.</p>';
+  html += '<div class="noc-metric-trend-wrap" id="nocTrendMountResp"></div>';
+  html += '</div>';
+
   if (respByTest.length > 1) {
     var sorted = respByTest.slice().sort(function(a,b){ return a.ms - b.ms; });
     var maxMs = sorted[sorted.length - 1].ms;
@@ -2039,7 +2241,7 @@ function buildResponseModal() {
     var areaD = pathD + ' L' + points[points.length-1].x.toFixed(1) + ',' + (padT + plotH) + ' L' + points[0].x.toFixed(1) + ',' + (padT + plotH) + ' Z';
 
     html += '<div class="modal-chart-area">';
-    html += '<div class="modal-chart-title">Response Time Distribution &mdash; All HTTP Tests</div>';
+    html += '<div class="modal-chart-title">Per-test response time (current window)</div>';
     html += '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;">';
     html += '<defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--te-red)" stop-opacity="0.25"/><stop offset="100%" stop-color="var(--te-red)" stop-opacity="0.02"/></linearGradient></defs>';
 
@@ -2117,6 +2319,13 @@ function buildLossModal() {
   html += '<div class="modal-kpi"><div class="modal-kpi-label">P99</div><div class="modal-kpi-val" style="color:' + lColor(p99) + '">' + p99 + '%</div></div>';
   html += '</div>';
 
+  var twLoss = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
+  html += '<div class="modal-chart-area">';
+  html += '<div class="modal-chart-title">Average packet loss over time</div>';
+  html += '<p class="noc-trend-caption">Local KPI history (' + escHtml(twLoss) + ' rollup, last ' + NOC_TREND_SINCE_H + 'h). Hover for value and time; x-axis shows sample times.</p>';
+  html += '<div class="noc-metric-trend-wrap" id="nocTrendMountLoss"></div>';
+  html += '</div>';
+
   if (lossByTest.length > 1) {
     var chartData = lossByTest.slice().sort(function(a,b){ return a.loss - b.loss; });
     var maxLoss = chartData[chartData.length - 1].loss;
@@ -2136,7 +2345,7 @@ function buildLossModal() {
     var areaD = pathD + ' L' + points[points.length-1].x.toFixed(1) + ',' + (padT + plotH) + ' L' + points[0].x.toFixed(1) + ',' + (padT + plotH) + ' Z';
 
     html += '<div class="modal-chart-area">';
-    html += '<div class="modal-chart-title">Packet Loss Distribution &mdash; All Monitored Tests</div>';
+    html += '<div class="modal-chart-title">Per-test packet loss (current window)</div>';
     html += '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;">';
     html += '<defs><linearGradient id="lossGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--te-orange)" stop-opacity="0.25"/><stop offset="100%" stop-color="var(--te-orange)" stop-opacity="0.02"/></linearGradient></defs>';
 
