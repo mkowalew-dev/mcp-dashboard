@@ -87,7 +87,7 @@ MCP_SYNTH_CONCURRENCY = max(1, min(10, _env_int("MCP_SYNTH_CONCURRENCY", 1)))
 MCP_MAX_RPM = max(10, min(500, _env_int("MCP_MAX_RPM", 240)))
 _mcp_min_interval_sec = 60.0 / MCP_MAX_RPM
 # MCP uses httpx; ConnectTimeout = TCP/TLS to MCP_URL did not finish in time (firewall, proxy, slow egress).
-MCP_CONNECT_TIMEOUT_SEC = max(5.0, min(600.0, _env_float("MCP_CONNECT_TIMEOUT_SEC", 30.0)))
+MCP_CONNECT_TIMEOUT_SEC = max(5.0, min(600.0, _env_float("MCP_CONNECT_TIMEOUT_SEC", 60.0)))
 MCP_READ_TIMEOUT_SEC = max(30.0, min(3600.0, _env_float("MCP_READ_TIMEOUT_SEC", 300.0)))
 
 # Optional dashboard login: set DASHBOARD_USERNAME and DASHBOARD_PASSWORD in .env
@@ -398,6 +398,36 @@ def _unwrap_exception(e: Exception) -> Exception:
     return e
 
 
+def _find_httpx_transport_error(exc: BaseException, _seen: set | None = None) -> BaseException | None:
+    """Find ConnectTimeout / ConnectError / ReadTimeout in exc, __cause__, __context__, or ExceptionGroup."""
+    if _seen is None:
+        _seen = set()
+    eid = id(exc)
+    if eid in _seen:
+        return None
+    _seen.add(eid)
+    if isinstance(exc, (httpx.ConnectTimeout, httpx.ConnectError, httpx.ReadTimeout)):
+        return exc
+    sub = getattr(exc, "exceptions", None)
+    if sub and type(exc).__name__ in ("ExceptionGroup", "BaseExceptionGroup"):
+        for s in sub:
+            if isinstance(s, BaseException):
+                found = _find_httpx_transport_error(s, _seen)
+                if found is not None:
+                    return found
+    cause = getattr(exc, "__cause__", None)
+    if isinstance(cause, BaseException):
+        found = _find_httpx_transport_error(cause, _seen)
+        if found is not None:
+            return found
+    ctx = getattr(exc, "__context__", None)
+    if isinstance(ctx, BaseException) and ctx is not cause:
+        found = _find_httpx_transport_error(ctx, _seen)
+        if found is not None:
+            return found
+    return None
+
+
 _mcp_streamable_fn = None
 _mcp_create_http_client_fn = None  # None = use legacy streamable client without custom httpx timeout
 
@@ -493,27 +523,33 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                 last_err = root
                 err_str = (str(root) or repr(root) or type(root).__name__).strip()
                 err_str = err_str or type(root).__name__
+                transport_exc = _find_httpx_transport_error(e) or _find_httpx_transport_error(root)
+                logged_specific = False
                 if isinstance(root, httpx.HTTPStatusError) and getattr(root, "response", None):
                     status_code = getattr(root.response, "status_code", None)
                     log.error(
                         "ThousandEyes API HTTP error: status=%s, url=%s; will retry (attempt %d/%d).",
                         status_code, str(getattr(root.response, "url", MCP_URL)), attempt + 1, retries,
                     )
-                elif type(root).__name__ == "BrokenResourceError":
-                    log.warning(
-                        "MCP connection broken (stream closed); will retry with fresh connection (attempt %d/%d).",
-                        attempt + 1, retries,
-                    )
-                elif isinstance(root, (httpx.ConnectTimeout, httpx.ConnectError, httpx.ReadTimeout)):
+                    logged_specific = True
+                elif transport_exc is not None:
                     log.error(
                         "MCP HTTP %s to %s (connect_timeout=%.1fs read_timeout=%.1fs). "
-                        "Check outbound HTTPS to this host, corporate proxy (HTTPS_PROXY), and firewall; "
-                        "increase MCP_CONNECT_TIMEOUT_SEC if the path is slow.",
-                        type(root).__name__,
+                        "Allow outbound HTTPS to this host; set HTTPS_PROXY if required; "
+                        "increase MCP_CONNECT_TIMEOUT_SEC (e.g. 120) on slow or inspected links. "
+                        "BrokenResourceError after this usually means the same failed connection.",
+                        type(transport_exc).__name__,
                         MCP_URL,
                         MCP_CONNECT_TIMEOUT_SEC,
                         MCP_READ_TIMEOUT_SEC,
                     )
+                    logged_specific = True
+                elif type(root).__name__ == "BrokenResourceError":
+                    log.warning(
+                        "MCP stream closed unexpectedly (attempt %d/%d); retrying with a new connection.",
+                        attempt + 1, retries,
+                    )
+                    logged_specific = True
                 is_429 = (
                     "429" in str(e) or "Too Many Requests" in str(e)
                     or "429" in str(root) or "Too Many Requests" in str(root)
@@ -528,10 +564,11 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                 else:
                     wait = min(30, 2 ** (attempt + 2))
                     jitter = random.uniform(0, min(3, wait * 0.2))
-                    log.error(
-                        "MCP transient error: tool=%s, attempt=%d/%d, retry_in=%.1fs, error=%s",
-                        tool_name, attempt + 1, retries, wait + jitter, err_str,
-                    )
+                    if not logged_specific:
+                        log.error(
+                            "MCP transient error: tool=%s, attempt=%d/%d, retry_in=%.1fs, error=%s",
+                            tool_name, attempt + 1, retries, wait + jitter, err_str,
+                        )
                 await asyncio.sleep(wait + jitter)
                 continue
         root = _unwrap_exception(last_err) if last_err else last_err
