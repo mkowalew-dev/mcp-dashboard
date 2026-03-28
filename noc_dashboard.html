@@ -59,6 +59,8 @@
   .header-brand span { color: var(--te-blue); }
   .header-subtitle { font-size: 11px; color: var(--te-text-dim); letter-spacing: 2px; text-transform: uppercase; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--te-dark-4); }
   .header-right { display:flex; align-items:center; gap: 20px; }
+  a.logout-link { font-size: 12px; font-weight: 600; color: var(--te-text-dim); text-decoration: none; }
+  a.logout-link:hover { color: var(--te-text); }
   .live-indicator { display:flex; align-items:center; gap:7px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--te-green); font-weight: 600; }
   .live-dot { width:7px; height:7px; border-radius:50%; background: var(--te-green); animation: pulse 2s ease-in-out infinite; box-shadow: 0 0 8px var(--te-green); }
   @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
@@ -373,6 +375,7 @@
 </style>
 </head>
 <body>
+<script src="/static/dashboard_auth.js"></script>
 <div class="app-layout">
 <nav class="nav-sidebar" aria-label="Dashboard navigation">
   <a href="/" class="nav-link active" title="NOC Performance Overview">
@@ -406,6 +409,7 @@
     <span class="header-subtitle">NOC Performance Overview</span>
   </div>
   <div class="header-right">
+    <a href="/logout" class="logout-link">Log out</a>
     <button class="refresh-btn" onclick="doRefresh()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       Refresh

@@ -62,6 +62,8 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 .header-brand { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--te-text-dim); margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--te-dark-4); }
 .header-subtitle { font-size: 11px; color: var(--te-text-dim); letter-spacing: 2px; text-transform: uppercase; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--te-dark-4); }
 .header-right { display:flex; align-items:center; gap: 20px; }
+a.logout-link { font-size: 12px; font-weight: 600; color: var(--te-text-dim); text-decoration: none; }
+a.logout-link:hover { color: var(--te-text); }
 .live-indicator { display:flex; align-items:center; gap:7px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--te-green); font-weight: 600; }
 .live-dot { width:7px; height:7px; border-radius:50%; background: var(--te-green); animation: pulse 2s ease-in-out infinite; box-shadow: 0 0 8px var(--te-green); }
 @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
@@ -198,6 +200,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
 </style>
 </head>
 <body>
+<script src="/static/dashboard_auth.js"></script>
 <div class="app-layout">
 <nav class="nav-sidebar" aria-label="Dashboard navigation">
   <a href="/" class="nav-link" title="NOC Performance Overview">
@@ -231,6 +234,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--te-blue); outli
     <span class="header-subtitle">Network &amp; Application Assurance</span>
   </div>
   <div class="header-right">
+    <a href="/logout" class="logout-link">Log out</a>
     <div class="live-indicator"><span class="live-dot" aria-hidden="true"></span> Live</div>
     <div class="refresh-meta" id="refreshMeta"></div>
     <button type="button" class="refresh-btn" onclick="doRefresh()" title="Refresh metrics">

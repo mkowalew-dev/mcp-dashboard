@@ -11,10 +11,13 @@ merge order stays deterministic; cache TTL aligned to refresh interval.
 
 import asyncio
 import csv
+import hashlib
+import hmac
 import io
 import json
 import logging
 import os
+import secrets
 import random
 import re
 import threading
@@ -26,7 +29,7 @@ from datetime import datetime, timezone, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, redirect, request, send_file, session, url_for
 
 load_dotenv()
 
@@ -78,6 +81,29 @@ MCP_SYNTH_CONCURRENCY = max(1, min(10, _env_int("MCP_SYNTH_CONCURRENCY", 1)))
 # Global MCP rate limit: max requests per minute (e.g. 240 rpm = 4 req/s); min interval between calls
 MCP_MAX_RPM = max(10, min(500, _env_int("MCP_MAX_RPM", 240)))
 _mcp_min_interval_sec = 60.0 / MCP_MAX_RPM
+
+# Optional dashboard login: set DASHBOARD_USERNAME and DASHBOARD_PASSWORD in .env
+AUTH_USERNAME = (os.getenv("DASHBOARD_USERNAME") or "").strip()
+AUTH_PASSWORD = (os.getenv("DASHBOARD_PASSWORD") or "").strip()
+AUTH_ENABLED = bool(AUTH_USERNAME and AUTH_PASSWORD)
+_flask_secret = (os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET_KEY") or "").strip()
+if AUTH_ENABLED and not _flask_secret:
+    _flask_secret = secrets.token_hex(32)
+    log.warning(
+        "Dashboard auth enabled but SECRET_KEY/FLASK_SECRET_KEY not set; using ephemeral signing key "
+        "(sessions reset on restart). Set SECRET_KEY in .env for production."
+    )
+elif not _flask_secret:
+    _flask_secret = secrets.token_hex(16)
+app.secret_key = _flask_secret
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = (os.getenv("SESSION_COOKIE_SECURE") or "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=max(1, min(168, _env_int("SESSION_HOURS", 8))))
 
 # Single shared event loop for all MCP async calls — eliminates per-thread event-loop races and
 # ensures the rate-limiter and semaphore are shared across all Flask worker threads.
@@ -1564,6 +1590,74 @@ def run_initial_load():
 # ---------------------------------------------------------------------------
 
 _TEST_ID_RE = re.compile(r"^(\d{1,20}|ep-[\w-]{1,64})$")
+
+
+def _sha256_utf8(value: str) -> bytes:
+    return hashlib.sha256(value.encode("utf-8")).digest()
+
+
+def _credentials_match(user_guess: str, password_guess: str) -> bool:
+    if not AUTH_ENABLED:
+        return True
+    return hmac.compare_digest(_sha256_utf8(user_guess), _sha256_utf8(AUTH_USERNAME)) and hmac.compare_digest(
+        _sha256_utf8(password_guess), _sha256_utf8(AUTH_PASSWORD)
+    )
+
+
+def _session_authenticated() -> bool:
+    return session.get("dash_auth") is True
+
+
+def _safe_next_path(raw: str | None) -> str:
+    if not raw or not isinstance(raw, str):
+        return "/"
+    s = raw.strip()
+    if not s.startswith("/") or s.startswith("//"):
+        return "/"
+    return s.split("?", 1)[0].split("#", 1)[0] or "/"
+
+
+@app.before_request
+def _require_dashboard_auth():
+    if not AUTH_ENABLED:
+        return None
+    p = request.path
+    if p.startswith("/static/") or p == "/login":
+        return None
+    if p == "/api/health":
+        return None
+    if _session_authenticated():
+        return None
+    if p.startswith("/api/"):
+        return jsonify({"error": "Unauthorized", "login": "/login"}), 401
+    return redirect(url_for("login", next=p))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not AUTH_ENABLED:
+        return redirect("/")
+    if request.method == "GET":
+        if _session_authenticated():
+            return redirect(_safe_next_path(request.args.get("next")))
+        return send_file("login.html")
+    user = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    nxt = _safe_next_path(request.form.get("next"))
+    if _credentials_match(user, password):
+        session.clear()
+        session.permanent = True
+        session["dash_auth"] = True
+        return redirect(nxt)
+    return redirect(url_for("login", next=nxt, err="1"))
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    if AUTH_ENABLED:
+        return redirect(url_for("login"))
+    return redirect("/")
 
 
 @app.after_request
