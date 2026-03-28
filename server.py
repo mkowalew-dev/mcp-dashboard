@@ -20,6 +20,7 @@ import os
 import secrets
 import random
 import re
+import sqlite3
 import threading
 import time
 
@@ -162,6 +163,12 @@ async def _get_synth_sem() -> asyncio.Semaphore:
 # Cache window metrics at least one refresh cycle (capped)
 METRICS_TTL_SECONDS = max(300, min(3600, REFRESH_MINUTES * 60))
 
+# Local KPI history (SQLite) for trending without re-querying MCP for past intervals
+_default_kpi_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "kpi_history.sqlite")
+KPI_DB_PATH = (os.getenv("KPI_DB_PATH") or _default_kpi_db).strip()
+KPI_HISTORY_DISABLED = (os.getenv("KPI_HISTORY_DISABLED") or "").strip().lower() in ("1", "true", "yes")
+KPI_HISTORY_RETENTION_DAYS = max(1, min(730, _env_int("KPI_HISTORY_RETENTION_DAYS", 90)))
+
 WINDOWS = {
     "1h": 1,
     "6h": 6,
@@ -170,6 +177,13 @@ WINDOWS = {
     "2d": 48,
     "7d": 168,
 }
+
+# First paint: load a small window first at startup, then full 24h in a background thread
+INITIAL_BOOTSTRAP_DISABLED = (os.getenv("INITIAL_BOOTSTRAP_DISABLED") or "").strip().lower() in ("1", "true", "yes")
+_ibw = (os.getenv("INITIAL_BOOTSTRAP_WINDOW") or "1h").strip()
+INITIAL_BOOTSTRAP_WINDOW = _ibw if _ibw in WINDOWS else "1h"
+if _ibw not in WINDOWS:
+    log.warning("INITIAL_BOOTSTRAP_WINDOW=%r invalid; using %s", _ibw, INITIAL_BOOTSTRAP_WINDOW)
 
 # Business services: type_rules map service name -> list of test types; services is display order with name, icon, patterns (substrings, case-insensitive)
 _DEFAULT_BUSINESS_SERVICES = {
@@ -349,6 +363,157 @@ _metrics_cache = {}
 _extra_kpi_cache = {}
 _agent_perf_cache: dict[str, dict] = {}  # test_id -> {"data": {...}, "ts": float}
 _cache_lock = threading.Lock()
+
+
+def _full_metrics_ready() -> bool:
+    with _cache_lock:
+        return bool(_metrics_cache.get("24h") and _extra_kpi_cache.get("24h"))
+
+
+def _metrics_first_paint_ready() -> bool:
+    """True when the UI can show metrics: full 24h, or bootstrap window after phased load."""
+    if INITIAL_BOOTSTRAP_DISABLED:
+        return _full_metrics_ready()
+    bw = INITIAL_BOOTSTRAP_WINDOW
+    with _cache_lock:
+        return bool(_metrics_cache.get(bw) and _extra_kpi_cache.get(bw))
+
+
+def _resolve_metrics_cache_entry(requested_window: str):
+    """Pick best cached metrics for the requested window (requested → 24h → bootstrap)."""
+    with _cache_lock:
+        if _metrics_cache.get(requested_window):
+            return requested_window, _metrics_cache[requested_window]
+        if _metrics_cache.get("24h"):
+            return "24h", _metrics_cache["24h"]
+        if not INITIAL_BOOTSTRAP_DISABLED:
+            bw = INITIAL_BOOTSTRAP_WINDOW
+            if _metrics_cache.get(bw):
+                return bw, _metrics_cache[bw]
+    return requested_window, None
+
+
+def _resolve_extra_cache_entry(requested_window: str):
+    with _cache_lock:
+        if _extra_kpi_cache.get(requested_window):
+            return requested_window, _extra_kpi_cache[requested_window]
+        if _extra_kpi_cache.get("24h"):
+            return "24h", _extra_kpi_cache["24h"]
+        if not INITIAL_BOOTSTRAP_DISABLED:
+            bw = INITIAL_BOOTSTRAP_WINDOW
+            if _extra_kpi_cache.get(bw):
+                return bw, _extra_kpi_cache[bw]
+    return requested_window, None
+
+
+# KPI SQLite: one connection is used under _kpi_db_lock (Flask is multi-threaded)
+_kpi_db_lock = threading.Lock()
+_kpi_conn: sqlite3.Connection | None = None
+
+_EXTRA_KPI_SCALAR_KEYS = (
+    "avg_response_ms",
+    "p50_response_ms",
+    "p75_response_ms",
+    "p95_response_ms",
+    "p99_response_ms",
+    "avg_packet_loss",
+    "loss_affected_paths",
+    "p50_loss",
+    "p75_loss",
+    "p95_loss",
+    "p99_loss",
+)
+
+
+def _kpi_known_keys() -> frozenset[str]:
+    return frozenset(("availability_mean", "availability_count")) | frozenset(_EXTRA_KPI_SCALAR_KEYS)
+
+
+def _kpi_get_conn() -> sqlite3.Connection | None:
+    """Return shared SQLite connection; None if KPI history is disabled or open failed."""
+    global _kpi_conn
+    if KPI_HISTORY_DISABLED:
+        return None
+    with _kpi_db_lock:
+        if _kpi_conn is not None:
+            return _kpi_conn
+        try:
+            parent = os.path.dirname(KPI_DB_PATH)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            conn = sqlite3.connect(KPI_DB_PATH, timeout=30.0, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS kpi_point (
+                    sampled_at TEXT NOT NULL,
+                    window_key TEXT NOT NULL,
+                    kpi_key TEXT NOT NULL,
+                    value REAL NOT NULL,
+                    PRIMARY KEY (sampled_at, window_key, kpi_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_kpi_point_lookup
+                    ON kpi_point (kpi_key, window_key, sampled_at);
+                """
+            )
+            conn.commit()
+            _kpi_conn = conn
+            return conn
+        except OSError as e:
+            log.error("KPI history DB init failed (path=%s): %s", KPI_DB_PATH, e)
+            return None
+
+
+def _kpi_prune_old(conn: sqlite3.Connection) -> None:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=KPI_HISTORY_RETENTION_DAYS)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    conn.execute("DELETE FROM kpi_point WHERE sampled_at < ?", (cutoff,))
+    conn.commit()
+
+
+def _kpi_persist_snapshot(window_key: str, metrics: dict, extra: dict) -> None:
+    """Append one timestamped row per scalar KPI for trending charts."""
+    if KPI_HISTORY_DISABLED or window_key not in WINDOWS:
+        return
+    conn = _kpi_get_conn()
+    if not conn:
+        return
+
+    sampled_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows: list[tuple[str, str, str, float]] = []
+
+    if metrics:
+        vals = [float(v) for v in metrics.values() if isinstance(v, (int, float))]
+        if vals:
+            rows.append((sampled_at, window_key, "availability_mean", sum(vals) / len(vals)))
+            rows.append((sampled_at, window_key, "availability_count", float(len(vals))))
+
+    for k in _EXTRA_KPI_SCALAR_KEYS:
+        if k not in extra:
+            continue
+        v = extra.get(k)
+        if v is None:
+            continue
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, (int, float)):
+            rows.append((sampled_at, window_key, k, float(v)))
+
+    if not rows:
+        return
+
+    with _kpi_db_lock:
+        try:
+            conn.executemany(
+                "INSERT OR REPLACE INTO kpi_point (sampled_at, window_key, kpi_key, value) VALUES (?,?,?,?)",
+                rows,
+            )
+            _kpi_prune_old(conn)
+        except sqlite3.Error as e:
+            log.error("KPI history write failed: %s", e)
+
 
 # Refresh status for initial load and startup script / UI (thread-safe)
 _refresh_status_lock = threading.Lock()
@@ -1657,8 +1822,9 @@ def refresh_base():
 
 
 def refresh_default_metrics():
-    get_or_fetch_metrics("24h")
-    get_or_fetch_extra_kpis("24h")
+    m = get_or_fetch_metrics("24h") or {}
+    e = get_or_fetch_extra_kpis("24h") or {}
+    _kpi_persist_snapshot("24h", m, e)
 
 
 def scheduled_refresh():
@@ -1675,19 +1841,60 @@ def scheduled_refresh():
         log.exception("Scheduled refresh failed after %.2fs: %s", elapsed, e)
 
 
+def _initial_load_full_24h():
+    """Finish startup: 24h metrics + KPI snapshot (runs in a daemon thread after bootstrap)."""
+    try:
+        _set_refresh_status(phase="metrics", message="Loading full 24h metrics (background)...")
+        m24 = get_or_fetch_metrics("24h") or {}
+        _set_refresh_status(phase="extra_kpis", message="Loading full 24h extra KPIs (background)...")
+        e24 = get_or_fetch_extra_kpis("24h") or {}
+        with _cache_lock:
+            m_snap = dict((_metrics_cache.get("24h") or {}).get("data") or m24)
+            e_snap = dict((_extra_kpi_cache.get("24h") or {}).get("data") or e24)
+        _kpi_persist_snapshot("24h", m_snap, e_snap)
+        _set_refresh_status(phase="done", message="Ready")
+        log.info("Background 24h metrics load complete")
+    except Exception as e:
+        log.exception("Background 24h load failed: %s", e)
+        _set_refresh_status(error=str(e))
+
+
 def run_initial_load():
     """Run initial data load in background; updates _refresh_status for /api/refresh-status."""
     start = time.perf_counter()
     try:
         _set_refresh_status(phase="base", message="Fetching base data (tests, agents, alerts)...")
         refresh_base()
-        _set_refresh_status(phase="metrics", message="Fetching 24h metrics...")
-        get_or_fetch_metrics("24h")
-        _set_refresh_status(phase="extra_kpis", message="Fetching extra KPIs...")
-        get_or_fetch_extra_kpis("24h")
-        _set_refresh_status(phase="done", message="Ready")
-        elapsed = time.perf_counter() - start
-        log.info("Initial data load complete in %.2fs", elapsed)
+        if INITIAL_BOOTSTRAP_DISABLED:
+            _set_refresh_status(phase="metrics", message="Fetching 24h metrics...")
+            get_or_fetch_metrics("24h")
+            _set_refresh_status(phase="extra_kpis", message="Fetching extra KPIs...")
+            get_or_fetch_extra_kpis("24h")
+            with _cache_lock:
+                m_snap = dict((_metrics_cache.get("24h") or {}).get("data") or {})
+                e_snap = dict((_extra_kpi_cache.get("24h") or {}).get("data") or {})
+            _kpi_persist_snapshot("24h", m_snap, e_snap)
+            _set_refresh_status(phase="done", message="Ready")
+            elapsed = time.perf_counter() - start
+            log.info("Initial data load complete in %.2fs", elapsed)
+            return
+
+        bw = INITIAL_BOOTSTRAP_WINDOW
+        _set_refresh_status(
+            phase="metrics",
+            message=f"Quick metrics ({bw}) for first paint; full 24h next...",
+        )
+        m_boot = get_or_fetch_metrics(bw) or {}
+        _set_refresh_status(phase="extra_kpis", message=f"Quick KPIs ({bw})...")
+        e_boot = get_or_fetch_extra_kpis(bw) or {}
+        with _cache_lock:
+            m_snap = dict((_metrics_cache.get(bw) or {}).get("data") or m_boot)
+            e_snap = dict((_extra_kpi_cache.get(bw) or {}).get("data") or e_boot)
+        _kpi_persist_snapshot(bw, m_snap, e_snap)
+        boot_elapsed = time.perf_counter() - start
+        log.info("Initial bootstrap (%s) complete in %.2fs; starting 24h background load", bw, boot_elapsed)
+
+        threading.Thread(target=_initial_load_full_24h, daemon=True, name="initial-24h-metrics").start()
     except Exception as e:
         elapsed = time.perf_counter() - start
         log.exception("Initial load failed after %.2fs: %s", elapsed, e)
@@ -1805,6 +2012,10 @@ def api_health():
         "base_cache_ready": ready,
         "last_base_refresh": last,
         "refresh_interval_minutes": REFRESH_MINUTES,
+        "kpi_history_enabled": not KPI_HISTORY_DISABLED and bool(KPI_DB_PATH),
+        "initial_bootstrap_window": None if INITIAL_BOOTSTRAP_DISABLED else INITIAL_BOOTSTRAP_WINDOW,
+        "metrics_first_paint_ready": _metrics_first_paint_ready(),
+        "full_metrics_ready": _full_metrics_ready(),
     })
 
 
@@ -1813,7 +2024,75 @@ def api_refresh_status():
     """Current status of the initial/background data load for startup script and UI."""
     with _refresh_status_lock:
         out = dict(_refresh_status)
+    out["initial_bootstrap_window"] = None if INITIAL_BOOTSTRAP_DISABLED else INITIAL_BOOTSTRAP_WINDOW
+    out["metrics_first_paint_ready"] = _metrics_first_paint_ready()
+    out["full_metrics_ready"] = _full_metrics_ready()
     return jsonify(out)
+
+
+@app.route("/api/kpi_history")
+def api_kpi_history():
+    """Time series for stored KPI scalars (SQLite). Query: window, kpi (repeat or comma-separated), since_hours."""
+    if KPI_HISTORY_DISABLED:
+        return jsonify({"error": "KPI history disabled (KPI_HISTORY_DISABLED)"}), 503
+
+    window = (request.args.get("window") or "24h").strip()
+    if window not in WINDOWS:
+        return jsonify({"error": "invalid window", "allowed": list(WINDOWS.keys())}), 400
+
+    raw = request.args.getlist("kpi")
+    if len(raw) == 1 and "," in raw[0]:
+        kpis = [x.strip() for x in raw[0].split(",") if x.strip()]
+    else:
+        kpis = [x.strip() for x in raw if x.strip()]
+    if not kpis:
+        return jsonify({
+            "error": "missing kpi parameter",
+            "known_keys": sorted(_kpi_known_keys()),
+        }), 400
+
+    known = _kpi_known_keys()
+    bad = [k for k in kpis if k not in known]
+    if bad:
+        return jsonify({"error": "unknown kpi", "unknown": bad, "known_keys": sorted(known)}), 400
+
+    try:
+        since_h = int(request.args.get("since_hours") or "168")
+    except (ValueError, TypeError):
+        since_h = 168
+    since_h = max(1, min(8760, since_h))
+    start_dt = datetime.now(timezone.utc) - timedelta(hours=since_h)
+    start_s = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    conn = _kpi_get_conn()
+    if not conn:
+        return jsonify({"error": "KPI database unavailable"}), 503
+
+    series: dict[str, list[dict[str, float | str]]] = {k: [] for k in kpis}
+    qmarks = ",".join("?" * len(kpis))
+    sql = (
+        f"SELECT kpi_key, sampled_at, value FROM kpi_point "
+        f"WHERE window_key = ? AND sampled_at >= ? AND kpi_key IN ({qmarks}) "
+        f"ORDER BY kpi_key, sampled_at"
+    )
+    params: list = [window, start_s, *kpis]
+    with _kpi_db_lock:
+        try:
+            cur = conn.execute(sql, params)
+            for row in cur:
+                k, t, v = row[0], row[1], row[2]
+                if k in series:
+                    series[k].append({"t": t, "v": float(v)})
+        except sqlite3.Error as e:
+            log.error("kpi_history query failed: %s", e)
+            return jsonify({"error": "query failed"}), 500
+
+    return jsonify({
+        "window": window,
+        "since_hours": since_h,
+        "retention_days": KPI_HISTORY_RETENTION_DAYS,
+        "series": series,
+    })
 
 
 @app.route("/api/data")
@@ -1827,11 +2106,8 @@ def api_data():
             return jsonify({"error": "Data not yet loaded. Please wait..."}), 503
         base = dict(_base_cache)
 
-    with _cache_lock:
-        m_entry = _metrics_cache.get(window) or _metrics_cache.get("24h")
-        e_entry = _extra_kpi_cache.get(window) or _extra_kpi_cache.get("24h")
-        served_metrics_window = window if _metrics_cache.get(window) else ("24h" if _metrics_cache.get("24h") else window)
-        served_extra_window = window if _extra_kpi_cache.get(window) else ("24h" if _extra_kpi_cache.get("24h") else window)
+    served_mw, m_entry = _resolve_metrics_cache_entry(window)
+    served_ew, e_entry = _resolve_extra_cache_entry(window)
 
     metrics = m_entry["data"] if m_entry else {}
     extra_kpis = e_entry["data"] if e_entry else {}
@@ -1839,8 +2115,9 @@ def api_data():
     base["TEST_AVAILABILITY"] = metrics
     base["EXTRA_KPI"] = extra_kpis
     base["window"] = window
-    base["served_metrics_window"] = served_metrics_window
-    base["served_extra_window"] = served_extra_window
+    base["served_metrics_window"] = served_mw
+    base["served_extra_window"] = served_ew
+    base["full_metrics_ready"] = _full_metrics_ready()
     base["metrics_ready"] = bool(metrics)
     base["refresh_interval_minutes"] = REFRESH_MINUTES
     base["metrics_ttl_seconds"] = METRICS_TTL_SECONDS
@@ -1864,11 +2141,14 @@ def api_fetch_window():
         return jsonify({"status": "cached", "window": window})
 
     log.info("Fetching metrics on demand for window %s (%dh)...", window, hours)
+    updated_m = False
+    updated_e = False
     try:
         metrics = run_async(fetch_metrics_async(hours))
         if metrics:
             with _cache_lock:
                 _metrics_cache[window] = {"data": metrics, "ts": time.monotonic()}
+            updated_m = True
     except Exception as e:
         log.error("On-demand metrics fetch failed: window=%s, error=%s", window, e)
 
@@ -1878,8 +2158,16 @@ def api_fetch_window():
         if has_data:
             with _cache_lock:
                 _extra_kpi_cache[window] = {"data": extra, "ts": time.monotonic()}
+            updated_e = True
     except Exception as e:
         log.error("On-demand extra KPIs fetch failed: window=%s, error=%s", window, e)
+
+    # Avoid mixing a new timestamp with stale half-cache; only record when both legs refreshed.
+    if updated_m and updated_e:
+        with _cache_lock:
+            m_data = dict((_metrics_cache.get(window) or {}).get("data") or {})
+            e_data = dict((_extra_kpi_cache.get(window) or {}).get("data") or {})
+        _kpi_persist_snapshot(window, m_data, e_data)
 
     return jsonify({"status": "fetched", "window": window})
 

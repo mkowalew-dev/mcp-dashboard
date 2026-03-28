@@ -100,6 +100,8 @@ a.logout-link:hover { color: var(--te-text); }
 .kpi-exec-value.yellow { color: var(--te-yellow); }
 .kpi-exec-value.red { color: var(--te-red); }
 .kpi-exec-sub { font-size: 11px; color: var(--te-text-dim); margin-top: 8px; font-family: var(--font-mono); line-height: 1.4; }
+.kpi-trend { margin-top: 8px; min-height: 24px; opacity: 0.8; }
+.kpi-trend svg { display: block; max-width: 100%; }
 
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .section-title { font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--te-text); }
@@ -264,20 +266,23 @@ a.logout-link:hover { color: var(--te-text); }
   </section>
 
   <section class="kpi-row" aria-label="Executive KPIs">
-    <div class="kpi-exec tip-left" data-tip="Arithmetic mean of availability percentages across all active synthetic tests. For HTTP/DNS/page-load tests this is the server-reported availability. For network tests (agent-to-server, agent-to-agent) it is calculated as 100% minus average packet loss. Green >= 99%, Yellow >= 95%, Red < 95%." onclick="drillAvail()">
+    <div class="kpi-exec tip-left" data-tip="Arithmetic mean of availability percentages across all active synthetic tests. For HTTP/DNS/page-load tests this is the server-reported availability. For network tests (agent-to-server, agent-to-agent) it is calculated as 100% minus average packet loss. Green >= 99%, Yellow >= 95%, Red < 95%. The sparkline uses locally stored 24h-rollup samples (not a wider MCP pull)." onclick="drillAvail()">
       <div class="kpi-exec-label">Network availability <span class="kpi-drill-hint">click to drill down</span></div>
       <div class="kpi-exec-value" id="kpiAvail">--</div>
       <div class="kpi-exec-sub" id="kpiAvailSub">Mean test availability</div>
+      <div class="kpi-trend" id="kpiTrendAvail" aria-hidden="true"></div>
     </div>
-    <div class="kpi-exec" data-tip="Average HTTP response time across all web-type tests (HTTP Server, Page Load, Web Transactions, API) in the selected window. The sub-line shows the 95th percentile (P95) value, meaning 95% of measured responses were faster. Green <= 200ms, Yellow <= 500ms, Red > 500ms." onclick="drillResponse()">
+    <div class="kpi-exec" data-tip="Average HTTP response time across all web-type tests (HTTP Server, Page Load, Web Transactions, API) in the selected window. The sub-line shows the 95th percentile (P95) value, meaning 95% of measured responses were faster. Green <= 200ms, Yellow <= 500ms, Red > 500ms. Sparkline: local history (24h rollup)." onclick="drillResponse()">
       <div class="kpi-exec-label">Application performance <span class="kpi-drill-hint">click to drill down</span></div>
       <div class="kpi-exec-value" id="kpiResp">--</div>
       <div class="kpi-exec-sub" id="kpiRespSub">P95 response time</div>
+      <div class="kpi-trend" id="kpiTrendResp" aria-hidden="true"></div>
     </div>
-    <div class="kpi-exec" data-tip="Average packet loss percentage across all agent-to-server and agent-to-agent network tests. The sub-line shows how many distinct network paths are experiencing non-zero loss. Green <= 0.5%, Yellow <= 2%, Red > 2%." onclick="drillLoss()">
+    <div class="kpi-exec" data-tip="Average packet loss percentage across all agent-to-server and agent-to-agent network tests. The sub-line shows how many distinct network paths are experiencing non-zero loss. Green <= 0.5%, Yellow <= 2%, Red > 2%. Sparkline: local history (24h rollup)." onclick="drillLoss()">
       <div class="kpi-exec-label">Packet loss <span class="kpi-drill-hint">click to drill down</span></div>
       <div class="kpi-exec-value" id="kpiLoss">--</div>
       <div class="kpi-exec-sub" id="kpiLossSub">Affected paths</div>
+      <div class="kpi-trend" id="kpiTrendLoss" aria-hidden="true"></div>
     </div>
     <div class="kpi-exec tip-right" data-tip="Total number of open incidents: the sum of currently firing ThousandEyes alert rules plus ongoing Internet Insights events. A higher count indicates more concurrent issues requiring attention. The sub-line breaks this into alert count and live event count. Green = 0, Yellow <= 5, Red > 5." onclick="drillMttd()">
       <div class="kpi-exec-label">Open incidents <span class="kpi-drill-hint">click to drill down</span></div>
@@ -323,6 +328,8 @@ a.logout-link:hover { color: var(--te-text); }
 var DATA = null;
 var currentWindow = '24h';
 var refreshTimer = null;
+var KPI_TREND_SINCE_H = 336;
+var _full24Poll = null;
 
 function getDefaultBusinessServicesConfig() {
   return {
@@ -452,7 +459,7 @@ function updateStaleBanner() {
   var requestedWindow = DATA.window || '24h';
   var servedMetrics = DATA.served_metrics_window || requestedWindow;
   var servedExtra = DATA.served_extra_window || requestedWindow;
-  var isStale = (servedMetrics !== requestedWindow || servedExtra !== requestedWindow) && requestedWindow !== '24h';
+  var isStale = servedMetrics !== requestedWindow || servedExtra !== requestedWindow;
   var wEl = document.getElementById('staleBannerWindow');
   if (isStale) {
     if (wEl) wEl.textContent = requestedWindow;
@@ -725,6 +732,76 @@ function renderAll() {
 
   renderFooter();
   scheduleRefresh();
+  scheduleUpgradeToFull24h();
+  loadKpiHistoryTrends();
+}
+
+function sparklineSvg(points, w, h, strokeVar) {
+  if (!points || points.length < 2) return '';
+  strokeVar = strokeVar || 'var(--te-blue)';
+  var vs = points.map(function(p) { return p.v; });
+  var min = Math.min.apply(null, vs);
+  var max = Math.max.apply(null, vs);
+  if (!isFinite(min) || !isFinite(max)) return '';
+  if (Math.abs(max - min) < 1e-9) { min -= 1; max += 1; }
+  var pad = 2;
+  var pts = [];
+  for (var i = 0; i < points.length; i++) {
+    var x = pad + (points.length === 1 ? 0 : (i / (points.length - 1)) * (w - 2 * pad));
+    var y = pad + (1 - (vs[i] - min) / (max - min)) * (h - 2 * pad);
+    pts.push(x.toFixed(2) + ',' + y.toFixed(2));
+  }
+  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline fill="none" stroke="' + strokeVar + '" stroke-width="1.25" points="' + pts.join(' ') + '"/></svg>';
+}
+
+function setTrendEl(id, points) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  if (!points || points.length < 2) { el.innerHTML = ''; el.removeAttribute('title'); return; }
+  el.innerHTML = sparklineSvg(points, 116, 24, 'var(--te-blue)');
+  el.setAttribute('title', 'Trend from /api/kpi_history (24h rollup samples stored locally; ' + points.length + ' points).');
+}
+
+function loadKpiHistoryTrends() {
+  var url = '/api/kpi_history?window=24h&kpi=availability_mean,avg_response_ms,avg_packet_loss&since_hours=' + encodeURIComponent(String(KPI_TREND_SINCE_H));
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(j) {
+      if (!j || !j.series) return;
+      var s = j.series;
+      setTrendEl('kpiTrendAvail', s.availability_mean);
+      setTrendEl('kpiTrendResp', s.avg_response_ms);
+      setTrendEl('kpiTrendLoss', s.avg_packet_loss);
+    })
+    .catch(function() {
+      ['kpiTrendAvail', 'kpiTrendResp', 'kpiTrendLoss'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = '';
+      });
+    });
+}
+
+function scheduleUpgradeToFull24h() {
+  if (_full24Poll) return;
+  if (!DATA || currentWindow !== '24h') return;
+  if (DATA.full_metrics_ready) return;
+  if (!DATA.metrics_ready) return;
+  function tick() {
+    fetch('/api/data?window=24h')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.full_metrics_ready && currentWindow === '24h') {
+          _full24Poll = null;
+          loadData();
+        } else if (currentWindow === '24h' && !d.full_metrics_ready) {
+          _full24Poll = setTimeout(tick, 8000);
+        } else {
+          _full24Poll = null;
+        }
+      })
+      .catch(function() { _full24Poll = setTimeout(tick, 12000); });
+  }
+  _full24Poll = setTimeout(tick, 5000);
 }
 
 function scheduleRefresh() {
@@ -929,7 +1006,8 @@ function pollUntilReady() {
     .then(function(r) { return r.json(); })
     .then(function(status) {
       var sub = document.getElementById('loadingSub');
-      if (status.phase === 'done' || status.phase === 'error') {
+      if (status.metrics_first_paint_ready || status.full_metrics_ready ||
+          status.phase === 'done' || status.phase === 'error') {
         loadData();
         return;
       }
@@ -942,8 +1020,9 @@ function pollUntilReady() {
 fetch('/api/health')
   .then(function(r) { return r.json(); })
   .then(function(h) {
-    if (h.base_cache_ready) { loadData(); }
-    else { pollUntilReady(); }
+    if (!h.base_cache_ready) { pollUntilReady(); return; }
+    if (h.metrics_first_paint_ready || h.full_metrics_ready) { loadData(); return; }
+    pollUntilReady();
   })
   .catch(function() { setTimeout(pollUntilReady, 3000); });
 </script>

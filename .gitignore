@@ -73,6 +73,11 @@ db.sqlite3-journal
 instance/
 .webassets-cache
 
+# Local KPI time-series (SQLite; path overridable via KPI_DB_PATH)
+data/kpi_history.sqlite
+data/kpi_history.sqlite-shm
+data/kpi_history.sqlite-wal
+
 # Scrapy stuff:
 .scrapy
 

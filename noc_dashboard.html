@@ -500,6 +500,7 @@
 let DATA = null;
 let leafletMap = null;
 let currentWindow = '24h';
+let _full24Poll = null;
 
 const TYPE_LABELS = {
   'http-server': 'HTTP Server', 'page-load': 'Page Load', 'dns-server': 'DNS Server',
@@ -560,7 +561,7 @@ function updateStaleBanner() {
   var requestedWindow = DATA.window || '24h';
   var servedMetrics = DATA.served_metrics_window || requestedWindow;
   var servedExtra = DATA.served_extra_window || requestedWindow;
-  var isStale = (servedMetrics !== requestedWindow || servedExtra !== requestedWindow) && requestedWindow !== '24h';
+  var isStale = servedMetrics !== requestedWindow || servedExtra !== requestedWindow;
   if (isStale) {
     if (windowText) windowText.textContent = requestedWindow;
     banner.classList.add('visible');
@@ -587,6 +588,30 @@ function renderAll() {
   renderEndpointTable();
   renderGauges();
   renderFooter();
+  scheduleUpgradeToFull24h();
+}
+
+function scheduleUpgradeToFull24h() {
+  if (_full24Poll) return;
+  if (!DATA || currentWindow !== '24h') return;
+  if (DATA.full_metrics_ready) return;
+  if (!DATA.metrics_ready) return;
+  function tick() {
+    fetch('/api/data?window=24h')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.full_metrics_ready && currentWindow === '24h') {
+          _full24Poll = null;
+          loadData();
+        } else if (currentWindow === '24h' && !d.full_metrics_ready) {
+          _full24Poll = setTimeout(tick, 8000);
+        } else {
+          _full24Poll = null;
+        }
+      })
+      .catch(function() { _full24Poll = setTimeout(tick, 12000); });
+  }
+  _full24Poll = setTimeout(tick, 5000);
 }
 
 function renderKPIs() {
@@ -2318,7 +2343,30 @@ function doRefresh() {
     });
 }
 
-loadData();
+function pollUntilReady() {
+  fetch('/api/refresh-status')
+    .then(function(r) { return r.json(); })
+    .then(function(status) {
+      var sub = document.getElementById('loadingSub');
+      if (status.metrics_first_paint_ready || status.full_metrics_ready ||
+          status.phase === 'done' || status.phase === 'error') {
+        loadData();
+        return;
+      }
+      if (sub && status.message) sub.textContent = status.message;
+      setTimeout(pollUntilReady, 2000);
+    })
+    .catch(function() { setTimeout(pollUntilReady, 3000); });
+}
+
+fetch('/api/health')
+  .then(function(r) { return r.json(); })
+  .then(function(h) {
+    if (!h.base_cache_ready) { pollUntilReady(); return; }
+    if (h.metrics_first_paint_ready || h.full_metrics_ready) { loadData(); return; }
+    pollUntilReady();
+  })
+  .catch(function() { setTimeout(pollUntilReady, 3000); });
 </script>
 </body>
 </html>
