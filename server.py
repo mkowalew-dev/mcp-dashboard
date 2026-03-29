@@ -88,8 +88,17 @@ MCP_SYNTH_CONCURRENCY = max(1, min(10, _env_int("MCP_SYNTH_CONCURRENCY", 1)))
 MCP_MAX_RPM = max(10, min(500, _env_int("MCP_MAX_RPM", 240)))
 _mcp_min_interval_sec = 60.0 / MCP_MAX_RPM
 # MCP uses httpx; ConnectTimeout = TCP/TLS to MCP_URL did not finish in time (firewall, proxy, slow egress).
-MCP_CONNECT_TIMEOUT_SEC = max(5.0, min(600.0, _env_float("MCP_CONNECT_TIMEOUT_SEC", 60.0)))
+# Default connect 90s (was 60): many corporate paths need more than 60s for first TLS to api.thousandeyes.com.
+MCP_CONNECT_TIMEOUT_SEC = max(5.0, min(600.0, _env_float("MCP_CONNECT_TIMEOUT_SEC", 90.0)))
 MCP_READ_TIMEOUT_SEC = max(30.0, min(3600.0, _env_float("MCP_READ_TIMEOUT_SEC", 300.0)))
+# Retries per MCP tool call (transport errors, HTTP 5xx, broken stream). Increase if logs show repeated ConnectTimeout.
+MCP_RETRIES = max(1, min(20, _env_int("MCP_RETRIES", 6)))
+# Exponential backoff base for ConnectTimeout / ConnectError / ReadTimeout between retries (capped).
+MCP_TRANSPORT_BACKOFF_BASE_SEC = max(2.0, min(120.0, _env_float("MCP_TRANSPORT_BACKOFF_BASE_SEC", 8.0)))
+MCP_TRANSPORT_BACKOFF_MAX_SEC = max(
+    MCP_TRANSPORT_BACKOFF_BASE_SEC,
+    min(600.0, _env_float("MCP_TRANSPORT_BACKOFF_MAX_SEC", 120.0)),
+)
 
 # Optional dashboard login: set DASHBOARD_USERNAME and DASHBOARD_PASSWORD in .env
 AUTH_USERNAME = (os.getenv("DASHBOARD_USERNAME") or "").strip()
@@ -641,12 +650,14 @@ async def _mcp_execute_tool(session, tool_name: str, arguments: dict | None) -> 
         return {"raw": combined}
 
 
-async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: int = 4):
+async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: int | None = None):
     from mcp import ClientSession
 
     _ensure_mcp_streamable_helpers()
     streamable = _mcp_streamable_fn
     create_mcp_http = _mcp_create_http_client_fn
+
+    attempts = MCP_RETRIES if retries is None else max(1, min(20, int(retries)))
 
     async def _do() -> dict | list:
         headers = {"Authorization": f"Bearer {MCP_TOKEN}"}
@@ -657,7 +668,7 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
             pool=MCP_CONNECT_TIMEOUT_SEC,
         )
         last_err = None
-        for attempt in range(retries):
+        for attempt in range(attempts):
             await _mcp_rate_limit_wait()
             try:
                 if create_mcp_http is not None:
@@ -677,7 +688,7 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                 jitter = random.uniform(0, min(5, wait * 0.2))
                 log.error(
                     "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%.1fs",
-                    tool_name, attempt + 1, retries, wait + jitter,
+                    tool_name, attempt + 1, attempts, wait + jitter,
                 )
                 await asyncio.sleep(wait + jitter)
                 continue
@@ -694,15 +705,15 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                     status_code = getattr(root.response, "status_code", None)
                     log.error(
                         "ThousandEyes API HTTP error: status=%s, url=%s; will retry (attempt %d/%d).",
-                        status_code, str(getattr(root.response, "url", MCP_URL)), attempt + 1, retries,
+                        status_code, str(getattr(root.response, "url", MCP_URL)), attempt + 1, attempts,
                     )
                     logged_specific = True
                 elif transport_exc is not None:
                     log.error(
                         "MCP HTTP %s to %s (connect_timeout=%.1fs read_timeout=%.1fs). "
-                        "Allow outbound HTTPS to this host; set HTTPS_PROXY if required; "
-                        "increase MCP_CONNECT_TIMEOUT_SEC (e.g. 120) on slow or inspected links. "
-                        "BrokenResourceError after this usually means the same failed connection.",
+                        "Allow outbound HTTPS to this host; set HTTPS_PROXY/HTTP_PROXY if a proxy is required; "
+                        "increase MCP_CONNECT_TIMEOUT_SEC (e.g. 180) or MCP_RETRIES on slow links; "
+                        "tune MCP_TRANSPORT_BACKOFF_* for longer pauses between retries.",
                         type(transport_exc).__name__,
                         MCP_URL,
                         MCP_CONNECT_TIMEOUT_SEC,
@@ -712,7 +723,7 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                 elif type(root).__name__ == "BrokenResourceError":
                     log.warning(
                         "MCP stream closed unexpectedly (attempt %d/%d); retrying with a new connection.",
-                        attempt + 1, retries,
+                        attempt + 1, attempts,
                     )
                     logged_specific = True
                 is_429 = (
@@ -724,22 +735,28 @@ async def call_mcp_tool(tool_name: str, arguments: dict | None = None, retries: 
                     jitter = random.uniform(0, min(5, wait * 0.2))
                     log.error(
                         "MCP 429 rate limited: tool=%s, attempt=%d/%d, retry_in=%.1fs",
-                        tool_name, attempt + 1, retries, wait + jitter,
+                        tool_name, attempt + 1, attempts, wait + jitter,
                     )
+                elif transport_exc is not None:
+                    wait = min(
+                        MCP_TRANSPORT_BACKOFF_MAX_SEC,
+                        MCP_TRANSPORT_BACKOFF_BASE_SEC * (2**attempt),
+                    )
+                    jitter = random.uniform(0, min(12, wait * 0.2))
                 else:
                     wait = min(30, 2 ** (attempt + 2))
                     jitter = random.uniform(0, min(3, wait * 0.2))
                     if not logged_specific:
                         log.error(
                             "MCP transient error: tool=%s, attempt=%d/%d, retry_in=%.1fs, error=%s",
-                            tool_name, attempt + 1, retries, wait + jitter, err_str,
+                            tool_name, attempt + 1, attempts, wait + jitter, err_str,
                         )
                 await asyncio.sleep(wait + jitter)
                 continue
         root = _unwrap_exception(last_err) if last_err else last_err
         err_str = (str(root) or repr(root) or type(root).__name__).strip() or type(root).__name__
-        log.error("MCP failed after %d retries: tool=%s, last_error=%s", retries, tool_name, err_str)
-        raise RuntimeError(f"Failed after {retries} retries on {tool_name}: {err_str}")
+        log.error("MCP failed after %d retries: tool=%s, last_error=%s", attempts, tool_name, err_str)
+        raise RuntimeError(f"Failed after {attempts} retries on {tool_name}: {err_str}")
 
     if tool_name == "get_network_app_synthetics_metrics":
         async with await _get_synth_sem():
