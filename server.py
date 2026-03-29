@@ -721,6 +721,58 @@ def _kpi_prune_hourly(conn: sqlite3.Connection) -> None:
             log.error("Hourly prune failed: %s", e)
 
 
+def _backfill_kpi_hourly_from_legacy() -> int:
+    """One-time migration: aggregate kpi_point rows into kpi_hourly.
+
+    Groups legacy snapshot rows by hour bucket and KPI key, computes the
+    average, and inserts them with INSERT OR IGNORE so existing hourly data
+    is preserved.  Returns the number of rows backfilled.
+    """
+    if KPI_HISTORY_DISABLED:
+        return 0
+    conn = _kpi_get_conn()
+    if not conn:
+        return 0
+
+    with _kpi_db_lock:
+        try:
+            existing = conn.execute("SELECT COUNT(*) FROM kpi_hourly").fetchone()
+            legacy = conn.execute("SELECT COUNT(*) FROM kpi_point").fetchone()
+        except sqlite3.Error:
+            return 0
+
+    if not legacy or legacy[0] == 0:
+        return 0
+
+    if existing and existing[0] >= legacy[0]:
+        return 0
+
+    with _kpi_db_lock:
+        try:
+            cur = conn.execute(
+                """
+                SELECT
+                    substr(sampled_at, 1, 13) || ':00:00Z' AS hour_bucket,
+                    kpi_key,
+                    AVG(value) AS value
+                FROM kpi_point
+                GROUP BY hour_bucket, kpi_key
+                """
+            )
+            rows = cur.fetchall()
+            if rows:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO kpi_hourly (hour_bucket, kpi_key, value) VALUES (?,?,?)",
+                    rows,
+                )
+                conn.commit()
+                log.info("Backfilled %d kpi_hourly rows from legacy kpi_point", len(rows))
+                return len(rows)
+        except sqlite3.Error as e:
+            log.error("kpi_hourly backfill from legacy failed: %s", e)
+    return 0
+
+
 def _kpi_maybe_aggregate_daily(conn: sqlite3.Connection) -> None:
     """Roll up completed days from kpi_hourly into kpi_daily.
 
@@ -823,6 +875,8 @@ def _db_inventory() -> dict:
     conn = _kpi_get_conn()
     if not conn:
         return result
+
+    _backfill_kpi_hourly_from_legacy()
 
     now = datetime.now(timezone.utc)
     cutoff_24h = _hour_bucket(now - timedelta(hours=25))
@@ -2787,26 +2841,29 @@ def api_kpi_history():
             log.error("kpi_history query failed: %s", e)
             return jsonify({"error": "query failed"}), 500
 
-    # Also check legacy kpi_point table for older data if present and series are empty
-    has_any = any(bool(v) for v in series.values())
-    if not has_any:
+    # Per-series fallback: for any KPI that has no data from the primary table,
+    # try the legacy kpi_point table (which stored per-refresh snapshots).
+    empty_kpis = [k for k in kpis if not series[k]]
+    if empty_kpis:
         legacy_window = (request.args.get("window") or "24h").strip()
-        if legacy_window in WINDOWS:
-            legacy_start = (datetime.now(timezone.utc) - timedelta(hours=since_h)).strftime("%Y-%m-%dT%H:%M:%SZ")
-            legacy_sql = (
-                f"SELECT kpi_key, sampled_at, value FROM kpi_point "
-                f"WHERE window_key = ? AND sampled_at >= ? AND kpi_key IN ({qmarks}) "
-                f"ORDER BY kpi_key, sampled_at"
-            )
-            with _kpi_db_lock:
-                try:
-                    cur = conn.execute(legacy_sql, [legacy_window, legacy_start, *kpis])
-                    for row in cur:
-                        k, t, v = row[0], row[1], row[2]
-                        if k in series:
-                            series[k].append({"t": t, "v": float(v)})
-                except sqlite3.Error:
-                    pass
+        if legacy_window not in WINDOWS:
+            legacy_window = "24h"
+        legacy_start = (datetime.now(timezone.utc) - timedelta(hours=since_h)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        eq = ",".join("?" * len(empty_kpis))
+        legacy_sql = (
+            f"SELECT kpi_key, sampled_at, value FROM kpi_point "
+            f"WHERE window_key = ? AND sampled_at >= ? AND kpi_key IN ({eq}) "
+            f"ORDER BY kpi_key, sampled_at"
+        )
+        with _kpi_db_lock:
+            try:
+                cur = conn.execute(legacy_sql, [legacy_window, legacy_start, *empty_kpis])
+                for row in cur:
+                    k, t, v = row[0], row[1], row[2]
+                    if k in series:
+                        series[k].append({"t": t, "v": float(v)})
+            except sqlite3.Error:
+                pass
 
     return jsonify({
         "resolution": resolution,
