@@ -96,24 +96,31 @@ start_dashboard() {
 
     echo "Waiting for initial data load..."
     last_msg=""
+    last_db=""
     while true; do
         status_json=$(curl -s "$base_url/api/refresh-status" 2>/dev/null || echo "{}")
         status_out=$(echo "$status_json" | $PYTHON -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
-    for k in ('phase', 'message', 'current', 'total', 'error'):
-        v = d.get(k, '' if k != 'current' and k != 'total' else 0)
-        if v is None: v = '' if k != 'current' and k != 'total' else 0
+    for k in ('phase', 'message', 'current', 'total', 'error', 'db_check'):
+        v = d.get(k, '' if k not in ('current', 'total') else 0)
+        if v is None: v = '' if k not in ('current', 'total') else 0
         print(str(v).replace(chr(10), ' '))
 except Exception:
-    print(''); print(''); print('0'); print('0'); print('')
+    print(''); print(''); print('0'); print('0'); print(''); print('')
 " 2>/dev/null)
         phase=$(echo "$status_out" | sed -n '1p')
         message=$(echo "$status_out" | sed -n '2p')
         current=$(echo "$status_out" | sed -n '3p')
         total=$(echo "$status_out" | sed -n '4p')
         error=$(echo "$status_out" | sed -n '5p')
+        db_check=$(echo "$status_out" | sed -n '6p')
+
+        if [ -n "$db_check" ] && [ "$db_check" != "$last_db" ]; then
+            echo "  [db_check] $db_check"
+            last_db="$db_check"
+        fi
 
         line=""
         if [ -n "$message" ]; then
