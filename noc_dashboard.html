@@ -196,11 +196,43 @@
   .bottom-card { background: var(--te-dark-2); border: 1px solid var(--te-border); border-radius: var(--radius); padding: 16px; overflow: hidden; }
   .bottom-card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--te-text-dim); font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
   .alert-feed { max-height: 220px; overflow-y: auto; }
-  .alert-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--te-border); cursor: pointer; transition: background 0.15s; border-radius: 4px; }
+  .alert-feed-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) auto minmax(0, 2fr);
+    gap: 10px;
+    align-items: center;
+    padding: 6px 6px 8px;
+    border-bottom: 1px solid var(--te-border);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--te-text-dim);
+    font-weight: 600;
+  }
+  .alert-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) auto minmax(0, 2fr);
+    gap: 10px;
+    align-items: flex-start;
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--te-border);
+    cursor: pointer;
+    transition: background 0.15s;
+    border-radius: 4px;
+  }
   .alert-item:hover { background: var(--te-dark-3); }
   .alert-item:last-child { border-bottom: none; }
-  .alert-time { font-family: var(--font-mono); font-size: 10px; color: var(--te-text-dim); white-space: nowrap; min-width: 90px; }
-  .alert-msg { font-size: 11px; color: var(--te-text); line-height: 1.4; }
+  .alert-time {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--te-text-dim);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-width: 0;
+    grid-column: 1;
+  }
+  .alert-type-pill { grid-column: 2; justify-self: start; }
+  .alert-msg { font-size: 11px; color: var(--te-text); line-height: 1.4; grid-column: 3; min-width: 0; }
   .endpoint-table { width: 100%; }
   .endpoint-table th { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--te-text-dim); text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--te-border); font-weight: 600; }
   .endpoint-table td { font-size: 11px; padding: 8px; color: var(--te-text); border-bottom: 1px solid var(--te-border); font-family: var(--font-mono); }
@@ -543,7 +575,7 @@ const TYPE_BADGE = {
 
 function escHtml(s) {
   const d = document.createElement('div');
-  d.textContent = s;
+  d.textContent = s == null ? '' : String(s);
   return d.innerHTML;
 }
 
@@ -1635,14 +1667,34 @@ function renderAlerts() {
   alerts.forEach(function(a) {
     var color = a.sev === 'red' ? 'var(--te-red)' : a.sev === 'yellow' ? 'var(--te-yellow)' : 'var(--te-green)';
     var link = a.alertId ? 'https://app.thousandeyes.com/alerts/list/active?alertId=' + encodeURIComponent(a.alertId) : '';
-    combined.push({ time: a.time || '', timeISO: a.timeISO || '', color: color, msg: a.msg || '', link: link, tag: 'ALERT', tagColor: 'var(--te-red)', tagBg: 'rgba(248,81,73,0.12)' });
+    var msg = (a.msg != null && String(a.msg).trim()) ? String(a.msg).trim() : '';
+    if (!msg && a.message != null && String(a.message).trim()) msg = String(a.message).trim();
+    if (!msg) {
+      var tname = (a.test && typeof a.test === 'object' && a.test.name) ? a.test.name : (a.testName || '');
+      var rname = (a.rule && typeof a.rule === 'object' && a.rule.name) ? a.rule.name : (a.ruleName || '');
+      var sev = (a.severity || a.sev || '').toString();
+      msg = [sev, tname, rname].filter(function(x) { return x; }).join(' \u2014 ') || '\u2014';
+    }
+    combined.push({ time: a.time || '', timeISO: a.timeISO || '', color: color, msg: msg, link: link, tag: 'ALERT', tagColor: 'var(--te-red)', tagBg: 'rgba(248,81,73,0.12)' });
   });
   events.forEach(function(e) {
     var color = e.impact === 'HIGH' ? 'var(--te-red)' : e.impact === 'MEDIUM' ? 'var(--te-yellow)' : 'var(--te-blue)';
     var link = e.eventId ? 'https://app.thousandeyes.com/alerts/list/active?eventId=' + encodeURIComponent(e.eventId) : '';
-    var label = (e.impact || '') + ' \u2014 ' + (e.title || 'Event');
-    if (e.type) label += ' (' + e.type + ')';
-    combined.push({ time: e.time || '', timeISO: e.timeISO || e.timestamp || '', color: color, msg: label, link: link, tag: 'EVENT', tagColor: 'var(--te-blue)', tagBg: 'rgba(88,166,255,0.12)' });
+    var etitle = (e.title != null && String(e.title).trim()) ? String(e.title).trim() : '';
+    var etype = (e.type != null && String(e.type).trim()) ? String(e.type).trim() : '';
+    var label = (e.impact || '') + ' \u2014 ' + (etitle || etype || 'Event');
+    if (etype && etitle && etitle !== etype) label += ' (' + etype + ')';
+    else if (etype && !etitle) label = (e.impact || '') + ' \u2014 ' + etype;
+    combined.push({
+      time: e.time || '',
+      timeISO: e.timeISO || (e.timestamp != null && e.timestamp !== '' ? e.timestamp : ''),
+      color: color,
+      msg: label.trim() || '\u2014',
+      link: link,
+      tag: 'EVENT',
+      tagColor: 'var(--te-blue)',
+      tagBg: 'rgba(88,166,255,0.12)'
+    });
   });
 
   combined.sort(function(a, b) {
@@ -1656,13 +1708,19 @@ function renderAlerts() {
     return;
   }
   var html = '';
+  html += '<div class="alert-feed-head">';
+  html += '<span>Start time</span><span>Type</span><span>Activity</span>';
+  html += '</div>';
   combined.forEach(function(item) {
+    var displayMsg = (item.msg != null && String(item.msg).trim()) ? String(item.msg).trim() : '\u2014';
     var msgHtml = item.link
-      ? '<a href="' + item.link + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.4);transition:color 0.2s, border-color 0.2s;" onmouseover="this.style.color=\'#79c0ff\';this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.color=\'var(--te-blue)\';this.style.borderBottomColor=\'rgba(88,166,255,0.4)\'">' + escHtml(item.msg) + '</a>'
-      : escHtml(item.msg);
+      ? '<a href="' + escAttr(item.link) + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.4);transition:color 0.2s, border-color 0.2s;" onmouseover="this.style.color=\'#79c0ff\';this.style.borderBottomColor=\'var(--te-blue)\'" onmouseout="this.style.color=\'var(--te-blue)\';this.style.borderBottomColor=\'rgba(88,166,255,0.4)\'">' + escHtml(displayMsg) + '</a>'
+      : escHtml(displayMsg);
+    var startDisp = formatInLocalDateTime(item.timeISO || item.time);
+    if (!startDisp) startDisp = (item.timeISO != null && String(item.timeISO)) || (item.time != null && String(item.time)) || '\u2014';
     html += '<div class="alert-item">';
-    html += '<span class="alert-time">' + escHtml(formatInLocalTime(item.timeISO) || item.time) + '</span>';
-    html += '<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:' + item.tagBg + ';color:' + item.tagColor + ';font-weight:600;letter-spacing:0.5px;white-space:nowrap;">' + item.tag + '</span>';
+    html += '<span class="alert-time">' + escHtml(startDisp) + '</span>';
+    html += '<span class="alert-type-pill" style="font-size:8px;padding:1px 5px;border-radius:3px;background:' + item.tagBg + ';color:' + item.tagColor + ';font-weight:600;letter-spacing:0.5px;white-space:nowrap;">' + item.tag + '</span>';
     html += '<span class="alert-msg">' + msgHtml + '</span>';
     html += '</div>';
   });
@@ -1860,11 +1918,11 @@ function formatInLocalTime(isoOrTimestamp) {
   }
 }
 function formatInLocalDateTime(isoOrTimestamp) {
-  if (!isoOrTimestamp) return '';
+  if (isoOrTimestamp == null || isoOrTimestamp === '') return '';
   try {
     var d = typeof isoOrTimestamp === 'number' ? new Date(isoOrTimestamp) : new Date(isoOrTimestamp);
     if (isNaN(d.getTime())) return String(isoOrTimestamp);
-    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', hour12: true });
+    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
   } catch (e) {
     return String(isoOrTimestamp);
   }
@@ -1876,7 +1934,7 @@ function renderFooter() {
   if (ts) {
     try {
       var d = new Date(ts);
-      label = 'Last refresh: ' + d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', hour12: true });
+      label = 'Last refresh: ' + d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
     } catch(e) {}
   }
   var orgName = (DATA.ACCOUNT_GROUP || 'ThousandEyes');
