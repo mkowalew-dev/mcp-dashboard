@@ -2523,9 +2523,29 @@ def _initial_load_background():
             inv["has_24h_coverage"],
         )
 
+        # -- Warm 24h view: try DB first, fall back to MCP --
+        if inv["has_24h_coverage"]:
+            t_w = time.perf_counter()
+            _set_refresh_status(phase="metrics", message="Warming caches from local DB...")
+            warmed = _warm_caches_from_db(inv)
+            warmup_sec = time.perf_counter() - t_w
+            _startup_mark("db_warmup_sec", warmup_sec)
+
+            if warmed:
+                _startup_mark("skipped_24h_fallback", True)
+                total = time.perf_counter() - (_startup_t0 or time.perf_counter())
+                _startup_mark("total_sec", total)
+                _set_refresh_status(phase="done", message="Ready (from DB)")
+                log.info(
+                    "Startup complete (DB warm): total=%.2fs, db_warmup=%.2fs — skipped MCP metrics",
+                    total, warmup_sec,
+                )
+                return
+            log.info("DB warmup returned no data; falling through to MCP")
+
         # -- Fetch 1h for the current hourly bucket --
         t0 = time.perf_counter()
-        _set_refresh_status(phase="metrics", message="Loading 1h metrics for current hourly bucket...")
+        _set_refresh_status(phase="metrics", message="Loading 1h metrics from MCP (no DB cache)...")
         m1 = get_or_fetch_metrics("1h") or {}
         _set_refresh_status(phase="extra_kpis", message="Loading 1h extra KPIs...")
         e1 = get_or_fetch_extra_kpis("1h") or {}
@@ -2533,26 +2553,6 @@ def _initial_load_background():
         hourly_sec = time.perf_counter() - t0
         _startup_mark("hourly_1h_sec", hourly_sec)
         log.info("Background 1h hourly bucket loaded in %.2fs", hourly_sec)
-
-        # -- Warm 24h view: try DB first, fall back to MCP --
-        if inv["has_24h_coverage"]:
-            t_w = time.perf_counter()
-            _set_refresh_status(phase="metrics", message="Warming 24h caches from existing DB data...")
-            warmed = _warm_caches_from_db(inv)
-            warmup_sec = time.perf_counter() - t_w
-            _startup_mark("db_warmup_sec", warmup_sec)
-
-            if warmed:
-                _startup_mark("skipped_24h_fallback", True)
-                total = time.perf_counter() - (_startup_t0 or t0)
-                _startup_mark("total_sec", total)
-                _set_refresh_status(phase="done", message="Ready (from DB)")
-                log.info(
-                    "Startup complete (DB warm): total=%.2fs, 1h=%.2fs, db_warmup=%.2fs — skipped 24h MCP fallback",
-                    total, hourly_sec, warmup_sec,
-                )
-                return
-            log.info("DB warmup returned no data; falling through to MCP 24h fallback")
 
         # -- Full MCP 24h fallback (cold start or insufficient DB data) --
         t1 = time.perf_counter()
@@ -2600,17 +2600,9 @@ def run_initial_load():
             log.info("DB inventory (bootstrap disabled): buckets=%d, recent=%d, 24h_coverage=%s",
                      inv["total_hourly_buckets"], inv["recent_hourly_buckets"], inv["has_24h_coverage"])
 
-            t_h = time.perf_counter()
-            _set_refresh_status(phase="metrics", message="Fetching 1h metrics...")
-            m1 = get_or_fetch_metrics("1h") or {}
-            _set_refresh_status(phase="extra_kpis", message="Fetching 1h extra KPIs...")
-            e1 = get_or_fetch_extra_kpis("1h") or {}
-            _kpi_persist_hourly(m1, e1)
-            _startup_mark("hourly_1h_sec", time.perf_counter() - t_h)
-
             if inv["has_24h_coverage"]:
                 t_w = time.perf_counter()
-                _set_refresh_status(phase="metrics", message="Warming 24h caches from DB...")
+                _set_refresh_status(phase="metrics", message="Warming caches from local DB...")
                 warmed = _warm_caches_from_db(inv)
                 _startup_mark("db_warmup_sec", time.perf_counter() - t_w)
                 if warmed:
@@ -2618,11 +2610,20 @@ def run_initial_load():
                     total = time.perf_counter() - _startup_t0
                     _startup_mark("total_sec", total)
                     _set_refresh_status(phase="done", message="Ready (from DB)")
-                    log.info("Initial load complete in %.2fs (DB warm, skipped 24h MCP)", total)
+                    log.info("Initial load complete in %.2fs (DB warm, skipped MCP metrics)", total)
                     return
+                log.info("DB warmup returned no data; falling through to MCP")
+
+            t_h = time.perf_counter()
+            _set_refresh_status(phase="metrics", message="Fetching 1h metrics from MCP (no DB cache)...")
+            m1 = get_or_fetch_metrics("1h") or {}
+            _set_refresh_status(phase="extra_kpis", message="Fetching 1h extra KPIs...")
+            e1 = get_or_fetch_extra_kpis("1h") or {}
+            _kpi_persist_hourly(m1, e1)
+            _startup_mark("hourly_1h_sec", time.perf_counter() - t_h)
 
             t_f = time.perf_counter()
-            _set_refresh_status(phase="metrics", message="Loading 24h from MCP (no DB history)...")
+            _set_refresh_status(phase="metrics", message="Loading 24h from MCP...")
             get_or_fetch_metrics("24h")
             get_or_fetch_extra_kpis("24h")
             _startup_mark("fallback_24h_sec", time.perf_counter() - t_f)
@@ -2653,16 +2654,8 @@ def run_initial_load():
         )
 
         if inv["has_24h_coverage"]:
-            t_fast = time.perf_counter()
-            _set_refresh_status(phase="metrics", message="Fetching 1h metrics (DB has 24h history)...")
-            m1 = get_or_fetch_metrics("1h") or {}
-            _set_refresh_status(phase="extra_kpis", message="Fetching 1h extra KPIs...")
-            e1 = get_or_fetch_extra_kpis("1h") or {}
-            _kpi_persist_hourly(m1, e1)
-            _startup_mark("hourly_1h_sec", time.perf_counter() - t_fast)
-
             t_w = time.perf_counter()
-            _set_refresh_status(phase="metrics", message="Warming 24h caches from DB...")
+            _set_refresh_status(phase="metrics", message="Warming caches from local DB...")
             warmed = _warm_caches_from_db(inv)
             _startup_mark("db_warmup_sec", time.perf_counter() - t_w)
             if warmed:
@@ -2670,7 +2663,7 @@ def run_initial_load():
                 total = time.perf_counter() - _startup_t0
                 _startup_mark("total_sec", total)
                 _set_refresh_status(phase="done", message="Ready (from DB)")
-                log.info("Initial load complete in %.2fs (DB warm, skipped 24h MCP)", total)
+                log.info("Initial load complete in %.2fs (DB warm, skipped MCP metrics)", total)
                 return
 
             log.info("DB warmup returned no data; falling through to MCP bootstrap")
