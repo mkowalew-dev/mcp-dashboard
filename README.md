@@ -14,7 +14,7 @@ NOC-style dashboard that pulls live ThousandEyes data over the **Model Context P
 | **Caching** | In-memory base + per-window metrics; TTL defaults to one refresh cycle (min 5m, max 60m). |
 | **Refresh** | Single scheduled job: **base MCP pull first**, then **24h metrics** (avoids racing on stale test IDs). Same interval for UI (`refresh_interval_minutes` in `/api/data`). |
 | **API** | `GET /api/data?window=…`, `GET /api/health`, `GET /api/refresh-status`, `GET /api/fetch_window`, `GET /api/agent_perf/<test_id>` (validated id), `POST /api/refresh`. |
-| **Dashboards** | **NOC Performance Overview** (`/`) — global view of all tests, agents, alerts, events, outages. **Site Health Overview** (`/site-health`) — per-site view showing tests grouped by category (DNS, Web & App, Network, Voice) for each enterprise agent location. **Executive Dashboard** (`/executive`) — C-suite network & application assurance view with assurance score gauge, business service health grid, top issues, alert/event feed, and infrastructure coverage. |
+| **Dashboards** | **NOC Performance Overview** (`/`) — global view of all tests, agents, alerts, events, outages. **Site Health Overview** (`/site-health`) — per-site view for each enterprise agent location; tests are grouped into the same **business services** as the NOC (name patterns and test-type rules from `business_services_config` in the API, overridable via env). **Executive Dashboard** (`/executive`) — C-suite network & application assurance view with assurance score gauge, business service health grid, top issues, alert/event feed, and infrastructure coverage. |
 
 ### MCP collection (design)
 
@@ -42,6 +42,8 @@ NOC-style dashboard that pulls live ThousandEyes data over the **Model Context P
 | `MCP_BATCH_SIZE` | No | `20` | Test IDs per synthetics metrics call (5–50). |
 | `MCP_INTER_BATCH_DELAY_SEC` | No | `0.35` | Pause between batch rounds to limit API pressure. |
 | `PORT` | No | `8000` | HTTP port the server listens on. |
+| `BUSINESS_SERVICES_CONFIG` | No | Built-in default | Optional JSON string: `type_rules` and `services` (display name, icon, name substring `patterns`) used to map tests to business services. |
+| `BUSINESS_SERVICES_CONFIG_FILE` | No | — | Path to a JSON file with the same schema (preferred for larger configs). Applies to the NOC, Site Health, and Executive dashboards via `GET /api/data`. See `config/business_services.example.json`. |
 
 Optional: copy `.env` in the project root (loaded by `python-dotenv`); keep `.env` out of version control.
 
@@ -140,6 +142,6 @@ See **scripts/README.md** for more detail.
 
 - `server.py` — Flask + MCP aggregation  
 - `noc_dashboard.html` — NOC Performance Overview dashboard
-- `site_health.html` — Site Health Overview dashboard (per-site view)
+- `site_health.html` — Site Health Overview (per-site tests grouped by business service, same definitions as the NOC)
 - `executive.html` — Executive Dashboard for network & application assurance
 - `requirements.txt` — Python packages  
