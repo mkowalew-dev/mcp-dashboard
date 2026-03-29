@@ -282,19 +282,19 @@ a.logout-link:hover { color: var(--te-text); }
   </section>
 
   <section class="kpi-row" aria-label="Executive KPIs">
-    <div class="kpi-exec tip-left" data-tip="Arithmetic mean of availability percentages across all active synthetic tests. For HTTP/DNS/page-load tests this is the server-reported availability. For network tests (agent-to-server, agent-to-agent) it is calculated as 100% minus average packet loss. Green >= 99%, Yellow >= 95%, Red < 95%. The sparkline uses locally stored 24h-rollup samples (not a wider MCP pull)." onclick="drillAvail()">
+    <div class="kpi-exec tip-left" data-tip="Arithmetic mean of availability percentages across all active synthetic tests. For HTTP/DNS/page-load tests this is the server-reported availability. For network tests (agent-to-server, agent-to-agent) it is calculated as 100% minus average packet loss. Green >= 99%, Yellow >= 95%, Red < 95%. The sparkline uses locally stored hourly samples." onclick="drillAvail()">
       <div class="kpi-exec-label">Network availability <span class="kpi-drill-hint">click to drill down</span></div>
       <div class="kpi-exec-value" id="kpiAvail">--</div>
       <div class="kpi-exec-sub" id="kpiAvailSub">Mean test availability</div>
       <div class="kpi-trend" id="kpiTrendAvail" aria-hidden="true"></div>
     </div>
-    <div class="kpi-exec" data-tip="Average HTTP response time across all web-type tests (HTTP Server, Page Load, Web Transactions, API) in the selected window. The sub-line shows the 95th percentile (P95) value, meaning 95% of measured responses were faster. Green <= 200ms, Yellow <= 500ms, Red > 500ms. Sparkline: local history (24h rollup)." onclick="drillResponse()">
+    <div class="kpi-exec" data-tip="Average HTTP response time across all web-type tests (HTTP Server, Page Load, Web Transactions, API) in the selected window. The sub-line shows the 95th percentile (P95) value, meaning 95% of measured responses were faster. Green <= 200ms, Yellow <= 500ms, Red > 500ms. Sparkline: local hourly history." onclick="drillResponse()">
       <div class="kpi-exec-label">Application performance <span class="kpi-drill-hint">click to drill down</span></div>
       <div class="kpi-exec-value" id="kpiResp">--</div>
       <div class="kpi-exec-sub" id="kpiRespSub">P95 response time</div>
       <div class="kpi-trend" id="kpiTrendResp" aria-hidden="true"></div>
     </div>
-    <div class="kpi-exec" data-tip="Average packet loss percentage across all agent-to-server and agent-to-agent network tests. The sub-line shows how many distinct network paths are experiencing non-zero loss. Green <= 0.5%, Yellow <= 2%, Red > 2%. Sparkline: local history (24h rollup)." onclick="drillLoss()">
+    <div class="kpi-exec" data-tip="Average packet loss percentage across all agent-to-server and agent-to-agent network tests. The sub-line shows how many distinct network paths are experiencing non-zero loss. Green <= 0.5%, Yellow <= 2%, Red > 2%. Sparkline: local hourly history." onclick="drillLoss()">
       <div class="kpi-exec-label">Packet loss <span class="kpi-drill-hint">click to drill down</span></div>
       <div class="kpi-exec-value" id="kpiLoss">--</div>
       <div class="kpi-exec-sub" id="kpiLossSub">Affected paths</div>

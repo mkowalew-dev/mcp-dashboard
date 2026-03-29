@@ -2224,7 +2224,7 @@ function buildServiceGaugeModal(serviceName) {
 
   html += '<div class="modal-chart-area">';
   html += '<div class="modal-chart-title">' + escHtml(trend.chartTitle) + '</div>';
-  html += '<p class="noc-trend-caption">' + escHtml(trend.chartCaption) + ' Window: ' + escHtml(tw) + ', last ' + NOC_TREND_SINCE_H + 'h of samples.</p>';
+  html += '<p class="noc-trend-caption" id="nocTrendMountGaugeCaption">' + escHtml(trend.chartCaption) + ' Loading history\u2026</p>';
   html += '<div class="noc-metric-trend-wrap" id="nocTrendMountGauge"></div>';
   html += '</div>';
 
@@ -2537,7 +2537,22 @@ function toggleEpaCard(id) { document.getElementById(id).classList.toggle('expan
 // ═══════════════════════════════════════════
 // MODALS — KPI history time-series (/api/kpi_history)
 // ═══════════════════════════════════════════
-var NOC_TREND_SINCE_H = 720;
+var NOC_TREND_SINCE_H = 336;
+
+function formatTrendSpan(points) {
+  if (!points || points.length < 2) return '';
+  var sorted = points.slice().sort(function(a, b) {
+    return new Date(a.t).getTime() - new Date(b.t).getTime();
+  });
+  var spanMs = new Date(sorted[sorted.length - 1].t).getTime() - new Date(sorted[0].t).getTime();
+  var totalH = Math.round(spanMs / 3600000);
+  if (totalH < 1) return '<1h';
+  var d = Math.floor(totalH / 24);
+  var h = totalH % 24;
+  if (d > 0 && h > 0) return d + 'd ' + h + 'h';
+  if (d > 0) return d + 'd';
+  return h + 'h';
+}
 
 function formatNocTrendValue(kind, v) {
   if (v == null || isNaN(v)) return 'N/A';
@@ -2709,6 +2724,12 @@ function mountNocKpiTrend(mountId, kpiKey, valueKind, strokeColor, gradientId) {
         return;
       }
       var series = j && j.series && j.series[kpiKey];
+      var captionEl = document.getElementById(mountId + 'Caption');
+      if (captionEl && series && series.length) {
+        var span = formatTrendSpan(series);
+        var res = j.resolution || 'hourly';
+        captionEl.textContent = 'Local KPI history (' + res + ', spanning ' + span + ', ' + series.length + ' samples). Hover for value and time.';
+      }
       renderNocTimeSeriesChart(el, series, valueKind, strokeColor, gradientId);
     })
     .catch(function() {
@@ -2793,10 +2814,9 @@ function buildAvailabilityModal() {
   html += '<div class="modal-kpi"><div class="modal-kpi-label">Worst P1</div><div class="modal-kpi-val" style="color:' + aColor(p1) + '">' + (p1 !== '--' ? p1.toFixed(1) + '%' : '--') + '</div></div>';
   html += '</div>';
 
-  var twAvail = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
   html += '<div class="modal-chart-area">';
   html += '<div class="modal-chart-title">Aggregate mean availability over time</div>';
-  html += '<p class="noc-trend-caption">Local KPI history (' + escHtml(twAvail) + ' rollup, last ' + NOC_TREND_SINCE_H + 'h). Hover for value and time; x-axis shows sample times.</p>';
+  html += '<p class="noc-trend-caption" id="nocTrendMountAvailCaption">Local KPI history (loading\u2026)</p>';
   html += '<div class="noc-metric-trend-wrap" id="nocTrendMountAvail"></div>';
   html += '</div>';
 
@@ -2859,10 +2879,9 @@ function buildResponseModal() {
   html += '<div class="modal-kpi"><div class="modal-kpi-label">P99</div><div class="modal-kpi-val" style="color:' + pColor(p99) + '">' + p99 + 'ms</div></div>';
   html += '</div>';
 
-  var twResp = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
   html += '<div class="modal-chart-area">';
   html += '<div class="modal-chart-title">Average HTTP response time over time</div>';
-  html += '<p class="noc-trend-caption">Local KPI history (' + escHtml(twResp) + ' rollup, last ' + NOC_TREND_SINCE_H + 'h). Hover for value and time; x-axis shows sample times.</p>';
+  html += '<p class="noc-trend-caption" id="nocTrendMountRespCaption">Local KPI history (loading\u2026)</p>';
   html += '<div class="noc-metric-trend-wrap" id="nocTrendMountResp"></div>';
   html += '</div>';
 
@@ -2922,10 +2941,9 @@ function buildLossModal() {
   html += '<div class="modal-kpi"><div class="modal-kpi-label">P99</div><div class="modal-kpi-val" style="color:' + lColor(p99) + '">' + p99 + '%</div></div>';
   html += '</div>';
 
-  var twLoss = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
   html += '<div class="modal-chart-area">';
   html += '<div class="modal-chart-title">Average packet loss over time</div>';
-  html += '<p class="noc-trend-caption">Local KPI history (' + escHtml(twLoss) + ' rollup, last ' + NOC_TREND_SINCE_H + 'h). Hover for value and time; x-axis shows sample times.</p>';
+  html += '<p class="noc-trend-caption" id="nocTrendMountLossCaption">Local KPI history (loading\u2026)</p>';
   html += '<div class="noc-metric-trend-wrap" id="nocTrendMountLoss"></div>';
   html += '</div>';
 
