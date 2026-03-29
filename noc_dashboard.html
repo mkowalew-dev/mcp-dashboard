@@ -2109,7 +2109,7 @@ function pickGaugeTrendMeta(items) {
     return {
       kpiKey: 'avg_packet_loss',
       valueKind: 'losspct',
-      strokeColor: 'var(--te-orange)',
+      strokeColor: 'var(--te-cyan)',
       gradientId: 'nocGaugeTrendGradLoss',
       chartTitle: 'Mean packet loss over time',
       chartCaption: 'SQLite KPI history (account-wide aggregate). Service gauge blends loss, latency, and availability per test.',
@@ -2118,7 +2118,7 @@ function pickGaugeTrendMeta(items) {
   return {
     kpiKey: 'availability_mean',
     valueKind: 'pct',
-    strokeColor: 'var(--te-green)',
+    strokeColor: 'var(--te-cyan)',
     gradientId: 'nocGaugeTrendGradAvail',
     chartTitle: 'Mean synthetic availability over time',
     chartCaption: 'SQLite KPI history (account-wide aggregate). Service gauge blends type-specific KPIs into one health score.',
@@ -2734,15 +2734,15 @@ function openModal(type) {
   if (type === 'availability') {
     title.textContent = 'Overall Availability \u2014 Drill-Down';
     body.innerHTML = buildAvailabilityModal();
-    mountNocKpiTrend('nocTrendMountAvail', 'availability_mean', 'pct', 'var(--te-green)', 'nocAvailHistGrad');
+    mountNocKpiTrend('nocTrendMountAvail', 'availability_mean', 'pct', 'var(--te-cyan)', 'nocAvailHistGrad');
   } else if (type === 'response') {
     title.textContent = 'Response Time Analysis';
     body.innerHTML = buildResponseModal();
-    mountNocKpiTrend('nocTrendMountResp', 'avg_response_ms', 'ms', 'var(--te-red)', 'nocRespHistGrad');
+    mountNocKpiTrend('nocTrendMountResp', 'avg_response_ms', 'ms', 'var(--te-cyan)', 'nocRespHistGrad');
   } else if (type === 'loss') {
     title.textContent = 'Packet Loss Analysis';
     body.innerHTML = buildLossModal();
-    mountNocKpiTrend('nocTrendMountLoss', 'avg_packet_loss', 'losspct', 'var(--te-orange)', 'nocLossHistGrad');
+    mountNocKpiTrend('nocTrendMountLoss', 'avg_packet_loss', 'losspct', 'var(--te-cyan)', 'nocLossHistGrad');
   } else if (type === 'alerts') {
     title.textContent = 'Active Alert Details';
     body.innerHTML = buildAlertModal();
