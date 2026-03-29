@@ -23,7 +23,7 @@ The system has three main parts: the **customer’s browser**, the **Flask serve
 | Component | Role |
 |-----------|------|
 | **Browser** | Loads `noc_dashboard.html` (NOC Overview), `site_health.html` (Site Health), or `executive.html` (Executive Dashboard). Renders maps, KPIs, tabs/categories, modals, gauges, and business service grids. All dashboards share a sidebar navigation and poll `GET /api/data?window=…` on an interval driven by the server’s `refresh_interval_minutes`. |
-| **Flask server** | Serves the HTML, exposes JSON APIs, holds **in-memory caches** (base data, per-window metrics, extra KPIs), and runs an **APScheduler** job that periodically refreshes base data then 24h metrics. |
+| **Flask server** | Serves the HTML, exposes JSON APIs, holds **in-memory caches** (base data, per-window metrics, extra KPIs), stores **hourly rollups in SQLite** (per-test + scalar KPIs with 14-day retention, daily aggregates with 60-day retention), and runs an **APScheduler** job that periodically refreshes base data then 1h metrics. Multi-hour views (24h, 7d, etc.) are computed from stored hourly data. |
 | **ThousandEyes MCP** | Streamable HTTP API at `https://api.thousandeyes.com/mcp`. Authenticated with `TE_TOKEN`. Provides “tools” such as listing tests/agents/alerts/events/outages and fetching synthetics/endpoint metrics (often in batches). |
 
 **Important for demos:** All ThousandEyes data is pulled by the server via MCP. The browser only receives aggregated JSON from `/api/data` and optional `/api/agent_perf/<test_id>`. No customer API token is ever sent to the browser.
@@ -54,7 +54,7 @@ All cache access is protected by a single **threading lock** (`_cache_lock`) so 
 - **Single job:** `scheduled_refresh()` runs on an interval of **REFRESH_MINUTES** (default 15).
 - **Sequence (important):**  
   1. **Base refresh** — Fetches tests, agents, alerts, events, outages, account groups via MCP and updates `base_cache`.  
-  2. **Default metrics** — Fetches 24h availability and 24h extra KPIs and updates `metrics_cache["24h"]` and `extra_kpi_cache["24h"]`.
+  2. **Default metrics** — Fetches 1h availability and 1h extra KPIs, updates `metrics_cache["1h"]` and `extra_kpi_cache["1h"]`, and persists the results as an hourly rollup in SQLite (`test_hourly` and `kpi_hourly` tables). Multi-hour views (24h, etc.) are computed from stored hourly data.
 
 This order ensures metric fetches always use the latest test/agent IDs from the base refresh. The same sequence is used on **startup** and when **POST /api/refresh** is called.
 
@@ -126,14 +126,14 @@ The server then builds in-memory structures: test IDs by name, agent lists with 
 - **Synth concurrency:** At most **MCP_SYNTH_CONCURRENCY** (default 1) concurrent `get_network_app_synthetics_metrics` calls; all callers (batch and direct) are serialized via a semaphore inside `call_mcp_tool`.
 - **Within a batch:** For some metric groups, the server issues **multiple MCP metric calls in parallel** (e.g. `WEB_AVAILABILITY` and `DNS_TRACE_AVAILABILITY` together). Results are merged with a **first-wins** rule so that the same test never gets two different values for the same logical metric (merge order is deterministic).
 
-**Availability (24h default):**
+**Availability (1h default, multi-hour from DB):**
 
 - Batches of test IDs; for each batch, parallel call:
   - `get_network_app_synthetics_metrics` for `WEB_AVAILABILITY`
   - `get_network_app_synthetics_metrics` for `DNS_TRACE_AVAILABILITY`
 - Then fill gaps with `NET_LOSS` and `ONE_WAY_NET_LOSS_TO_TARGET` (availability = 100 − loss), again in batches.
 
-**Extra KPIs (24h default):**
+**Extra KPIs (1h default, multi-hour from DB):**
 
 - **Response time:** Parallel per batch for `WEB_TTFB`, `DNS_SERVER_TIME`, `DNS_TRACE_QUERY_TIME`; first-wins merge into `resp_by_test`.
 - **Loss / jitter / latency:** Similar batched parallel calls for the respective metric trios; first-wins merge.
@@ -141,9 +141,9 @@ The server then builds in-memory structures: test IDs by name, agent lists with 
 - **BGP, API, Web Transaction, Page Load:** Sequential per metric over batches.
 - **Endpoint agents:** Single `asyncio.gather` of two `get_endpoint_agent_metrics` calls (ENDPOINT_TEST_NET_LATENCY, ENDPOINT_GATEWAY_WIRELESS_RSSI) by `ENDPOINT_AGENT_MACHINE_ID`.
 
-Results are written to **metrics_cache** and **extra_kpi_cache** for the corresponding window (e.g. `"24h"`).
+Results are written to **metrics_cache** and **extra_kpi_cache** for the corresponding window (e.g. `"1h"`), and persisted to SQLite hourly tables (`test_hourly`, `kpi_hourly`). Multi-hour views are aggregated from these hourly buckets.
 
-**Initial load:** On startup, the server runs base first, then **24h metrics**, then **24h extra KPIs** sequentially (not in parallel) to avoid doubling the MCP request rate and triggering 429s.
+**Initial load:** On startup, the server runs base first, then **1h metrics** (stored as the first hourly bucket), followed by a **24h cache fetch** for multi-hour view fallback while hourly data builds up over 24 hours. Fetches run sequentially to avoid doubling the MCP request rate and triggering 429s.
 
 ### 4.4 On-Demand Metrics
 
@@ -171,7 +171,7 @@ Results are written to **metrics_cache** and **extra_kpi_cache** for the corresp
 | `/api/health` | GET | Liveness; `base_cache_ready`; `last_base_refresh`; `refresh_interval_minutes`. For load balancers or monitoring. |
 | `/api/fetch_window` | GET | Query: `window`. On-demand metrics for that window if cache is stale. |
 | `/api/agent_perf/<test_id>` | GET | Per-test agent breakdown; test_id validated. |
-| `/api/refresh` | POST | Starts full refresh (base → 24h metrics) in a background thread; returns `{ "status": "refresh started" }`. |
+| `/api/refresh` | POST | Starts full refresh (base → 1h metrics + hourly persist) in a background thread; returns `{ "status": "refresh started" }`. |
 
 All `/api/*` responses send **X-Content-Type-Options: nosniff** and **Cache-Control: no-store**.
 
@@ -245,7 +245,7 @@ See the project **README** for exact venv and run commands per platform.
 |--------|--------|
 | **503 on /api/data** | Base cache not yet loaded. Wait for first scheduler run or call POST /api/refresh and wait. Check logs for MCP errors. |
 | **Empty or stale data** | Confirm `TE_TOKEN` is set and valid. Check outbound HTTPS to api.thousandeyes.com. Review logs for 429/retries or tool errors. |
-| **Slow first load** | First base + 24h metrics run can take tens of seconds depending on account size. Subsequent loads are served from cache. |
+| **Slow first load** | First base + 1h metrics run can take tens of seconds depending on account size. Subsequent loads are served from cache. The 24h cache fallback loads in the background. |
 | **Rate limits (429)** | Defaults enforce 240 rpm and serialized synth calls. If 429s persist, set `MCP_MAX_RPM` to API limit or lower; ensure only one instance is running. |
 | **Wrong refresh interval in UI** | UI reads `refresh_interval_minutes` from `/api/data`. Ensure server was started with desired `REFRESH_MINUTES`. |
 | **Health check fails** | GET /api/health; if `base_cache_ready` is false, base refresh has not completed yet or failed (check logs). |
