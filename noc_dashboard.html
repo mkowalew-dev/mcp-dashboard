@@ -107,7 +107,39 @@
   .badge-blue { background: var(--te-blue-dim); color: var(--te-blue); }
   .map-container { flex: 1; background: var(--te-dark-2); border-radius: var(--radius); border: 1px solid var(--te-border); position: relative; overflow: hidden; min-height: 420px; }
   #leafletMap { width: 100%; height: 100%; background: var(--te-dark-2); }
-  .map-health-badge { position: absolute; bottom: 14px; right: 14px; z-index: 1000; padding: 6px 16px; border-radius: 20px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.3px; background: rgba(13,17,23,0.85); border: 1px solid var(--te-border); backdrop-filter: blur(6px); display: none; }
+  .map-health-badge-stack {
+    position: absolute;
+    bottom: 14px;
+    right: 14px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    max-width: min(460px, calc(100% - 24px));
+    pointer-events: none;
+  }
+  .map-health-badge-stack .map-health-badge {
+    position: static;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    background: rgba(13,17,23,0.85);
+    border: 1px solid var(--te-border);
+    backdrop-filter: blur(6px);
+    display: none;
+  }
+  .map-health-badge-stack .map-health-badge--ep {
+    font-size: 11px;
+    padding: 5px 12px;
+    line-height: 1.35;
+    text-align: right;
+    white-space: normal;
+    word-break: break-word;
+  }
   .leaflet-container { background: var(--te-dark-2) !important; font-family: var(--font-body) !important; }
   .leaflet-control-zoom { border: 1px solid var(--te-border) !important; }
   .leaflet-control-zoom a { background: var(--te-dark-3) !important; color: var(--te-text-dim) !important; border-color: var(--te-border) !important; width: 28px !important; height: 28px !important; line-height: 28px !important; font-size: 14px !important; }
@@ -504,7 +536,7 @@
       </button>
       <span style="margin-left:auto; font-family:var(--font-mono); font-size:10px; color:var(--te-text-dim); display:flex; align-items:center;" id="mapOrgLabel"></span>
     </div>
-    <div class="map-container" id="mapContainer"><div id="leafletMap"></div><div id="mapHealthBadge" class="map-health-badge"></div></div>
+    <div class="map-container" id="mapContainer"><div id="leafletMap"></div><div class="map-health-badge-stack" aria-live="polite"><div id="mapHealthBadgeEnt" class="map-health-badge map-health-badge--ent" title="Mapped enterprise agents"></div><div id="mapHealthBadgeEp" class="map-health-badge map-health-badge--ep" title="Mapped endpoint agents (E2E, Wi‑Fi, gateway, CPU/mem)"></div></div></div>
   </div>
 
   <div class="right-panel">
@@ -882,10 +914,66 @@ function fmtEpVal(val, type) {
   if (type === 'rssi') return Math.round(val) + ' dBm';
   return String(val);
 }
+
+function findEndpointPerfRow(agent, epWorst) {
+  if (!epWorst || !agent) return null;
+  var mname = agent.name || '';
+  var row = epWorst.find(function(p) {
+    return p.name === mname || (p.name && p.name.split('.')[0] === mname);
+  });
+  return row || null;
+}
+
+function getEndpointAgentHealthFromPerf(ep) {
+  if (!ep) return { health: 'unknown', color: '#8b949e' };
+  var lat = ep.latency;
+  var rssi = ep.rssi;
+  var gl = ep.gateway_latency;
+  var gwl = ep.gateway_loss;
+  var cpu = ep.cpu;
+  var mem = ep.memory;
+  if (lat == null && rssi == null && gl == null && gwl == null && cpu == null && mem == null) {
+    return { health: 'unknown', color: '#8b949e' };
+  }
+  var crit = false;
+  var warn = false;
+  if (lat != null) {
+    if (lat > 200) crit = true;
+    else if (lat > 100) warn = true;
+  }
+  if (rssi != null) {
+    if (rssi < -70) crit = true;
+    else if (rssi < -60) warn = true;
+  }
+  if (gl != null) {
+    if (gl > 200) crit = true;
+    else if (gl > 100) warn = true;
+  }
+  if (gwl != null) {
+    if (gwl > 20) crit = true;
+    else if (gwl > 10) warn = true;
+  }
+  if (cpu != null) {
+    if (cpu > 20) crit = true;
+    else if (cpu > 10) warn = true;
+  }
+  if (mem != null) {
+    if (mem > 20) crit = true;
+    else if (mem > 10) warn = true;
+  }
+  var health = crit ? 'critical' : warn ? 'warning' : 'healthy';
+  var color = crit ? '#f85149' : warn ? '#e3b341' : '#00D68F';
+  return { health: health, color: color };
+}
+
+function getEndpointAgentHealth(agent, epWorst) {
+  var row = findEndpointPerfRow(agent, epWorst || []);
+  if (!row) return { health: 'unknown', color: '#8b949e' };
+  return getEndpointAgentHealthFromPerf(row);
+}
+
 function buildEndpointPopup(m, epWorst) {
-  var ep = epWorst.find(function(p) {
-    return p.name === m.name || (p.name && p.name.split('.')[0] === m.name);
-  }) || {};
+  var ep = findEndpointPerfRow(m, epWorst || []) || {};
   var loc = m.loc || m.city || '';
   var h = '<div class="agent-popup">';
   h += '<div class="agent-popup-header">';
@@ -962,7 +1050,7 @@ function buildEnterprisePopup(agent, agentTests, testAvail, respByTest, lossByTe
 }
 
 function updateMapEnterpriseHealthBadge() {
-  var badge = document.getElementById('mapHealthBadge');
+  var badge = document.getElementById('mapHealthBadgeEnt');
   if (!badge || !DATA) return;
   if (!mapLayerVisible.enterprise) {
     badge.style.display = 'none';
@@ -1001,6 +1089,47 @@ function updateMapEnterpriseHealthBadge() {
   badge.style.display = 'block';
 }
 
+function updateMapEndpointHealthBadge() {
+  var badge = document.getElementById('mapHealthBadgeEp');
+  if (!badge || !DATA) return;
+  if (!mapLayerVisible.endpoint) {
+    badge.style.display = 'none';
+    return;
+  }
+  var epAgents = (DATA.ALL_AGENTS || []).filter(function(a) {
+    return a.lat != null && a.lng != null && a.type === 'endpoint';
+  });
+  var epWorst = (DATA.EXTRA_KPI || {}).ep_worst_performers || [];
+  var h = 0, w = 0, c = 0, u = 0;
+  epAgents.forEach(function(m) {
+    var st = getEndpointAgentHealth(m, epWorst);
+    if (st.health === 'healthy') h++;
+    else if (st.health === 'warning') w++;
+    else if (st.health === 'critical') c++;
+    else u++;
+  });
+  var total = epAgents.length;
+  if (total === 0) {
+    badge.style.display = 'none';
+    return;
+  }
+  var parts = [];
+  if (c > 0) parts.push(c + ' crit');
+  if (w > 0) parts.push(w + ' warn');
+  if (h > 0) parts.push(h + ' ok');
+  if (u > 0) parts.push(u + ' n/a');
+  badge.textContent = 'Endpoints: ' + parts.join(' · ') + ' / ' + total + ' mapped';
+  var badgeColor = c > 0 ? 'var(--te-red)' : w > 0 ? 'var(--te-yellow)' : u === total ? 'var(--te-text-dim)' : 'var(--te-green)';
+  badge.style.color = badgeColor;
+  badge.style.borderColor = badgeColor.indexOf('var') === 0 ? '' : badgeColor;
+  badge.style.display = 'block';
+}
+
+function updateMapHealthBadges() {
+  updateMapEnterpriseHealthBadge();
+  updateMapEndpointHealthBadge();
+}
+
 function buildMap() {
   var allAgents = (DATA.ALL_AGENTS || []).filter(function(a) {
     return a.lat != null && a.lng != null && (a.type === 'enterprise' || a.type === 'endpoint');
@@ -1029,6 +1158,7 @@ function buildMap() {
   var agentTests = DATA.AGENT_TESTS || {};
   var testAvail = DATA.TEST_AVAILABILITY || {};
   var extra = DATA.EXTRA_KPI || {};
+  var epWorstList = extra.ep_worst_performers || [];
   var respByTest = {};
   (extra.resp_by_test || []).forEach(function(r) { respByTest[r.test] = r.ms; });
   var lossByTest = {};
@@ -1041,6 +1171,9 @@ function buildMap() {
     if (m.type === 'enterprise') {
       var eaHealth = getEnterpriseAgentHealth(m, agentTests, testAvail, lossByTest);
       color = eaHealth.color;
+    } else {
+      var epH = getEndpointAgentHealth(m, epWorstList);
+      color = epH.color;
     }
     var size = m.type === 'enterprise' ? 10 : 7;
     var icon = L.divIcon({
@@ -1053,14 +1186,14 @@ function buildMap() {
     if (m.type === 'enterprise') {
       popupHtml = buildEnterprisePopup(m, agentTests, testAvail, respByTest, lossByTest, jitterByTest);
     } else {
-      popupHtml = buildEndpointPopup(m, extra.ep_worst_performers || []);
+      popupHtml = buildEndpointPopup(m, epWorstList);
     }
     marker.bindPopup(popupHtml, { maxWidth: 360, closeButton: true });
     marker.on('mouseover', function() { this.openPopup(); });
     mapLayers[m.type].addLayer(marker);
   });
 
-  updateMapEnterpriseHealthBadge();
+  updateMapHealthBadges();
 
   if (mapLayerVisible.enterprise) mapLayers.enterprise.addTo(leafletMap);
   if (mapLayerVisible.endpoint) mapLayers.endpoint.addTo(leafletMap);
@@ -1079,7 +1212,7 @@ function toggleMapLayer(type) {
     if (mapLayers[type] && leafletMap) leafletMap.removeLayer(mapLayers[type]);
   }
   updateMapBadge();
-  updateMapEnterpriseHealthBadge();
+  updateMapHealthBadges();
 }
 
 function updateMapBadge() {
