@@ -2588,8 +2588,14 @@ def run_initial_load():
         log.info("Base data loaded in %.2fs", base_sec)
 
         if INITIAL_BOOTSTRAP_DISABLED:
+            _set_refresh_status(phase="db_check", message="Checking local database for existing hourly data...")
             inv = _db_inventory()
             _startup_mark("db_inventory", inv)
+            _set_refresh_status(
+                phase="db_check",
+                message=f"DB check: {inv['recent_hourly_buckets']} recent buckets, "
+                        f"{inv['test_count']} tests, 24h_coverage={inv['has_24h_coverage']}",
+            )
             log.info("DB inventory (bootstrap disabled): buckets=%d, recent=%d, 24h_coverage=%s",
                      inv["total_hourly_buckets"], inv["recent_hourly_buckets"], inv["has_24h_coverage"])
 
@@ -2627,8 +2633,14 @@ def run_initial_load():
             return
 
         # -- Check DB for existing hourly data before hitting MCP --
+        _set_refresh_status(phase="db_check", message="Checking local database for existing hourly data...")
         inv = _db_inventory()
         _startup_mark("db_inventory", inv)
+        _set_refresh_status(
+            phase="db_check",
+            message=f"DB check: {inv['recent_hourly_buckets']} recent buckets, "
+                    f"{inv['test_count']} tests, 24h_coverage={inv['has_24h_coverage']}",
+        )
         log.info(
             "DB inventory: %d total buckets, %d recent (24h), latest=%s (age=%.1fh), %d tests, 24h_coverage=%s",
             inv["total_hourly_buckets"], inv["recent_hourly_buckets"],
