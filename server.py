@@ -797,6 +797,95 @@ def _has_enough_hourly_data(hours: int) -> bool:
     return count >= needed
 
 
+def _db_inventory() -> dict:
+    """Inspect existing hourly data in the DB to decide what startup can skip.
+
+    Returns a dict with:
+      - total_hourly_buckets: int
+      - recent_hourly_buckets: int  (within last 25 hours, for 24h view)
+      - latest_bucket: str | None   (most recent hour_bucket)
+      - latest_bucket_age_hours: float | None  (hours since the most recent bucket)
+      - test_count: int             (distinct test_ids in recent hourly data)
+      - has_24h_coverage: bool      (enough recent buckets for a 24h view from DB)
+      - has_recent_data: bool       (latest bucket is less than 2 hours old)
+    """
+    result = {
+        "total_hourly_buckets": 0,
+        "recent_hourly_buckets": 0,
+        "latest_bucket": None,
+        "latest_bucket_age_hours": None,
+        "test_count": 0,
+        "has_24h_coverage": False,
+        "has_recent_data": False,
+    }
+    if KPI_HISTORY_DISABLED:
+        return result
+    conn = _kpi_get_conn()
+    if not conn:
+        return result
+
+    now = datetime.now(timezone.utc)
+    cutoff_24h = _hour_bucket(now - timedelta(hours=25))
+
+    with _kpi_db_lock:
+        try:
+            row = conn.execute("SELECT COUNT(DISTINCT hour_bucket) FROM kpi_hourly").fetchone()
+            result["total_hourly_buckets"] = row[0] if row else 0
+
+            row = conn.execute(
+                "SELECT COUNT(DISTINCT hour_bucket) FROM kpi_hourly WHERE hour_bucket >= ?",
+                (cutoff_24h,),
+            ).fetchone()
+            result["recent_hourly_buckets"] = row[0] if row else 0
+
+            row = conn.execute("SELECT MAX(hour_bucket) FROM kpi_hourly").fetchone()
+            if row and row[0]:
+                result["latest_bucket"] = row[0]
+                try:
+                    latest_dt = datetime.strptime(row[0], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                    age_h = (now - latest_dt).total_seconds() / 3600.0
+                    result["latest_bucket_age_hours"] = round(age_h, 2)
+                    result["has_recent_data"] = age_h < 2.0
+                except ValueError:
+                    pass
+
+            row = conn.execute(
+                "SELECT COUNT(DISTINCT test_id) FROM test_hourly WHERE hour_bucket >= ?",
+                (cutoff_24h,),
+            ).fetchone()
+            result["test_count"] = row[0] if row else 0
+
+            result["has_24h_coverage"] = result["recent_hourly_buckets"] >= _HOURLY_MIN_BUCKETS_FOR_DB_VIEW
+        except sqlite3.Error as e:
+            log.error("DB inventory query failed: %s", e)
+
+    return result
+
+
+def _warm_caches_from_db(inv: dict) -> bool:
+    """Pre-populate in-memory metrics/extra caches from stored hourly data.
+
+    Called at startup when the DB has sufficient recent data. This avoids
+    the expensive 24h MCP fallback fetch.
+
+    Returns True if caches were successfully warmed.
+    """
+    if not inv.get("has_24h_coverage"):
+        return False
+
+    m24 = _build_metrics_from_hourly(24)
+    e24 = _build_extra_kpis_from_hourly(24)
+    if not m24 or not e24:
+        return False
+
+    with _cache_lock:
+        _metrics_cache["24h"] = {"data": m24, "ts": time.monotonic()}
+        _extra_kpi_cache["24h"] = {"data": e24, "ts": time.monotonic()}
+
+    log.info("Caches warmed from DB: 24h view with %d tests", len(m24))
+    return True
+
+
 def _build_metrics_from_hourly(hours: int) -> dict[str, float] | None:
     """Reconstruct per-test availability by averaging hourly buckets over the last *hours*.
 
@@ -990,12 +1079,15 @@ _refresh_status = {
 
 # Startup timing: tracks wall-clock seconds for each phase of initial load
 _startup_timing_lock = threading.Lock()
-_startup_timing: dict[str, float | None] = {
+_startup_timing: dict[str, float | str | bool | None] = {
     "base_sec": None,
     "bootstrap_sec": None,
+    "db_warmup_sec": None,
     "hourly_1h_sec": None,
     "fallback_24h_sec": None,
     "total_sec": None,
+    "skipped_24h_fallback": False,
+    "db_inventory": None,
 }
 _startup_t0: float | None = None  # perf_counter at startup begin
 
@@ -2335,15 +2427,29 @@ def scheduled_refresh():
 
 
 def _initial_load_background():
-    """Background startup: load 1h metrics, persist first hourly bucket, then cache 24h for fallback.
+    """Background startup: load 1h metrics, persist hourly bucket, then warm 24h from DB or MCP.
 
     Runs in a daemon thread after the bootstrap window first paint.
-    The 24h MCP fetch populates the in-memory cache so that multi-hour views
-    work immediately while hourly data accumulates over the next 24 hours.
+    Checks existing DB data first -- if the DB has sufficient recent hourly
+    buckets from a previous run, the expensive 24h MCP fallback is skipped
+    entirely and caches are warmed from DB instead.
     """
     try:
+        # -- Check existing DB data --
+        inv = _db_inventory()
+        _startup_mark("db_inventory", inv)
+        log.info(
+            "DB inventory: %d total buckets, %d recent (24h), latest=%s (age=%.1fh), %d tests, 24h_coverage=%s",
+            inv["total_hourly_buckets"], inv["recent_hourly_buckets"],
+            inv["latest_bucket"] or "none",
+            inv["latest_bucket_age_hours"] or -1,
+            inv["test_count"],
+            inv["has_24h_coverage"],
+        )
+
+        # -- Fetch 1h for the current hourly bucket --
         t0 = time.perf_counter()
-        _set_refresh_status(phase="metrics", message="Loading 1h metrics for first hourly bucket...")
+        _set_refresh_status(phase="metrics", message="Loading 1h metrics for current hourly bucket...")
         m1 = get_or_fetch_metrics("1h") or {}
         _set_refresh_status(phase="extra_kpis", message="Loading 1h extra KPIs...")
         e1 = get_or_fetch_extra_kpis("1h") or {}
@@ -2352,20 +2458,40 @@ def _initial_load_background():
         _startup_mark("hourly_1h_sec", hourly_sec)
         log.info("Background 1h hourly bucket loaded in %.2fs", hourly_sec)
 
+        # -- Warm 24h view: try DB first, fall back to MCP --
+        if inv["has_24h_coverage"]:
+            t_w = time.perf_counter()
+            _set_refresh_status(phase="metrics", message="Warming 24h caches from existing DB data...")
+            warmed = _warm_caches_from_db(inv)
+            warmup_sec = time.perf_counter() - t_w
+            _startup_mark("db_warmup_sec", warmup_sec)
+
+            if warmed:
+                _startup_mark("skipped_24h_fallback", True)
+                total = time.perf_counter() - (_startup_t0 or t0)
+                _startup_mark("total_sec", total)
+                _set_refresh_status(phase="done", message="Ready (from DB)")
+                log.info(
+                    "Startup complete (DB warm): total=%.2fs, 1h=%.2fs, db_warmup=%.2fs — skipped 24h MCP fallback",
+                    total, hourly_sec, warmup_sec,
+                )
+                return
+            log.info("DB warmup returned no data; falling through to MCP 24h fallback")
+
+        # -- Full MCP 24h fallback (cold start or insufficient DB data) --
         t1 = time.perf_counter()
-        _set_refresh_status(phase="metrics", message="Loading 24h metrics for cache fallback...")
+        _set_refresh_status(phase="metrics", message="Loading 24h metrics from MCP (no DB history)...")
         get_or_fetch_metrics("24h")
-        _set_refresh_status(phase="extra_kpis", message="Loading 24h extra KPIs for cache fallback...")
+        _set_refresh_status(phase="extra_kpis", message="Loading 24h extra KPIs from MCP...")
         get_or_fetch_extra_kpis("24h")
         fallback_sec = time.perf_counter() - t1
         _startup_mark("fallback_24h_sec", fallback_sec)
-        log.info("Background 24h cache fallback loaded in %.2fs", fallback_sec)
+        log.info("Background 24h MCP cache fallback loaded in %.2fs", fallback_sec)
 
         total = time.perf_counter() - (_startup_t0 or t0)
         _startup_mark("total_sec", total)
         _set_refresh_status(phase="done", message="Ready")
-        log.info("Startup complete: total=%.2fs (base+bootstrap already logged, 1h=%.2fs, 24h_fallback=%.2fs)",
-                 total, hourly_sec, fallback_sec)
+        log.info("Startup complete: total=%.2fs (1h=%.2fs, 24h_fallback=%.2fs)", total, hourly_sec, fallback_sec)
     except Exception as e:
         total = time.perf_counter() - (_startup_t0 or time.perf_counter())
         _startup_mark("total_sec", total)
@@ -2386,6 +2512,11 @@ def run_initial_load():
         log.info("Base data loaded in %.2fs", base_sec)
 
         if INITIAL_BOOTSTRAP_DISABLED:
+            inv = _db_inventory()
+            _startup_mark("db_inventory", inv)
+            log.info("DB inventory (bootstrap disabled): buckets=%d, recent=%d, 24h_coverage=%s",
+                     inv["total_hourly_buckets"], inv["recent_hourly_buckets"], inv["has_24h_coverage"])
+
             t_h = time.perf_counter()
             _set_refresh_status(phase="metrics", message="Fetching 1h metrics...")
             m1 = get_or_fetch_metrics("1h") or {}
@@ -2394,8 +2525,21 @@ def run_initial_load():
             _kpi_persist_hourly(m1, e1)
             _startup_mark("hourly_1h_sec", time.perf_counter() - t_h)
 
+            if inv["has_24h_coverage"]:
+                t_w = time.perf_counter()
+                _set_refresh_status(phase="metrics", message="Warming 24h caches from DB...")
+                warmed = _warm_caches_from_db(inv)
+                _startup_mark("db_warmup_sec", time.perf_counter() - t_w)
+                if warmed:
+                    _startup_mark("skipped_24h_fallback", True)
+                    total = time.perf_counter() - _startup_t0
+                    _startup_mark("total_sec", total)
+                    _set_refresh_status(phase="done", message="Ready (from DB)")
+                    log.info("Initial load complete in %.2fs (DB warm, skipped 24h MCP)", total)
+                    return
+
             t_f = time.perf_counter()
-            _set_refresh_status(phase="metrics", message="Caching 24h fallback...")
+            _set_refresh_status(phase="metrics", message="Loading 24h from MCP (no DB history)...")
             get_or_fetch_metrics("24h")
             get_or_fetch_extra_kpis("24h")
             _startup_mark("fallback_24h_sec", time.perf_counter() - t_f)
