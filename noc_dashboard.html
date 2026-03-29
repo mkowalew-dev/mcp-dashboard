@@ -285,6 +285,9 @@
   .svc-tip-wrap:hover .svc-tip { display: block; }
   .gauge-row { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; padding: 8px 0; }
   .gauge-item { text-align: center; min-width: 100px; }
+  .gauge-item.gauge-clickable { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px; transition: background 0.15s; }
+  .gauge-item.gauge-clickable:hover { background: var(--te-dark-3); }
+  .gauge-item.gauge-clickable:focus-visible { outline: 2px solid var(--te-blue); outline-offset: 2px; }
   .gauge-svg { width: 110px; height: 110px; }
   .gauge-label { font-size: 10px; color: var(--te-text-dim); margin-top: 6px; max-width: 110px; line-height: 1.3; }
 
@@ -1801,12 +1804,8 @@ function renderEndpointTable() {
   }).join('');
 }
 
-function renderGauges() {
-  var tests = DATA.ALL_TESTS || [];
-  var availability = DATA.TEST_AVAILABILITY || {};
-  var extra = DATA.EXTRA_KPI || {};
-  if (tests.length === 0) return;
-
+function nocBuildExtraMaps(extra) {
+  extra = extra || {};
   var lossMap = {};
   (extra.loss_by_test || []).forEach(function(r) { lossMap[r.test] = r.loss != null ? r.loss : r.value; });
   var mosMap = {};
@@ -1819,24 +1818,377 @@ function renderGauges() {
   (extra.page_completion_by_test || []).forEach(function(r) { pageCompMap[r.test] = r.value; });
   var bgpReachMap = {};
   (extra.bgp_reach_by_test || []).forEach(function(r) { bgpReachMap[r.test] = r.value; });
+  var latencyMap = {};
+  (extra.latency_by_test || []).forEach(function(r) { latencyMap[r.test] = r.latency; });
+  return {
+    lossMap: lossMap,
+    mosMap: mosMap,
+    apiCompMap: apiCompMap,
+    txnCompMap: txnCompMap,
+    pageCompMap: pageCompMap,
+    bgpReachMap: bgpReachMap,
+    latencyMap: latencyMap,
+  };
+}
+
+function nocGaugeTestHealthPct(t, maps, availability) {
+  availability = availability || {};
+  maps = maps || {};
+  var lossMap = maps.lossMap || {};
+  var mosMap = maps.mosMap || {};
+  var apiCompMap = maps.apiCompMap || {};
+  var txnCompMap = maps.txnCompMap || {};
+  var pageCompMap = maps.pageCompMap || {};
+  var bgpReachMap = maps.bgpReachMap || {};
+  var tp = (t.type || '').toLowerCase();
+  if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
+    var l = lossMap[t.name];
+    if (l != null) return Math.max(0, 100 - l);
+    return availability[t.name] != null ? availability[t.name] : null;
+  }
+  if (tp === 'voice') {
+    var m = mosMap[t.name];
+    if (m != null) return Math.min(100, (m / 4.5) * 100);
+    return null;
+  }
+  if (tp === 'web-transactions') return txnCompMap[t.name] != null ? txnCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
+  if (tp === 'page-load') return pageCompMap[t.name] != null ? pageCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
+  if (tp === 'api') return apiCompMap[t.name] != null ? apiCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
+  if (tp === 'bgp') return bgpReachMap[t.name] != null ? bgpReachMap[t.name] : null;
+  return availability[t.name] != null ? availability[t.name] : null;
+}
+
+function nocExplainTestHealth(t, availability, maps) {
+  availability = availability || {};
+  maps = maps || {};
+  var lossMap = maps.lossMap || {};
+  var latencyMap = maps.latencyMap || {};
+  var mosMap = maps.mosMap || {};
+  var bgpReachMap = maps.bgpReachMap || {};
+  var apiCompMap = maps.apiCompMap || {};
+  var txnCompMap = maps.txnCompMap || {};
+  var pageCompMap = maps.pageCompMap || {};
+  var tp = (t.type || '').toLowerCase();
+  if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
+    var l = lossMap[t.name];
+    if (l != null) {
+      if (l > 5) return { status: 'critical', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
+      if (l > 1) return { status: 'warning', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
+      return { status: 'healthy', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
+    }
+    var lat = latencyMap[t.name];
+    if (lat != null) {
+      if (lat > 200) return { status: 'warning', kpi: 'Latency', val: Math.round(lat) + 'ms' };
+      return { status: 'healthy', kpi: 'Latency', val: Math.round(lat) + 'ms' };
+    }
+    return { status: 'unknown', kpi: 'Pkt Loss', val: '--' };
+  }
+  if (tp === 'http-server' || tp === 'ftp-server') {
+    var a = availability[t.name];
+    if (a == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
+    if (a < 95) return { status: 'critical', kpi: 'Availability', val: a.toFixed(1) + '%' };
+    if (a < 99) return { status: 'warning', kpi: 'Availability', val: a.toFixed(1) + '%' };
+    return { status: 'healthy', kpi: 'Availability', val: a.toFixed(1) + '%' };
+  }
+  if (tp === 'voice') {
+    var m = mosMap[t.name];
+    if (m == null) return { status: 'unknown', kpi: 'MOS', val: '--' };
+    if (m < 3.0) return { status: 'critical', kpi: 'MOS', val: m.toFixed(2) };
+    if (m < 3.5) return { status: 'warning', kpi: 'MOS', val: m.toFixed(2) };
+    return { status: 'healthy', kpi: 'MOS', val: m.toFixed(2) };
+  }
+  if (tp === 'bgp') {
+    var r = bgpReachMap[t.name];
+    if (r == null) return { status: 'unknown', kpi: 'Reachability', val: '--' };
+    if (r < 95) return { status: 'critical', kpi: 'Reachability', val: r.toFixed(1) + '%' };
+    if (r < 99) return { status: 'warning', kpi: 'Reachability', val: r.toFixed(1) + '%' };
+    return { status: 'healthy', kpi: 'Reachability', val: r.toFixed(1) + '%' };
+  }
+  if (tp === 'api') {
+    var c = apiCompMap[t.name];
+    if (c == null) return { status: 'unknown', kpi: 'Completion', val: '--' };
+    if (c < 95) return { status: 'critical', kpi: 'Completion', val: c.toFixed(1) + '%' };
+    if (c < 99) return { status: 'warning', kpi: 'Completion', val: c.toFixed(1) + '%' };
+    return { status: 'healthy', kpi: 'Completion', val: c.toFixed(1) + '%' };
+  }
+  if (tp === 'web-transactions') {
+    var wc = txnCompMap[t.name];
+    if (wc == null) return { status: 'unknown', kpi: 'Completion', val: '--' };
+    if (wc < 95) return { status: 'critical', kpi: 'Completion', val: wc.toFixed(1) + '%' };
+    if (wc < 99) return { status: 'warning', kpi: 'Completion', val: wc.toFixed(1) + '%' };
+    return { status: 'healthy', kpi: 'Completion', val: wc.toFixed(1) + '%' };
+  }
+  if (tp === 'page-load') {
+    var pc = pageCompMap[t.name];
+    if (pc == null) return { status: 'unknown', kpi: 'Completion', val: '--' };
+    if (pc < 95) return { status: 'critical', kpi: 'Completion', val: pc.toFixed(1) + '%' };
+    if (pc < 99) return { status: 'warning', kpi: 'Completion', val: pc.toFixed(1) + '%' };
+    return { status: 'healthy', kpi: 'Completion', val: pc.toFixed(1) + '%' };
+  }
+  if (tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec') {
+    var da = availability[t.name];
+    if (da == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
+    if (da < 95) return { status: 'critical', kpi: 'Availability', val: da.toFixed(1) + '%' };
+    if (da < 99) return { status: 'warning', kpi: 'Availability', val: da.toFixed(1) + '%' };
+    return { status: 'healthy', kpi: 'Availability', val: da.toFixed(1) + '%' };
+  }
+  if (tp === 'sip-server') {
+    var sa = availability[t.name];
+    if (sa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
+    if (sa < 95) return { status: 'critical', kpi: 'Availability', val: sa.toFixed(1) + '%' };
+    if (sa < 99) return { status: 'warning', kpi: 'Availability', val: sa.toFixed(1) + '%' };
+    return { status: 'healthy', kpi: 'Availability', val: sa.toFixed(1) + '%' };
+  }
+  var fa = availability[t.name];
+  if (fa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
+  if (fa < 95) return { status: 'critical', kpi: 'Availability', val: fa.toFixed(1) + '%' };
+  if (fa < 99) return { status: 'warning', kpi: 'Availability', val: fa.toFixed(1) + '%' };
+  return { status: 'healthy', kpi: 'Availability', val: fa.toFixed(1) + '%' };
+}
+
+function pickGaugeTrendMeta(items) {
+  var nA2 = 0;
+  var nHttpish = 0;
+  items.forEach(function(t) {
+    var tp = (t.type || '').toLowerCase();
+    if (tp === 'agent-to-server' || tp === 'agent-to-agent') nA2++;
+    else if (tp === 'http-server' || tp === 'ftp-server' || tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec' || tp === 'api' || tp === 'page-load' || tp === 'web-transactions' || tp === 'sip-server') nHttpish++;
+  });
+  if (nA2 > nHttpish && nA2 > 0) {
+    return {
+      kpiKey: 'avg_packet_loss',
+      valueKind: 'losspct',
+      strokeColor: 'var(--te-orange)',
+      gradientId: 'nocGaugeTrendGradLoss',
+      chartTitle: 'Mean packet loss over time',
+      chartCaption: 'SQLite KPI history (account-wide aggregate). Service gauge blends loss, latency, and availability per test.',
+    };
+  }
+  return {
+    kpiKey: 'availability_mean',
+    valueKind: 'pct',
+    strokeColor: 'var(--te-green)',
+    gradientId: 'nocGaugeTrendGradAvail',
+    chartTitle: 'Mean synthetic availability over time',
+    chartCaption: 'SQLite KPI history (account-wide aggregate). Service gauge blends type-specific KPIs into one health score.',
+  };
+}
+
+function openGaugeModalFromEl(el) {
+  if (!el || !DATA) return;
+  var enc = el.getAttribute('data-svc');
+  if (!enc) return;
+  try {
+    openGaugeModal(decodeURIComponent(enc));
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function gaugeItemKeydown(e) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    openGaugeModalFromEl(e.currentTarget);
+  }
+}
+
+function buildServiceGaugeModal(serviceName) {
+  var tests = DATA.ALL_TESTS || [];
+  var availability = DATA.TEST_AVAILABILITY || {};
+  var extra = DATA.EXTRA_KPI || {};
+  var maps = nocBuildExtraMaps(extra);
+  var agentTests = DATA.AGENT_TESTS || {};
+  var agents = DATA.ALL_AGENTS || [];
+
+  var grouped = {};
+  tests.forEach(function(t) {
+    var svc = getBusinessService(t);
+    if (!grouped[svc]) grouped[svc] = [];
+    grouped[svc].push(t);
+  });
+  var items = grouped[serviceName];
+  if (!items || items.length === 0) {
+    return { html: '<div style="padding:20px;color:var(--te-text-dim);">No tests mapped to this service.</div>', trend: null };
+  }
+
+  var testByName = {};
+  items.forEach(function(t) { if (t.name) testByName[t.name] = t; });
+
+  var rows = [];
+  items.forEach(function(t) {
+    var hp = nocGaugeTestHealthPct(t, maps, availability);
+    var ex = nocExplainTestHealth(t, availability, maps);
+    var id = t.id || '';
+    var teLink = id && String(id).indexOf('ep-') !== 0 ? 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(id) : '';
+    rows.push({ test: t, healthPct: hp, explain: ex, teLink: teLink });
+  });
+  rows.sort(function(a, b) {
+    var ha = a.healthPct;
+    var hb = b.healthPct;
+    if (ha == null && hb == null) return 0;
+    if (ha == null) return 1;
+    if (hb == null) return -1;
+    return ha - hb;
+  });
+
+  var vals = rows.map(function(r) { return r.healthPct; }).filter(function(v) { return v != null; });
+  var compAvg = vals.length ? vals.reduce(function(a, b) { return a + b; }, 0) / vals.length : null;
+  var withData = vals.length;
+  var minPct = vals.length ? Math.min.apply(null, vals) : null;
+
+  function pctColor(v) {
+    if (v == null) return 'var(--te-text-dim)';
+    if (v >= 99) return 'var(--te-green)';
+    if (v >= 95) return 'var(--te-yellow)';
+    return 'var(--te-red)';
+  }
+
+  var trend = pickGaugeTrendMeta(items);
+  var tw = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
+
+  var html = '<div class="modal-kpi-row">';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Service health (avg)</div><div class="modal-kpi-val" style="color:' + pctColor(compAvg) + '">' + (compAvg != null ? compAvg.toFixed(2) + '%' : '--') + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Tests w/ metric</div><div class="modal-kpi-val" style="color:#fff">' + withData + '<span style="font-size:12px;color:var(--te-text-dim);font-weight:400;"> / ' + items.length + '</span></div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Lowest test score</div><div class="modal-kpi-val" style="color:' + pctColor(minPct) + '">' + (minPct != null ? minPct.toFixed(2) + '%' : '--') + '</div></div>';
+  html += '<div class="modal-kpi"><div class="modal-kpi-label">Trend KPI</div><div class="modal-kpi-val" style="color:var(--te-blue);font-size:13px;">' + escHtml(trend.kpiKey.replace(/_/g, ' ')) + '</div></div>';
+  html += '</div>';
+
+  html += '<div class="modal-chart-area">';
+  html += '<div class="modal-chart-title">' + escHtml(trend.chartTitle) + '</div>';
+  html += '<p class="noc-trend-caption">' + escHtml(trend.chartCaption) + ' Window: ' + escHtml(tw) + ', last ' + NOC_TREND_SINCE_H + 'h of samples.</p>';
+  html += '<div class="noc-metric-trend-wrap" id="nocTrendMountGauge"></div>';
+  html += '</div>';
+
+  html += '<div class="modal-chart-area">';
+  html += '<div class="modal-chart-title">Worst tests impacting this service</div>';
+  html += '<div class="table-wrap" style="border:none;"><table style="width:100%;border-collapse:collapse;font-size:11px;">';
+  html += '<thead><tr>';
+  html += '<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--te-border);color:var(--te-text-dim);font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">Test</th>';
+  html += '<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--te-border);color:var(--te-text-dim);font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">Type</th>';
+  html += '<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--te-border);color:var(--te-text-dim);font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">Primary metric</th>';
+  html += '<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--te-border);color:var(--te-text-dim);font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">Health %</th>';
+  html += '</tr></thead><tbody>';
+
+  var worstTests = rows.slice(0, 15);
+  worstTests.forEach(function(r) {
+    var t = r.test;
+    var typeLabel = TYPE_LABELS[t.type] || t.type || '--';
+    var hpStr = r.healthPct != null ? r.healthPct.toFixed(2) + '%' : '--';
+    var pm = escHtml(r.explain.kpi) + ': ' + escHtml(r.explain.val);
+    var nameCell = r.teLink
+      ? '<a href="' + escAttr(r.teLink) + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.35);">' + escHtml(t.name) + '</a>'
+      : escHtml(t.name);
+    html += '<tr style="border-bottom:1px solid var(--te-border);">';
+    html += '<td style="padding:8px 10px;max-width:220px;">' + nameCell + '</td>';
+    html += '<td style="padding:8px 10px;color:var(--te-text-dim);">' + escHtml(typeLabel) + '</td>';
+    html += '<td style="padding:8px 10px;">' + pm + '</td>';
+    html += '<td style="padding:8px 10px;text-align:right;font-family:var(--font-mono);font-weight:600;color:' + pctColor(r.healthPct) + ';">' + escHtml(hpStr) + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div></div>';
+
+  var agentById = {};
+  agents.forEach(function(a) { if (a && a.id != null) agentById[String(a.id)] = a; });
+  var serviceTestSet = {};
+  items.forEach(function(t) { if (t.name) serviceTestSet[t.name] = true; });
+
+  var siteRows = [];
+  Object.keys(agentTests).forEach(function(aid) {
+    var names = agentTests[aid] || [];
+    var inSvc = names.filter(function(n) { return serviceTestSet[n]; });
+    if (inSvc.length === 0) return;
+    var agent = agentById[aid];
+    if (!agent) return;
+    var pctVals = [];
+    var worstName = '';
+    var worstPct = 101;
+    inSvc.forEach(function(n) {
+      var tt = testByName[n];
+      if (!tt) return;
+      var v = nocGaugeTestHealthPct(tt, maps, availability);
+      if (v != null) {
+        pctVals.push(v);
+        if (v < worstPct) {
+          worstPct = v;
+          worstName = n;
+        }
+      }
+    });
+    if (pctVals.length === 0) return;
+    var siteAvg = pctVals.reduce(function(a, b) { return a + b; }, 0) / pctVals.length;
+    var siteLabel = (agent.loc || agent.city || agent.name || 'Agent ' + aid).toString().trim();
+    siteRows.push({ site: siteLabel, avg: siteAvg, count: inSvc.length, worstTest: worstName, worstPct: worstPct });
+  });
+  siteRows.sort(function(a, b) { return a.avg - b.avg; });
+
+  html += '<div class="modal-chart-area">';
+  html += '<div class="modal-chart-title">Worst sites / agent locations (by avg health in this service)</div>';
+  html += '<p style="font-size:10px;color:var(--te-text-dim);margin:0 0 10px;">Enterprise/cloud agents with at least one test in this service. Averages use the same health score as the gauge.</p>';
+  html += '<div class="table-wrap" style="border:none;"><table style="width:100%;border-collapse:collapse;font-size:11px;">';
+  html += '<thead><tr>';
+  html += '<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--te-border);color:var(--te-text-dim);font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">Site / location</th>';
+  html += '<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--te-border);color:var(--te-text-dim);font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">Avg health %</th>';
+  html += '<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--te-border);color:var(--te-text-dim);font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">Tests</th>';
+  html += '<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--te-border);color:var(--te-text-dim);font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">Worst test here</th>';
+  html += '</tr></thead><tbody>';
+
+  if (siteRows.length === 0) {
+    html += '<tr><td colspan="4" style="padding:16px;text-align:center;color:var(--te-text-dim);">No agent-to-test mapping for this service (map uses AGENT_TESTS).</td></tr>';
+  } else {
+    siteRows.slice(0, 15).forEach(function(sr) {
+      var wTest = sr.worstTest || '--';
+      var wCell = escHtml(wTest);
+      var wt = testByName[wTest];
+      if (wt && wt.id && String(wt.id).indexOf('ep-') !== 0) {
+        var wl = 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(wt.id);
+        wCell = '<a href="' + escAttr(wl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--te-blue);text-decoration:none;border-bottom:1px dotted rgba(88,166,255,0.35);">' + escHtml(wTest) + '</a>';
+      }
+      html += '<tr style="border-bottom:1px solid var(--te-border);">';
+      html += '<td style="padding:8px 10px;">' + escHtml(sr.site) + '</td>';
+      html += '<td style="padding:8px 10px;text-align:right;font-family:var(--font-mono);font-weight:600;color:' + pctColor(sr.avg) + ';">' + sr.avg.toFixed(2) + '%</td>';
+      html += '<td style="padding:8px 10px;text-align:right;font-family:var(--font-mono);color:var(--te-text-dim);">' + sr.count + '</td>';
+      html += '<td style="padding:8px 10px;max-width:200px;">' + wCell + '</td>';
+      html += '</tr>';
+    });
+  }
+  html += '</tbody></table></div></div>';
+
+  return {
+    html: html,
+    trend: {
+      mountId: 'nocTrendMountGauge',
+      kpiKey: trend.kpiKey,
+      valueKind: trend.valueKind,
+      strokeColor: trend.strokeColor,
+      gradientId: trend.gradientId,
+    },
+  };
+}
+
+function openGaugeModal(serviceName) {
+  if (!DATA || !serviceName) return;
+  var overlay = document.getElementById('modalOverlay');
+  var title = document.getElementById('modalTitle');
+  var body = document.getElementById('modalBody');
+  var built = buildServiceGaugeModal(serviceName);
+  title.textContent = serviceName + ' \u2014 Service health';
+  body.innerHTML = built.html;
+  overlay.classList.add('visible');
+  if (built.trend) {
+    mountNocKpiTrend(built.trend.mountId, built.trend.kpiKey, built.trend.valueKind, built.trend.strokeColor, built.trend.gradientId);
+  }
+}
+
+function renderGauges() {
+  var tests = DATA.ALL_TESTS || [];
+  var availability = DATA.TEST_AVAILABILITY || {};
+  var extra = DATA.EXTRA_KPI || {};
+  if (tests.length === 0) return;
+
+  var maps = nocBuildExtraMaps(extra);
 
   function testHealthPct(t) {
-    var tp = (t.type || '').toLowerCase();
-    if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
-      var l = lossMap[t.name];
-      if (l != null) return Math.max(0, 100 - l);
-      return availability[t.name] != null ? availability[t.name] : null;
-    }
-    if (tp === 'voice') {
-      var m = mosMap[t.name];
-      if (m != null) return Math.min(100, (m / 4.5) * 100);
-      return null;
-    }
-    if (tp === 'web-transactions') return txnCompMap[t.name] != null ? txnCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
-    if (tp === 'page-load') return pageCompMap[t.name] != null ? pageCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
-    if (tp === 'api') return apiCompMap[t.name] != null ? apiCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
-    if (tp === 'bgp') return bgpReachMap[t.name] != null ? bgpReachMap[t.name] : null;
-    return availability[t.name] != null ? availability[t.name] : null;
+    return nocGaugeTestHealthPct(t, maps, availability);
   }
 
   var grouped = {};
@@ -1901,9 +2253,10 @@ function renderGauges() {
     svg += '<path d="M '+x1+' '+y1+' A '+r+' '+r+' 0 1 1 '+bx+' '+by+'" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="'+sw+'" stroke-linecap="round"/>';
     svg += '<path d="M '+x1+' '+y1+' A '+r+' '+r+' 0 '+la+' 1 '+x2+' '+y2+'" fill="none" stroke="'+gaugeColor+'" stroke-width="'+sw+'" stroke-linecap="round"/>';
     svg += '<text x="'+cx+'" y="'+(cy-2)+'" text-anchor="middle" fill="'+gaugeColor+'" font-size="17" font-weight="700" font-family="var(--font-mono)">'+valStr+'</text>';
-    svg += '<text x="'+cx+'" y="'+(cy+12)+'" text-anchor="middle" fill="var(--te-text-dim)" font-size="9" letter-spacing="1.5" font-family="var(--font-body)">AVAIL</text>';
+    svg += '<text x="'+cx+'" y="'+(cy+12)+'" text-anchor="middle" fill="var(--te-text-dim)" font-size="9" letter-spacing="1.5" font-family="var(--font-body)">HEALTH</text>';
     svg += '</svg>';
-    return '<div class="gauge-item">' + svg + '<div class="gauge-label">' + escHtml(s.name) + '</div></div>';
+    var enc = encodeURIComponent(s.name);
+    return '<div class="gauge-item gauge-clickable" role="button" tabindex="0" data-svc="' + escAttr(enc) + '" onclick="openGaugeModalFromEl(this)" onkeydown="gaugeItemKeydown(event)" title="Trend and worst tests / sites">' + svg + '<div class="gauge-label">' + escHtml(s.name) + '</div></div>';
   }).join('');
 }
 
