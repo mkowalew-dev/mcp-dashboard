@@ -589,8 +589,6 @@ let DATA = null;
 let leafletMap = null;
 let currentWindow = '24h';
 let _full24Poll = null;
-/** Previous refresh counts for alert/event/outage strip trends */
-let _nocKpiTrendPrev = null;
 const NOC_KPI_STRIP_HISTORY_H = 168;
 
 const TYPE_LABELS = {
@@ -643,7 +641,7 @@ function computeHistoryTrendDelta(series, opts) {
   var last = sorted[sorted.length - 1].v;
   if (prev == null || last == null || isNaN(prev) || isNaN(last)) return null;
   var delta = last - prev;
-  var eps = opts.unit === 'ms' ? 5 : (opts.unit === 'losspct' ? 0.02 : 0.06);
+  var eps = opts.unit === 'ms' ? 5 : (opts.unit === 'count' ? 0.5 : (opts.unit === 'losspct' ? 0.02 : 0.06));
   if (Math.abs(delta) < eps) {
     return { arrow: '\u2192', text: 'stable', cls: 'trend-stable' };
   }
@@ -653,27 +651,18 @@ function computeHistoryTrendDelta(series, opts) {
   var text;
   if (opts.unit === 'ms') {
     text = (delta > 0 ? '+' : '') + Math.round(delta) + ' ms';
+  } else if (opts.unit === 'count') {
+    text = (delta > 0 ? '+' : '') + Math.round(delta);
   } else {
     text = (delta > 0 ? '+' : '') + delta.toFixed(2) + '%';
   }
   return { arrow: arrow, text: text, cls: good ? 'trend-good' : 'trend-bad' };
 }
 
-function computeCountTrend(prev, cur) {
-  if (prev == null || prev === undefined || typeof cur !== 'number') return null;
-  var d = cur - prev;
-  if (d === 0) {
-    return { arrow: '\u2192', text: 'stable', cls: 'trend-stable' };
-  }
-  var good = d < 0;
-  var arrow = d > 0 ? '\u2191' : '\u2193';
-  var text = (d > 0 ? '+' : '') + d;
-  return { arrow: arrow, text: text, cls: good ? 'trend-good' : 'trend-bad' };
-}
-
 function refreshNocKpiStripTrendsFromHistory() {
   var win = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
-  var url = '/api/kpi_history?window=' + encodeURIComponent(win) + '&kpi=' + encodeURIComponent('availability_mean,avg_response_ms,avg_packet_loss') + '&since_hours=' + encodeURIComponent(String(NOC_KPI_STRIP_HISTORY_H));
+  var allKpis = 'availability_mean,avg_response_ms,avg_packet_loss,alert_count,event_count,outage_count';
+  var url = '/api/kpi_history?window=' + encodeURIComponent(win) + '&kpi=' + encodeURIComponent(allKpis) + '&since_hours=' + encodeURIComponent(String(NOC_KPI_STRIP_HISTORY_H));
   fetch(url)
     .then(function(r) { return r.ok ? r.json() : Promise.resolve(null); })
     .then(function(j) {
@@ -682,6 +671,9 @@ function refreshNocKpiStripTrendsFromHistory() {
       setKpiTrendRow('kpiAvailTrend', computeHistoryTrendDelta(s.availability_mean, { higherBetter: true, unit: 'pct' }));
       setKpiTrendRow('kpiRespTrend', computeHistoryTrendDelta(s.avg_response_ms, { higherBetter: false, unit: 'ms' }));
       setKpiTrendRow('kpiLossTrend', computeHistoryTrendDelta(s.avg_packet_loss, { higherBetter: false, unit: 'losspct' }));
+      setKpiTrendRow('kpiAlertsTrend', computeHistoryTrendDelta(s.alert_count, { higherBetter: false, unit: 'count' }));
+      setKpiTrendRow('kpiEventsTrend', computeHistoryTrendDelta(s.event_count, { higherBetter: false, unit: 'count' }));
+      setKpiTrendRow('kpiOutagesTrend', computeHistoryTrendDelta(s.outage_count, { higherBetter: false, unit: 'count' }));
     })
     .catch(function() { /* keep placeholder */ });
 }
@@ -779,7 +771,6 @@ function scheduleUpgradeToFull24h() {
 }
 
 function renderKPIs() {
-  var prevSnap = _nocKpiTrendPrev;
   const c = DATA.COUNTS || {};
   const ex = DATA.EXTRA_KPI || {};
   const avail = DATA.TEST_AVAILABILITY || {};
@@ -857,15 +848,6 @@ function renderKPIs() {
   var providers = (DATA.OUTAGES || []).length;
   document.getElementById('kpiOutagesSub').textContent = providers + ' providers affected';
 
-  setKpiTrendRow('kpiAlertsTrend', computeCountTrend(prevSnap ? prevSnap.alerts : null, alertCount));
-  setKpiTrendRow('kpiEventsTrend', computeCountTrend(prevSnap ? prevSnap.events : null, eventCount));
-  setKpiTrendRow('kpiOutagesTrend', computeCountTrend(prevSnap ? prevSnap.outages : null, totalOutages));
-
-  _nocKpiTrendPrev = {
-    alerts: alertCount,
-    events: eventCount,
-    outages: totalOutages,
-  };
 }
 
 var mapLayers = { enterprise: null, endpoint: null };

@@ -458,8 +458,15 @@ _EXTRA_KPI_SCALAR_KEYS = (
 )
 
 
+_COUNT_KPI_KEYS = ("alert_count", "event_count", "outage_count")
+
+
 def _kpi_known_keys() -> frozenset[str]:
-    return frozenset(("availability_mean", "availability_count")) | frozenset(_EXTRA_KPI_SCALAR_KEYS)
+    return (
+        frozenset(("availability_mean", "availability_count"))
+        | frozenset(_EXTRA_KPI_SCALAR_KEYS)
+        | frozenset(_COUNT_KPI_KEYS)
+    )
 
 
 def _kpi_get_conn() -> sqlite3.Connection | None:
@@ -677,6 +684,21 @@ def _kpi_persist_hourly(metrics: dict, extra: dict) -> None:
         if v is None or isinstance(v, bool) or not isinstance(v, (int, float)):
             continue
         kpi_rows.append((bucket, k, float(v)))
+
+    with _cache_lock:
+        base = dict(_base_cache) if _base_cache else {}
+    counts = base.get("COUNTS") or {}
+    alert_feed = base.get("ALERT_FEED") or []
+    live_events = base.get("LIVE_EVENTS") or []
+    app_out = counts.get("app_outages", 0) or 0
+    net_out = counts.get("net_outages", 0) or 0
+    count_map = {
+        "alert_count": float(len(alert_feed)),
+        "event_count": float(len(live_events)),
+        "outage_count": float(app_out + net_out),
+    }
+    for ck, cv in count_map.items():
+        kpi_rows.append((bucket, ck, cv))
 
     if not test_rows and not kpi_rows:
         return
@@ -2604,6 +2626,42 @@ def run_initial_load():
             log.info("Initial data load complete in %.2fs", total)
             return
 
+        # -- Check DB for existing hourly data before hitting MCP --
+        inv = _db_inventory()
+        _startup_mark("db_inventory", inv)
+        log.info(
+            "DB inventory: %d total buckets, %d recent (24h), latest=%s (age=%.1fh), %d tests, 24h_coverage=%s",
+            inv["total_hourly_buckets"], inv["recent_hourly_buckets"],
+            inv["latest_bucket"] or "none",
+            inv["latest_bucket_age_hours"] or -1,
+            inv["test_count"],
+            inv["has_24h_coverage"],
+        )
+
+        if inv["has_24h_coverage"]:
+            t_fast = time.perf_counter()
+            _set_refresh_status(phase="metrics", message="Fetching 1h metrics (DB has 24h history)...")
+            m1 = get_or_fetch_metrics("1h") or {}
+            _set_refresh_status(phase="extra_kpis", message="Fetching 1h extra KPIs...")
+            e1 = get_or_fetch_extra_kpis("1h") or {}
+            _kpi_persist_hourly(m1, e1)
+            _startup_mark("hourly_1h_sec", time.perf_counter() - t_fast)
+
+            t_w = time.perf_counter()
+            _set_refresh_status(phase="metrics", message="Warming 24h caches from DB...")
+            warmed = _warm_caches_from_db(inv)
+            _startup_mark("db_warmup_sec", time.perf_counter() - t_w)
+            if warmed:
+                _startup_mark("skipped_24h_fallback", True)
+                total = time.perf_counter() - _startup_t0
+                _startup_mark("total_sec", total)
+                _set_refresh_status(phase="done", message="Ready (from DB)")
+                log.info("Initial load complete in %.2fs (DB warm, skipped 24h MCP)", total)
+                return
+
+            log.info("DB warmup returned no data; falling through to MCP bootstrap")
+
+        # -- No DB coverage (or warmup failed): bootstrap from MCP, then background load --
         bw = INITIAL_BOOTSTRAP_WINDOW
         _set_refresh_status(
             phase="metrics",
