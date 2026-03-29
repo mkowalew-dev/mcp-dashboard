@@ -839,8 +839,14 @@ function renderKPIs() {
 var mapLayers = { enterprise: null, endpoint: null };
 var mapLayerVisible = { enterprise: true, endpoint: true };
 
+function enterpriseAgentTestNames(agent, agentTests) {
+  if (!agent || agent.id == null) return [];
+  var id = agent.id;
+  return agentTests[id] || agentTests[String(id)] || [];
+}
+
 function getEnterpriseAgentHealth(agent, agentTests, testAvail, lossByTest) {
-  var testNames = agentTests[agent.id] || [];
+  var testNames = enterpriseAgentTestNames(agent, agentTests);
   var availVals = [], lossVals = [];
   testNames.forEach(function(tn) {
     if (testAvail[tn] != null) availVals.push(testAvail[tn]);
@@ -904,7 +910,7 @@ function buildEndpointPopup(m, epWorst) {
 }
 
 function buildEnterprisePopup(agent, agentTests, testAvail, respByTest, lossByTest, jitterByTest) {
-  var testNames = agentTests[agent.id] || [];
+  var testNames = enterpriseAgentTestNames(agent, agentTests);
   var activeTests = testNames.length;
 
   var availVals = [], respVals = [], lossVals = [], jitterVals = [];
@@ -955,6 +961,46 @@ function buildEnterprisePopup(agent, agentTests, testAvail, respByTest, lossByTe
   return h;
 }
 
+function updateMapEnterpriseHealthBadge() {
+  var badge = document.getElementById('mapHealthBadge');
+  if (!badge || !DATA) return;
+  if (!mapLayerVisible.enterprise) {
+    badge.style.display = 'none';
+    return;
+  }
+  var eaAgents = (DATA.ALL_AGENTS || []).filter(function(a) {
+    return a.lat != null && a.lng != null && a.type === 'enterprise';
+  });
+  var agentTests = DATA.AGENT_TESTS || {};
+  var testAvail = DATA.TEST_AVAILABILITY || {};
+  var extra = DATA.EXTRA_KPI || {};
+  var lossByTest = {};
+  (extra.loss_by_test || []).forEach(function(r) { lossByTest[r.test] = r.loss; });
+  var h = 0, w = 0, c = 0, u = 0;
+  eaAgents.forEach(function(m) {
+    var ea = getEnterpriseAgentHealth(m, agentTests, testAvail, lossByTest);
+    if (ea.health === 'healthy') h++;
+    else if (ea.health === 'warning') w++;
+    else if (ea.health === 'critical') c++;
+    else u++;
+  });
+  var total = eaAgents.length;
+  if (total === 0) {
+    badge.style.display = 'none';
+    return;
+  }
+  var parts = [];
+  if (c > 0) parts.push(c + ' crit');
+  if (w > 0) parts.push(w + ' warn');
+  if (h > 0) parts.push(h + ' ok');
+  if (u > 0) parts.push(u + ' n/a');
+  badge.textContent = parts.join(' · ') + ' / ' + total + ' enterprise';
+  var badgeColor = c > 0 ? 'var(--te-red)' : w > 0 ? 'var(--te-yellow)' : u === total ? 'var(--te-text-dim)' : 'var(--te-green)';
+  badge.style.color = badgeColor;
+  badge.style.borderColor = badgeColor.indexOf('var') === 0 ? '' : badgeColor;
+  badge.style.display = 'block';
+}
+
 function buildMap() {
   var allAgents = (DATA.ALL_AGENTS || []).filter(function(a) {
     return a.lat != null && a.lng != null && (a.type === 'enterprise' || a.type === 'endpoint');
@@ -990,14 +1036,11 @@ function buildMap() {
   var jitterByTest = {};
   (extra.jitter_by_test || []).forEach(function(r) { jitterByTest[r.test] = r.jitter; });
 
-  var healthyCnt = 0, totalEa = 0;
   allAgents.forEach(function(m) {
     var color = colors[m.type] || '#F97316';
     if (m.type === 'enterprise') {
       var eaHealth = getEnterpriseAgentHealth(m, agentTests, testAvail, lossByTest);
       color = eaHealth.color;
-      totalEa++;
-      if (eaHealth.health === 'healthy') healthyCnt++;
     }
     var size = m.type === 'enterprise' ? 10 : 7;
     var icon = L.divIcon({
@@ -1017,15 +1060,7 @@ function buildMap() {
     mapLayers[m.type].addLayer(marker);
   });
 
-  var badge = document.getElementById('mapHealthBadge');
-  if (totalEa > 0) {
-    var badgeColor = healthyCnt === totalEa ? 'var(--te-green)' : healthyCnt >= totalEa * 0.9 ? 'var(--te-yellow)' : 'var(--te-red)';
-    var statusWord = healthyCnt === totalEa ? 'Healthy' : healthyCnt >= totalEa * 0.9 ? 'Warning' : 'Critical';
-    badge.style.color = badgeColor;
-    badge.style.borderColor = badgeColor.indexOf('var') === 0 ? '' : badgeColor;
-    badge.textContent = healthyCnt + ' / ' + totalEa + ' ' + statusWord;
-    badge.style.display = 'block';
-  }
+  updateMapEnterpriseHealthBadge();
 
   if (mapLayerVisible.enterprise) mapLayers.enterprise.addTo(leafletMap);
   if (mapLayerVisible.endpoint) mapLayers.endpoint.addTo(leafletMap);
@@ -1044,6 +1079,7 @@ function toggleMapLayer(type) {
     if (mapLayers[type] && leafletMap) leafletMap.removeLayer(mapLayers[type]);
   }
   updateMapBadge();
+  updateMapEnterpriseHealthBadge();
 }
 
 function updateMapBadge() {
