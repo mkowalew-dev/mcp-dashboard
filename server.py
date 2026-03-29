@@ -1146,10 +1146,10 @@ _startup_timing: dict[str, float | str | bool | None] = {
 _startup_t0: float | None = None  # perf_counter at startup begin
 
 
-def _startup_mark(phase: str, elapsed: float) -> None:
-    """Record the elapsed seconds for a startup phase."""
+def _startup_mark(phase: str, value) -> None:
+    """Record a startup phase value (seconds are rounded; dicts/bools stored as-is)."""
     with _startup_timing_lock:
-        _startup_timing[phase] = round(elapsed, 2)
+        _startup_timing[phase] = round(value, 2) if isinstance(value, (int, float)) else value
 
 
 def _startup_get() -> dict:
