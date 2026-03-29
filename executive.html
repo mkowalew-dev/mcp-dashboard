@@ -769,11 +769,11 @@ function formatTrendTime(iso) {
   }
 }
 
-function sparklinePolylinePoints(points, w, h) {
+function sparklinePolylinePoints(points, w, h, fixedMin, fixedMax) {
   if (!points || points.length < 2) return '';
   var vs = points.map(function(p) { return p.v; });
-  var min = Math.min.apply(null, vs);
-  var max = Math.max.apply(null, vs);
+  var min = fixedMin != null ? fixedMin : Math.min.apply(null, vs);
+  var max = fixedMax != null ? fixedMax : Math.max.apply(null, vs);
   if (!isFinite(min) || !isFinite(max)) return '';
   if (Math.abs(max - min) < 1e-9) { min -= 1; max += 1; }
   var pad = 2;
@@ -793,7 +793,9 @@ function setTrendEl(id, points, kind) {
   var w = 116;
   var h = 24;
   var strokeVar = 'var(--te-blue)';
-  var ptsStr = sparklinePolylinePoints(points, w, h);
+  var fixedMin = (kind === 'avail' || kind === 'loss') ? 0 : null;
+  var fixedMax = (kind === 'avail' || kind === 'loss') ? 100 : null;
+  var ptsStr = sparklinePolylinePoints(points, w, h, fixedMin, fixedMax);
   if (!ptsStr) { el.innerHTML = ''; return; }
 
   el.innerHTML =
@@ -1024,7 +1026,7 @@ function drillLoss() {
     var tl = TYPE_LABELS[testTypes[it.test] || ''] || testTypes[it.test] || 'Test';
     var loss = it.loss;
     var clr = loss <= 0.5 ? 'var(--te-green)' : loss <= 2 ? 'var(--te-yellow)' : 'var(--te-red)';
-    var barW = Math.min(100, loss * 10);
+    var barW = Math.max(0, Math.min(100, loss));
     rows.push('<tr><td><div class="drill-test-name">' + escHtml(it.test) + '</div><div class="drill-test-type">' + escHtml(tl) + '</div><div class="drill-bar-wrap"><div class="drill-bar-fill" style="width:' + barW + '%;background:' + clr + '"></div></div></td><td style="color:' + clr + '">' + escHtml(loss.toFixed(3) + '%') + '</td></tr>');
   }
   openDrill('Highest packet loss — Top 5', drillTableWrap(['Test', 'Loss'], rows));

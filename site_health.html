@@ -1167,7 +1167,7 @@ function openTestDetail(testId) {
   var maxBar = Math.max(respMs || 0, (jitterMs || 0) * 5, 100);
   var respPct = maxBar > 0 && respMs != null ? Math.min(100, (respMs / maxBar) * 100) : 0;
   var jitterPct = maxBar > 0 && jitterMs != null ? Math.min(100, ((jitterMs * 5) / maxBar) * 100) : 0;
-  var lossBarPct = lossPct != null ? Math.min(100, lossPct * 20) : 0;
+  var lossBarPct = lossPct != null ? Math.max(0, Math.min(100, lossPct)) : 0;
 
   var waterfallHtml = '<div class="test-drill-waterfall-layer"><div class="test-drill-waterfall-layer-title">Application / network metrics</div>' +
     (respMs != null ? '<div class="test-drill-waterfall-row"><span class="test-drill-waterfall-label">Response / Latency</span><div class="test-drill-waterfall-bar-wrap"><div class="test-drill-waterfall-bar" style="width:' + respPct + '%;background:var(--te-blue);"></div></div><span class="test-drill-waterfall-ms">' + respMs + 'ms</span></div>' : '') +

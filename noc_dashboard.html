@@ -2575,8 +2575,15 @@ function renderNocTimeSeriesChart(container, rawPoints, valueKind, strokeColor, 
     container.innerHTML = '<div style="font-size:12px;color:var(--te-text-dim);padding:16px;">Invalid trend data.</div>';
     return;
   }
-  if (Math.abs(maxV - minV) < 1e-9) {
-    if (valueKind === 'ms') { minV -= 10; maxV += 10; } else { minV -= 0.5; maxV += 0.5; }
+  if (valueKind === 'pct' || valueKind === 'losspct') {
+    minV = 0;
+    maxV = 100;
+  } else if (valueKind === 'ms') {
+    minV = 0;
+    if (maxV <= 0) maxV = 10;
+    maxV = maxV * 1.1;
+  } else {
+    if (Math.abs(maxV - minV) < 1e-9) { minV -= 0.5; maxV += 0.5; }
   }
   var t0 = tMs[0];
   var t1 = tMs[n - 1];
@@ -2797,47 +2804,6 @@ function buildAvailabilityModal() {
     return { name: name, val: avail[name], id: idLookup[name] || '' };
   }).sort(function(a,b) { return a.val - b.val; });
 
-  if (sorted.length > 1) {
-    var chartData = sorted.slice().sort(function(a,b){ return b.val - a.val; });
-    var maxVal = 100;
-    var minVal = chartData[chartData.length - 1].val;
-    var range = maxVal - minVal || 1;
-    var W = 760, H = 180, padL = 50, padR = 16, padT = 20, padB = 30;
-    var plotW = W - padL - padR, plotH = H - padT - padB;
-    var cLen = chartData.length;
-
-    var points = chartData.map(function(t, i) {
-      var x = padL + (i / (cLen - 1 || 1)) * plotW;
-      var y = padT + plotH - ((t.val - minVal) / range) * plotH;
-      return { x: x, y: y, val: t.val };
-    });
-
-    var pathD = 'M' + points.map(function(p){ return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L');
-    var areaD = pathD + ' L' + points[points.length-1].x.toFixed(1) + ',' + (padT + plotH) + ' L' + points[0].x.toFixed(1) + ',' + (padT + plotH) + ' Z';
-
-    html += '<div class="modal-chart-area">';
-    html += '<div class="modal-chart-title">Per-test availability (current window)</div>';
-    html += '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;">';
-    html += '<defs><linearGradient id="availGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--te-green)" stop-opacity="0.25"/><stop offset="100%" stop-color="var(--te-green)" stop-opacity="0.02"/></linearGradient></defs>';
-
-    for (var g = 0; g <= 4; g++) {
-      var gy = padT + (plotH / 4) * g;
-      var gVal = (maxVal - (g / 4) * range).toFixed(1);
-      html += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--te-border)" stroke-width="0.5" stroke-dasharray="3,3"/>';
-      html += '<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)">' + gVal + '%</text>';
-    }
-
-    html += '<path d="' + areaD + '" fill="url(#availGrad)"/>';
-    html += '<path d="' + pathD + '" fill="none" stroke="var(--te-green)" stroke-width="2" stroke-linejoin="round"/>';
-
-    var thresholdY = padT + plotH - ((99.5 - minVal) / range) * plotH;
-    if (thresholdY >= padT && thresholdY <= padT + plotH) {
-      html += '<line x1="' + padL + '" y1="' + thresholdY.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + thresholdY.toFixed(1) + '" stroke="var(--te-yellow)" stroke-width="1" stroke-dasharray="6,4" opacity="0.6"/>';
-      html += '<text x="' + (W - padR - 2) + '" y="' + (thresholdY - 5).toFixed(1) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)" opacity="0.7">99.5% SLA</text>';
-    }
-
-    html += '</svg></div>';
-  }
 
   html += '<div class="modal-chart-area">';
   html += '<div class="modal-chart-title">Top Lowest Availability Tests</div>';
@@ -2900,49 +2866,6 @@ function buildResponseModal() {
   html += '<div class="noc-metric-trend-wrap" id="nocTrendMountResp"></div>';
   html += '</div>';
 
-  if (respByTest.length > 1) {
-    var sorted = respByTest.slice().sort(function(a,b){ return a.ms - b.ms; });
-    var maxMs = sorted[sorted.length - 1].ms;
-    var minMs = sorted[0].ms;
-    var range = maxMs - minMs || 1;
-    var W = 760, H = 180, padL = 50, padR = 16, padT = 20, padB = 30;
-    var plotW = W - padL - padR, plotH = H - padT - padB;
-    var n = sorted.length;
-
-    var thresholdMs = p95 !== '--' ? p95 : null;
-
-    var points = sorted.map(function(t, i) {
-      var x = padL + (i / (n - 1 || 1)) * plotW;
-      var y = padT + plotH - ((t.ms - minMs) / range) * plotH;
-      return { x: x, y: y, ms: t.ms };
-    });
-
-    var pathD = 'M' + points.map(function(p){ return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L');
-    var areaD = pathD + ' L' + points[points.length-1].x.toFixed(1) + ',' + (padT + plotH) + ' L' + points[0].x.toFixed(1) + ',' + (padT + plotH) + ' Z';
-
-    html += '<div class="modal-chart-area">';
-    html += '<div class="modal-chart-title">Per-test response time (current window)</div>';
-    html += '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;">';
-    html += '<defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--te-red)" stop-opacity="0.25"/><stop offset="100%" stop-color="var(--te-red)" stop-opacity="0.02"/></linearGradient></defs>';
-
-    for (var g = 0; g <= 4; g++) {
-      var gy = padT + (plotH / 4) * g;
-      var gVal = Math.round(maxMs - (g / 4) * range);
-      html += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--te-border)" stroke-width="0.5" stroke-dasharray="3,3"/>';
-      html += '<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)">' + gVal + 'ms</text>';
-    }
-
-    html += '<path d="' + areaD + '" fill="url(#areaGrad)"/>';
-    html += '<path d="' + pathD + '" fill="none" stroke="var(--te-red)" stroke-width="2" stroke-linejoin="round"/>';
-
-    if (thresholdMs !== null) {
-      var ty = padT + plotH - ((thresholdMs - minMs) / range) * plotH;
-      html += '<line x1="' + padL + '" y1="' + ty.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + ty.toFixed(1) + '" stroke="var(--te-red)" stroke-width="1" stroke-dasharray="6,4" opacity="0.6"/>';
-      html += '<text x="' + (W - padR - 2) + '" y="' + (ty - 5).toFixed(1) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)" opacity="0.7">Threshold</text>';
-    }
-
-    html += '</svg></div>';
-  }
 
   html += '<div class="modal-chart-area">';
   html += '<div class="modal-chart-title">Top Slowest Tests Contributing to Response Time</div>';
@@ -3006,49 +2929,6 @@ function buildLossModal() {
   html += '<div class="noc-metric-trend-wrap" id="nocTrendMountLoss"></div>';
   html += '</div>';
 
-  if (lossByTest.length > 1) {
-    var chartData = lossByTest.slice().sort(function(a,b){ return a.loss - b.loss; });
-    var maxLoss = chartData[chartData.length - 1].loss;
-    var minLoss = chartData[0].loss;
-    var range = maxLoss - minLoss || 0.01;
-    var W = 760, H = 180, padL = 50, padR = 16, padT = 20, padB = 30;
-    var plotW = W - padL - padR, plotH = H - padT - padB;
-    var cLen = chartData.length;
-
-    var points = chartData.map(function(t, i) {
-      var x = padL + (i / (cLen - 1 || 1)) * plotW;
-      var y = padT + plotH - ((t.loss - minLoss) / range) * plotH;
-      return { x: x, y: y, loss: t.loss };
-    });
-
-    var pathD = 'M' + points.map(function(p){ return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L');
-    var areaD = pathD + ' L' + points[points.length-1].x.toFixed(1) + ',' + (padT + plotH) + ' L' + points[0].x.toFixed(1) + ',' + (padT + plotH) + ' Z';
-
-    html += '<div class="modal-chart-area">';
-    html += '<div class="modal-chart-title">Per-test packet loss (current window)</div>';
-    html += '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;">';
-    html += '<defs><linearGradient id="lossGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--te-orange)" stop-opacity="0.25"/><stop offset="100%" stop-color="var(--te-orange)" stop-opacity="0.02"/></linearGradient></defs>';
-
-    for (var g = 0; g <= 4; g++) {
-      var gy = padT + (plotH / 4) * g;
-      var gVal = (maxLoss - (g / 4) * range).toFixed(2);
-      html += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--te-border)" stroke-width="0.5" stroke-dasharray="3,3"/>';
-      html += '<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)">' + gVal + '%</text>';
-    }
-
-    html += '<path d="' + areaD + '" fill="url(#lossGrad)"/>';
-    html += '<path d="' + pathD + '" fill="none" stroke="var(--te-orange)" stroke-width="2" stroke-linejoin="round"/>';
-
-    if (p95 !== '--' && p95 > minLoss) {
-      var threshY = padT + plotH - ((p95 - minLoss) / range) * plotH;
-      if (threshY >= padT && threshY <= padT + plotH) {
-        html += '<line x1="' + padL + '" y1="' + threshY.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + threshY.toFixed(1) + '" stroke="var(--te-red)" stroke-width="1" stroke-dasharray="6,4" opacity="0.6"/>';
-        html += '<text x="' + (W - padR - 2) + '" y="' + (threshY - 5).toFixed(1) + '" text-anchor="end" fill="var(--te-text-dim)" font-size="10" font-family="var(--font-mono)" opacity="0.7">P95 Threshold</text>';
-      }
-    }
-
-    html += '</svg></div>';
-  }
 
   html += '<div class="modal-chart-area">';
   html += '<div class="modal-chart-title">Top Highest Packet Loss Tests</div>';
@@ -3059,10 +2939,9 @@ function buildLossModal() {
   html += '<th style="background:var(--te-dark);color:var(--te-text-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--te-border);width:40%;">Distribution</th></tr></thead><tbody>';
 
   var worst = lossByTest.slice(0, 10);
-  var barMax = worst.length > 0 ? Math.max(worst[0].loss, 0.01) : 0.01;
 
   worst.forEach(function(t, idx) {
-    var pct = Math.max(3, (t.loss / barMax) * 100);
+    var pct = Math.max(0, Math.min(100, t.loss));
     var barColor = t.loss > 5 ? 'var(--te-red)' : t.loss > 1 ? 'var(--te-orange)' : t.loss > 0.1 ? 'var(--te-yellow)' : 'var(--te-green)';
     var valColor = t.loss > 5 ? 'var(--te-red)' : t.loss > 1 ? 'var(--te-orange)' : t.loss > 0.1 ? 'var(--te-yellow)' : 'var(--te-green)';
     var teLink = t.id ? 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(t.id) : '#';
