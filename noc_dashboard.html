@@ -659,6 +659,33 @@ function computeHistoryTrendDelta(series, opts) {
   return { arrow: arrow, text: text, cls: good ? 'trend-good' : 'trend-bad' };
 }
 
+function _liveCountValue(kpiKey) {
+  if (!DATA) return null;
+  if (kpiKey === 'alert_count') return (DATA.ALERT_FEED || []).length;
+  if (kpiKey === 'event_count') return (DATA.LIVE_EVENTS || []).length;
+  if (kpiKey === 'outage_count') {
+    var c = DATA.COUNTS || {};
+    return (c.app_outages || 0) + (c.net_outages || 0);
+  }
+  return null;
+}
+
+function _countTrendWithLiveFallback(series, kpiKey, opts) {
+  if (series && series.length >= 2) return computeHistoryTrendDelta(series, opts);
+  var live = _liveCountValue(kpiKey);
+  if (live == null) return null;
+  if (series && series.length === 1) {
+    var prev = series[0].v;
+    if (prev == null || isNaN(prev)) return null;
+    var delta = live - prev;
+    if (Math.abs(delta) < 0.5) return { arrow: '\u2192', text: 'stable', cls: 'trend-stable' };
+    var up = delta > 0;
+    var good = opts.higherBetter ? up : !up;
+    return { arrow: up ? '\u2191' : '\u2193', text: (delta > 0 ? '+' : '') + Math.round(delta), cls: good ? 'trend-good' : 'trend-bad' };
+  }
+  return { arrow: '\u2192', text: 'stable', cls: 'trend-stable' };
+}
+
 function refreshNocKpiStripTrendsFromHistory() {
   var win = typeof currentWindow !== 'undefined' ? currentWindow : '24h';
   var allKpis = 'availability_mean,avg_response_ms,avg_packet_loss,alert_count,event_count,outage_count';
@@ -671,9 +698,9 @@ function refreshNocKpiStripTrendsFromHistory() {
       setKpiTrendRow('kpiAvailTrend', computeHistoryTrendDelta(s.availability_mean, { higherBetter: true, unit: 'pct' }));
       setKpiTrendRow('kpiRespTrend', computeHistoryTrendDelta(s.avg_response_ms, { higherBetter: false, unit: 'ms' }));
       setKpiTrendRow('kpiLossTrend', computeHistoryTrendDelta(s.avg_packet_loss, { higherBetter: false, unit: 'losspct' }));
-      setKpiTrendRow('kpiAlertsTrend', computeHistoryTrendDelta(s.alert_count, { higherBetter: false, unit: 'count' }));
-      setKpiTrendRow('kpiEventsTrend', computeHistoryTrendDelta(s.event_count, { higherBetter: false, unit: 'count' }));
-      setKpiTrendRow('kpiOutagesTrend', computeHistoryTrendDelta(s.outage_count, { higherBetter: false, unit: 'count' }));
+      setKpiTrendRow('kpiAlertsTrend', _countTrendWithLiveFallback(s.alert_count, 'alert_count', { higherBetter: false, unit: 'count' }));
+      setKpiTrendRow('kpiEventsTrend', _countTrendWithLiveFallback(s.event_count, 'event_count', { higherBetter: false, unit: 'count' }));
+      setKpiTrendRow('kpiOutagesTrend', _countTrendWithLiveFallback(s.outage_count, 'outage_count', { higherBetter: false, unit: 'count' }));
     })
     .catch(function() { /* keep placeholder */ });
 }

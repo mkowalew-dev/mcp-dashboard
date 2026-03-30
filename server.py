@@ -2532,6 +2532,7 @@ def _initial_load_background():
             _startup_mark("db_warmup_sec", warmup_sec)
 
             if warmed:
+                _kpi_persist_hourly({}, {})
                 _startup_mark("skipped_24h_fallback", True)
                 total = time.perf_counter() - (_startup_t0 or time.perf_counter())
                 _startup_mark("total_sec", total)
@@ -2606,6 +2607,7 @@ def run_initial_load():
                 warmed = _warm_caches_from_db(inv)
                 _startup_mark("db_warmup_sec", time.perf_counter() - t_w)
                 if warmed:
+                    _kpi_persist_hourly({}, {})
                     _startup_mark("skipped_24h_fallback", True)
                     total = time.perf_counter() - _startup_t0
                     _startup_mark("total_sec", total)
@@ -2659,6 +2661,7 @@ def run_initial_load():
             warmed = _warm_caches_from_db(inv)
             _startup_mark("db_warmup_sec", time.perf_counter() - t_w)
             if warmed:
+                _kpi_persist_hourly({}, {})
                 _startup_mark("skipped_24h_fallback", True)
                 total = time.perf_counter() - _startup_t0
                 _startup_mark("total_sec", total)
