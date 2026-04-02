@@ -362,6 +362,7 @@ var DATA = null;
 var siteMap = null;
 var currentWindow = '24h';
 var _full24Poll = null;
+var _refreshTimer = null;
 var currentSiteKey = null;
 
 var TEST_CATEGORIES = [
@@ -520,6 +521,7 @@ async function loadData() {
     renderSite();
     scheduleUpgradeToFull24h();
     document.getElementById('loadingOverlay').classList.add('hidden');
+    scheduleAutoRefresh();
   } catch (e) {
     console.error('Failed to load data:', e);
     if (e.status === 503) {
@@ -532,6 +534,16 @@ async function loadData() {
       setTimeout(loadData, 5000);
     }
   }
+}
+
+function scheduleAutoRefresh() {
+  if (_refreshTimer) {
+    clearInterval(_refreshTimer);
+    _refreshTimer = null;
+  }
+  var mins = DATA && DATA.refresh_interval_minutes;
+  if (mins == null || isNaN(mins) || mins <= 0) mins = 15;
+  _refreshTimer = setInterval(function() { loadData(); }, mins * 60 * 1000);
 }
 
 function populateSiteSelect() {

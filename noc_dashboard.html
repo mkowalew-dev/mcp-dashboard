@@ -589,6 +589,7 @@ let DATA = null;
 let leafletMap = null;
 let currentWindow = '24h';
 let _full24Poll = null;
+let _refreshTimer = null;
 const NOC_KPI_STRIP_HISTORY_H = 168;
 
 const TYPE_LABELS = {
@@ -722,6 +723,7 @@ async function loadData() {
     DATA = await fetchData(currentWindow);
     renderAll();
     document.getElementById('loadingOverlay').classList.add('hidden');
+    scheduleAutoRefresh();
   } catch (e) {
     console.error('Failed to load data:', e);
     if (e.status === 503) {
@@ -734,6 +736,16 @@ async function loadData() {
       setTimeout(loadData, 5000);
     }
   }
+}
+
+function scheduleAutoRefresh() {
+  if (_refreshTimer) {
+    clearInterval(_refreshTimer);
+    _refreshTimer = null;
+  }
+  var mins = DATA && DATA.refresh_interval_minutes;
+  if (mins == null || isNaN(mins) || mins <= 0) mins = 15;
+  _refreshTimer = setInterval(function() { loadData(); }, mins * 60 * 1000);
 }
 
 function updateStaleBanner() {
