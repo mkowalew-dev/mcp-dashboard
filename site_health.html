@@ -116,7 +116,7 @@
   .category-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; }
   .category-header-left { display: flex; align-items: center; gap: 10px; }
   .category-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-  .category-name { font-size: 14px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; }
+  .category-name { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: 0.3px; }
   .category-header-right { display: flex; align-items: center; gap: 14px; }
   .category-count { font-size: 12px; font-family: var(--font-mono); font-weight: 600; }
   .category-health-label { font-size: 11px; font-weight: 600; }
@@ -365,13 +365,59 @@ var _full24Poll = null;
 var _refreshTimer = null;
 var currentSiteKey = null;
 
-var TEST_CATEGORIES = [
-  { key: 'dns', name: 'DNS Services', icon: '\u26A0', types: ['dns-server', 'dnstrace', 'dnssec'] },
-  { key: 'web', name: 'Web & Application', icon: '\u26A0', types: ['http-server', 'page-load', 'web-transactions', 'api', 'ftp-server'] },
-  { key: 'net', name: 'Network Connectivity', icon: '\u26A0', types: ['agent-to-server', 'agent-to-agent'] },
-  { key: 'voice', name: 'Voice & Collaboration', icon: '\u26A0', types: ['voice', 'sip-server'] },
-  { key: 'other', name: 'Other Monitoring', icon: '\u26A0', types: ['bgp'] },
-];
+function getDefaultBusinessServicesConfig() {
+  return {
+    type_rules: { 'Network Infrastructure': ['agent-to-agent', 'agent-to-server', 'bgp'], Voice: ['voice', 'sip-server'] },
+    services: [
+      { name: 'Collaboration - Microsoft', icon: '\uD83D\uDCE7', patterns: ['MSTeams'] },
+      { name: 'Health Care', icon: '\u2695', patterns: ['MyChart', 'BSWHealth'] },
+      { name: 'Voice', icon: '\uD83D\uDCDE', patterns: [] },
+      { name: 'Collaboration - Webex', icon: '\uD83D\uDCDE', patterns: ['Webex'] },
+      { name: 'Microsoft O365', icon: '\uD83D\uDCE7', patterns: ['MSO365', 'MS O365', 'O365'] },
+      { name: 'Retail Operations', icon: '\uD83C\uDFEA', patterns: ['RetailDemo', 'RetailSite', 'Public_Sector'] },
+      { name: 'Pseudoco Platform', icon: '\uD83D\uDDA5', patterns: ['Pseudoco', 'Psuedoco', 'pseudoco.'] },
+      { name: 'AI Services', icon: '\uD83E\uDD16', patterns: ['Bedrock'] },
+      { name: 'AWS Cloud Services', icon: '\u2601', patterns: ['AWS'] },
+      { name: 'Azure Cloud Services', icon: '\u2601', patterns: ['Azure'] },
+      { name: 'Salesforce & CRM', icon: '\uD83D\uDCC8', patterns: ['Salesforce', 'SAP', 'salesforce.com', 'lightning.force'] },
+      { name: 'Workday HR', icon: '\uD83D\uDC64', patterns: ['Workday'] },
+      { name: 'Facebook & Social', icon: '\uD83C\uDF10', patterns: ['Facebook'] },
+      { name: 'Network Infrastructure', icon: '\uD83D\uDD17', patterns: ['SD-WAN', 'DataCenter', 'Site-DC', 'Stores', 'TOR-NYC', 'SFTP'] },
+      { name: 'Data Center Management', icon: '\uD83D\uDCBB', patterns: ['ESXi', 'TrueNAS', 'Splunk'] },
+      { name: 'Demo & Monitoring', icon: '\uD83D\uDD2C', patterns: ['Mar Demo', 'Boutique', 'Internet Test', 'ThousandEyes', 'thousandeyes.com'] },
+      { name: 'Other Services', icon: '\uD83D\uDCE6', patterns: [] },
+    ],
+  };
+}
+
+function getBusinessServicesConfig() {
+  if (typeof DATA !== 'undefined' && DATA && DATA.business_services_config && DATA.business_services_config.services) {
+    return DATA.business_services_config;
+  }
+  return getDefaultBusinessServicesConfig();
+}
+
+function getBusinessService(test) {
+  var cfg = getBusinessServicesConfig();
+  var testName = (test && test.name) ? test.name : '';
+  var testType = (test && test.type) ? String(test.type).toLowerCase() : '';
+  for (var s = 0; s < (cfg.services || []).length; s++) {
+    var svc = cfg.services[s];
+    var patterns = svc.patterns || [];
+    for (var p = 0; p < patterns.length; p++) {
+      var pat = String(patterns[p]);
+      if (pat && testName.toLowerCase().indexOf(pat.toLowerCase()) !== -1) return svc.name;
+    }
+  }
+  var typeRules = cfg.type_rules || {};
+  var typeRuleNames = Object.keys(typeRules);
+  for (var r = 0; r < typeRuleNames.length; r++) {
+    var svcName = typeRuleNames[r];
+    var types = typeRules[svcName];
+    if (types && types.indexOf(testType) !== -1) return svcName;
+  }
+  return 'Other Services';
+}
 
 var TYPE_LABELS = {
   'http-server': 'HTTP Server', 'page-load': 'Page Load', 'dns-server': 'DNS Server',
@@ -640,14 +686,11 @@ function renderKPIs(site, tests, epAgentsForSite) {
   var issues = DATA.KNOWN_ISSUES || {};
   tests.forEach(function(t) { if (issues[t.name]) siteAlerts++; });
 
-  var uniqueCategories = {};
+  var uniqueSvcs = {};
   tests.forEach(function(t) {
-    var tp = (t.type || '').toLowerCase();
-    TEST_CATEGORIES.forEach(function(cat) {
-      if (cat.types.indexOf(tp) >= 0) uniqueCategories[cat.key] = true;
-    });
+    uniqueSvcs[getBusinessService(t)] = true;
   });
-  var serviceCount = Object.keys(uniqueCategories).length;
+  var serviceCount = Object.keys(uniqueSvcs).length;
 
   var el = document.getElementById('kpiOverall');
   if (overallAvail != null) {
@@ -662,7 +705,7 @@ function renderKPIs(site, tests, epAgentsForSite) {
   var testsEl = document.getElementById('kpiTests');
   testsEl.textContent = tests.length;
   testsEl.className = 'kpi-value blue';
-  document.getElementById('kpiTestsSub').textContent = serviceCount + ' service' + (serviceCount !== 1 ? 's' : '');
+  document.getElementById('kpiTestsSub').textContent = serviceCount + ' business service' + (serviceCount !== 1 ? 's' : '');
 
   var healthyEl = document.getElementById('kpiHealthy');
   healthyEl.textContent = healthy;
@@ -876,31 +919,59 @@ function endpointAgentHasNoData(ep) {
 
 function renderCategories(site, tests, epAgentsForSite) {
   var panel = document.getElementById('rightPanel');
-  var availability = DATA.TEST_AVAILABILITY || {};
-  var extra = DATA.EXTRA_KPI || {};
-  var lossMap = {};
-  (extra.loss_by_test || []).forEach(function(r) { lossMap[r.test] = r.loss; });
   if (epAgentsForSite == null) epAgentsForSite = getEndpointAgentsForSite(site);
 
-  var categorized = {};
-  TEST_CATEGORIES.forEach(function(cat) { categorized[cat.key] = []; });
-
+  var grouped = {};
   tests.forEach(function(t) {
-    var tp = (t.type || '').toLowerCase();
-    var placed = false;
-    TEST_CATEGORIES.forEach(function(cat) {
-      if (cat.types.indexOf(tp) >= 0) {
-        categorized[cat.key].push(t);
-        placed = true;
-      }
+    var svc = getBusinessService(t);
+    if (!grouped[svc]) grouped[svc] = [];
+    grouped[svc].push(t);
+  });
+
+  var bsvcConfig = getBusinessServicesConfig();
+  var svcOrder = (bsvcConfig.services || []).map(function(s) { return s.name; });
+  if (svcOrder.indexOf('Other Services') === -1) svcOrder.push('Other Services');
+
+  var svcStatusMap = {};
+  var svcCritCount = {};
+  svcOrder.forEach(function(svcName) {
+    var items = grouped[svcName];
+    if (!items || items.length === 0) {
+      svcStatusMap[svcName] = 'unknown';
+      svcCritCount[svcName] = 0;
+      return;
+    }
+    var c = 0, d = 0, h = 0;
+    items.forEach(function(t) {
+      var st = getTestStatus(t, DATA);
+      if (st === 'critical') c++;
+      else if (st === 'degraded') d++;
+      else if (st === 'healthy') h++;
     });
-    if (!placed) categorized['other'].push(t);
+    svcStatusMap[svcName] = c > 0 ? 'critical' : d > 0 ? 'degraded' : h > 0 ? 'healthy' : 'unknown';
+    svcCritCount[svcName] = c * 1000 + d;
+  });
+
+  svcOrder = svcOrder.filter(function(s) { return grouped[s] && grouped[s].length > 0; });
+  var STATUS_PRIORITY = { critical: 0, degraded: 1, healthy: 2, unknown: 3 };
+  svcOrder.sort(function(a, b) {
+    var pa = STATUS_PRIORITY[svcStatusMap[a]] !== undefined ? STATUS_PRIORITY[svcStatusMap[a]] : 3;
+    var pb = STATUS_PRIORITY[svcStatusMap[b]] !== undefined ? STATUS_PRIORITY[svcStatusMap[b]] : 3;
+    if (pa !== pb) return pa - pb;
+    return (svcCritCount[b] || 0) - (svcCritCount[a] || 0);
   });
 
   var html = '';
-  TEST_CATEGORIES.forEach(function(cat) {
-    var items = categorized[cat.key];
-    if (items.length === 0) return;
+  if (tests.length === 0) {
+    html = '<div class="no-site">No tests assigned to agents at this site.</div>';
+  } else {
+  html += '<div style="padding:0 0 8px;"><div style="display:flex;justify-content:space-between;align-items:center;">';
+  html += '<span style="font-size:11px;color:var(--te-text-dim);font-weight:600;text-transform:uppercase;letter-spacing:1.2px;">Business Services</span>';
+  html += '<span style="font-size:10px;color:var(--te-blue);font-family:var(--font-mono);">' + tests.length + ' tests</span></div></div>';
+
+  svcOrder.forEach(function(svcName) {
+    var items = grouped[svcName];
+    if (!items || items.length === 0) return;
 
     var healthy = 0, total = items.length;
     var availVals = [];
@@ -912,23 +983,24 @@ function renderCategories(site, tests, epAgentsForSite) {
     });
 
     var catAvail = availVals.length > 0 ? availVals.reduce(function(a, b) { return a + b; }, 0) / availVals.length : null;
-    var catStatus = healthy === total ? 'healthy' : healthy >= total * 0.5 ? 'degraded' : 'critical';
+    var catStatus = svcStatusMap[svcName] || 'unknown';
     if (catAvail != null && catAvail < 80) catStatus = 'critical';
-    else if (catAvail != null && catAvail < 95) catStatus = 'degraded';
-    else if (catAvail != null) catStatus = 'healthy';
+    else if (catAvail != null && catAvail < 95 && catStatus !== 'critical') catStatus = 'degraded';
+    else if (catAvail != null && catStatus === 'unknown') catStatus = 'healthy';
+
     var critCount = items.filter(function(t) { return getTestStatus(t, DATA) === 'critical'; }).length;
     if (critCount > 0) catStatus = 'critical';
 
     var dotColor = statusColor(catStatus);
-    var healthLabel = catStatus === 'critical' ? 'Critical' : catStatus === 'degraded' ? 'Degraded' : 'Healthy';
+    var healthLabel = catStatus === 'critical' ? 'Critical' : catStatus === 'degraded' ? 'Degraded' : catStatus === 'healthy' ? 'Healthy' : 'Unknown';
     var barPct = catAvail != null ? Math.min(100, catAvail) : 0;
-    var barColor = catStatus === 'critical' ? 'var(--te-red)' : catStatus === 'degraded' ? 'var(--te-yellow)' : 'var(--te-green)';
+    var barColor = catStatus === 'critical' ? 'var(--te-red)' : catStatus === 'degraded' ? 'var(--te-yellow)' : catStatus === 'healthy' ? 'var(--te-green)' : 'var(--te-text-dim)';
 
     html += '<div class="category-section">';
     html += '<div class="category-header">';
     html += '<div class="category-header-left">';
     html += '<div class="category-dot" style="background:' + dotColor + ';box-shadow:0 0 6px ' + dotColor + ';"></div>';
-    html += '<div class="category-name">' + escHtml(cat.name) + '</div>';
+    html += '<div class="category-name">' + escHtml(svcName) + '</div>';
     html += '</div>';
     html += '<div class="category-header-right">';
     html += '<span class="category-count" style="color:var(--te-text-dim);">' + healthy + '/' + total + '</span>';
@@ -970,9 +1042,6 @@ function renderCategories(site, tests, epAgentsForSite) {
     html += '</div>';
     html += '</div>';
   });
-
-  if (html === '') {
-    html = '<div class="no-site">No tests assigned to agents at this site.</div>';
   }
 
   // Build endpoint table from a fresh list; use DOM so every row is guaranteed to be added
