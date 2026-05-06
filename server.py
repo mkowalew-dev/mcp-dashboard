@@ -194,6 +194,11 @@ WINDOWS = {
     "7d": 168,
 }
 
+# When MCP omits enterprise agent IDs on each test's agents[] array, AGENT_TESTS stays empty and
+# Site Health shows "no tests". Fallback attaches synthetic tests to those enterprise agents.
+# Values: none | implicit | all (default: all).
+AGENT_TESTS_ORPHAN_FALLBACK = (os.getenv("AGENT_TESTS_ORPHAN_FALLBACK") or "all").strip().lower()
+
 # First paint: load a small window first, then 1h hourly + 24h cache fallback in background
 INITIAL_BOOTSTRAP_DISABLED = (os.getenv("INITIAL_BOOTSTRAP_DISABLED") or "").strip().lower() in ("1", "true", "yes")
 _ibw = (os.getenv("INITIAL_BOOTSTRAP_WINDOW") or "1h").strip()
@@ -1610,6 +1615,75 @@ def _parse_list(resp):
     return []
 
 
+def _collect_agent_links_from_test(t: dict) -> tuple[list[tuple[str, str, str]], int]:
+    """Gather agent ids tied to a synthetic test across MCP field variants.
+
+    ThousandEyes responses may use agents, assignedAgents, enterpriseAgents, agentIds, etc."""
+    rows: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for key in (
+        "agents",
+        "assignedAgents",
+        "assigned_agents",
+        "enterpriseAgents",
+        "enterprise_agents",
+        "monitoredAgents",
+        "monitored_agents",
+        "collectorAgents",
+        "testAgents",
+        "test_agents",
+    ):
+        for ag in t.get(key) or []:
+            if isinstance(ag, dict):
+                ag_id = str(ag.get("agentId") or ag.get("agent_id") or ag.get("id") or "").strip()
+                if ag_id and ag_id not in seen:
+                    seen.add(ag_id)
+                    nm = ag.get("agentName") or ag.get("agent_name") or ""
+                    loc = ag.get("location") or ag.get("locationName") or ""
+                    rows.append((ag_id, str(nm), str(loc)))
+            elif ag is not None and str(ag).strip():
+                ag_id = str(ag).strip()
+                if ag_id not in seen:
+                    seen.add(ag_id)
+                    rows.append((ag_id, "", ""))
+    for key in ("agentIds", "agent_ids", "enterpriseAgentIds", "enterprise_agent_ids"):
+        for raw in t.get(key) or []:
+            ag_id = str(raw).strip()
+            if ag_id and ag_id not in seen:
+                seen.add(ag_id)
+                rows.append((ag_id, "", ""))
+    return rows, len(seen)
+
+
+def _backfill_agent_tests_orphan_enterprise(
+    agent_tests: dict[str, list[str]], all_tests: list[dict], enterprise_agent_ids: list[str]
+) -> int:
+    """Populate AGENT_TESTS for enterprise agents MCP did not link under any test row."""
+    mode = AGENT_TESTS_ORPHAN_FALLBACK
+    if mode in ("none", "0", "false", "off"):
+        return 0
+    all_names = [t["name"] for t in all_tests if t.get("name")]
+    implicit_names = [t["name"] for t in all_tests if t.get("no_mcp_agent_ids")]
+    n_backfilled = 0
+    for aid in enterprise_agent_ids:
+        if agent_tests.get(aid):
+            continue
+        if mode == "implicit":
+            agent_tests[aid] = list(dict.fromkeys(implicit_names))
+        else:
+            agent_tests[aid] = list(dict.fromkeys(all_names))
+        if agent_tests[aid]:
+            n_backfilled += 1
+    if n_backfilled:
+        log.warning(
+            "AGENT_TESTS orphan fallback (%s): attached synthetic tests to %d enterprise agent(s) "
+            "with no per-test agentIds from MCP — Site Health / map metrics need this when TE omits agents[]",
+            mode,
+            n_backfilled,
+        )
+    return n_backfilled
+
+
 # ---------------------------------------------------------------------------
 # Base data: agents, tests, alerts, outages, events, endpoint agents
 # ---------------------------------------------------------------------------
@@ -1692,20 +1766,17 @@ async def refresh_base_data_async():
         if not tid or not tname:
             continue
         test_ids[tname] = tid
-        test_agents = []
-        for ag in (t.get("agents") or []):
-            ag_id = str(ag.get("agentId") or ag.get("agent_id") or ag.get("id") or "").strip()
-            ag_name = ag.get("agentName", "")
-            ag_loc = ag.get("location", "")
-            if ag_id:
-                agent_tests.setdefault(ag_id, [])
-                if tname not in agent_tests[ag_id]:
-                    agent_tests[ag_id].append(tname)
-            test_agents.append({"name": ag_name, "loc": ag_loc})
+        links, n_agents = _collect_agent_links_from_test(t)
+        test_agents = [{"name": nm, "loc": loc} for _, nm, loc in links[:5]]
+        for ag_id, _, _ in links:
+            agent_tests.setdefault(ag_id, [])
+            if tname not in agent_tests[ag_id]:
+                agent_tests[ag_id].append(tname)
         all_tests.append({
             "id": tid, "name": tname, "type": ttype, "target": target,
-            "agents_count": len(t.get("agents") or []),
-            "agents": test_agents[:5],
+            "agents_count": n_agents,
+            "agents": test_agents,
+            "no_mcp_agent_ids": n_agents == 0,
         })
 
     dropped_synth = len(raw_synth_rows) - len(all_tests)
@@ -1800,6 +1871,11 @@ async def refresh_base_data_async():
         all_agents.append(ep_entry)
 
     _deconflict_coords(all_agents)
+
+    enterprise_aids = [a["id"] for a in all_agents if a.get("type") == "enterprise"]
+    _backfill_agent_tests_orphan_enterprise(agent_tests, all_tests, enterprise_aids)
+    for _t in all_tests:
+        _t.pop("no_mcp_agent_ids", None)
 
     ep_test_names = []
     for t in _parse_list(ep_tests_resp):
