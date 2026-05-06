@@ -1572,10 +1572,26 @@ def _deconflict_coords(agents: list):
 
 
 def _parse_list(resp):
+    """Extract a list from MCP JSON; tolerate common wrapper shapes.
+
+    ThousandEyes MCP tools may return {tests:[]}, {result:{tests:[]}}, {data:[]}, etc.
+    The previous implementation only checked top-level result/tests — other shapes yielded
+    an empty list and the UI showed no tests/services."""
+    if resp is None:
+        return []
     if isinstance(resp, list):
         return resp
     if isinstance(resp, dict):
-        return resp.get("result", resp.get("tests", []))
+        for key in ("tests", "result", "data", "items", "results", "testList"):
+            v = resp.get(key)
+            if isinstance(v, list):
+                return v
+            if isinstance(v, dict):
+                for nk in ("tests", "items", "data", "results", "testList"):
+                    inner = v.get(nk)
+                    if isinstance(inner, list):
+                        return inner
+        return []
     return []
 
 
@@ -1627,13 +1643,38 @@ async def refresh_base_data_async():
     test_ids = {}
     all_tests = []
     raw_synth_rows = _parse_list(tests_resp)
+    if tests_resp is None:
+        log.error(
+            "MCP list_network_app_synthetics_tests returned None (check TE_TOKEN, MCP connectivity, prior MCP errors)",
+        )
+    elif isinstance(tests_resp, dict) and isinstance(tests_resp.get("raw"), str) and not raw_synth_rows:
+        log.error(
+            "MCP list_network_app_synthetics_tests returned non-JSON (tool CSV/HTML?): raw_prefix=%r",
+            (tests_resp.get("raw") or "")[:240],
+        )
+    elif not raw_synth_rows and tests_resp is not None:
+        dk = list(tests_resp.keys()) if isinstance(tests_resp, dict) else []
+        log.warning(
+            "MCP list_network_app_synthetics_tests: 0 tests after parse; response_type=%s top_keys=%s",
+            type(tests_resp).__name__,
+            dk[:30],
+        )
+
     for t in raw_synth_rows:
-        tid = str(t.get("testId") or t.get("testid") or t.get("id") or "").strip()
-        tname = (t.get("name") or t.get("testName") or "").strip()
+        tid = str(
+            t.get("testId") or t.get("testid") or t.get("test_id") or t.get("id") or ""
+        ).strip()
+        tname = (t.get("name") or t.get("testName") or t.get("test_name") or "").strip()
         ttype = t.get("type", "")
         target = t.get("target", "")
-        enabled = t.get("enabled", True)
-        if not tid or not tname or not enabled:
+        # Treat missing/null enabled as true; JSON null does not use .get default (would be None → skipped).
+        if t.get("isDisabled") is True or t.get("disabled") is True:
+            continue
+        en = t.get("enabled")
+        if en is False:
+            continue
+
+        if not tid or not tname:
             continue
         test_ids[tname] = tid
         test_agents = []
