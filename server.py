@@ -1543,6 +1543,21 @@ def classify_agent_type(agent_type_str: str) -> str:
     return "endpoint"
 
 
+def classify_ce_agent_row(a: dict) -> str:
+    """Cloud vs enterprise for list_cloud_enterprise_agents (shape varies by MCP/API)."""
+    combined = " ".join(
+        str(a.get(k) or "")
+        for k in ("agentType", "agent_type", "type", "agentCategory", "category")
+    ).lower()
+    if "cloud" in combined:
+        return "cloud"
+    if "enterprise" in combined or "appliance" in combined:
+        return "enterprise"
+    if a.get("isEnterprise") is True or str(a.get("enterprise", "")).lower() in ("true", "1", "yes"):
+        return "enterprise"
+    return classify_agent_type(str(a.get("agentType") or a.get("agent_type") or ""))
+
+
 def derive_city(agent: dict) -> str:
     loc = agent.get("location") or agent.get("locationName") or ""
     if "," in loc:
@@ -1705,33 +1720,33 @@ async def refresh_base_data_async():
     relevant_agent_ids = set(agent_tests.keys())
 
     # --- Cloud & Enterprise Agents ---
+    # Previously we required every CE agent id to appear under list_network_app_synthetics_tests → agents[].
+    # ThousandEyes MCP often omits enterprise agents from that nested list while still returning them from
+    # list_cloud_enterprise_agents — which hid all enterprise pins and left Site Health empty.
     all_agents = []
     agent_id_set = set()
     cloud_count = 0
     enterprise_count = 0
 
     ce_raw = _parse_list(ce_agents_resp)
-    ce_orphan = 0
-    for a in ce_raw:
-        ax = str(a.get("agentId") or a.get("agent_id") or a.get("id") or "").strip()
-        if ax and ax not in relevant_agent_ids:
-            ce_orphan += 1
-    if ce_orphan:
-        log.warning(
-            "MCP list_cloud_enterprise_agents: %d agent(s) not referenced by any synthetic test's agents[] "
-            "(no agentId match → omitted from map / enterprise metrics join — check TE test assignment)",
-            ce_orphan,
-        )
+    enterprise_included_without_test_link = 0
 
     for a in ce_raw:
         aid = str(a.get("agentId") or a.get("agent_id") or a.get("id") or "").strip()
-        if not aid or aid in agent_id_set or aid not in relevant_agent_ids:
+        if not aid or aid in agent_id_set:
             continue
+        atype = classify_ce_agent_row(a)
+        # Cloud agents: keep strict link to tests so we do not plot unrelated fleet.
+        # Enterprise agents: always plot when TE labels them enterprise (even if agents[] on tests is empty).
+        if aid not in relevant_agent_ids and atype != "enterprise":
+            continue
+        if aid not in relevant_agent_ids and atype == "enterprise":
+            enterprise_included_without_test_link += 1
+
         agent_id_set.add(aid)
         loc = (a.get("location") or "").strip()
         lat, lng = resolve_coords(loc)
-        atype = classify_agent_type(a.get("agentType", ""))
-        agent_name = a.get("agentName", "")
+        agent_name = a.get("agentName", "") or a.get("agent_name", "")
         # Use geographic location for site grouping; fall back to agent name when location is empty
         city = loc if loc and atype == "enterprise" else (derive_city(a) if atype == "cloud" else agent_name)
         if atype == "cloud":
@@ -1746,6 +1761,13 @@ async def refresh_base_data_async():
             agent_entry["lat"] = lat
             agent_entry["lng"] = lng
         all_agents.append(agent_entry)
+
+    if enterprise_included_without_test_link:
+        log.info(
+            "Enterprise agents: included %d agent(s) from list_cloud_enterprise_agents that were not listed "
+            "under synthetic tests' agents[] (common MCP shape — map/Site Health still useful)",
+            enterprise_included_without_test_link,
+        )
 
     _deconflict_coords(all_agents)
 
