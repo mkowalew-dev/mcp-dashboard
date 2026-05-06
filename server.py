@@ -1459,6 +1459,37 @@ def resolve_coords(location_str: str):
     return None, None
 
 
+def _metric_keys_to_test_names(parsed: dict[str, float]) -> dict[str, float]:
+    """Map numeric MCP CSV keys to catalog test names when aggregatesMap is missing or incomplete.
+
+    The UI joins metrics via test *name* (see AGENT_TESTS → TEST_AVAILABILITY). If the MCP response
+    omits TEST entries in aggregatesMap — common when bucketing differs by agent mix — parse_csv_metrics
+    leaves keys as raw test IDs; enterprise-only rows then show no availability."""
+    with _cache_lock:
+        id_to_name: dict[str, str] = {}
+        for name, tid in (_base_cache.get("TEST_IDS") or {}).items():
+            ts = str(tid)
+            if ts.startswith("ep-"):
+                continue
+            id_to_name[ts] = name
+    out: dict[str, float] = {}
+    remap_n = 0
+    for k, v in parsed.items():
+        sk = str(k).strip()
+        if sk in id_to_name:
+            remap_n += 1
+            out[id_to_name[sk]] = v
+        else:
+            out[sk] = v
+    if remap_n:
+        log.debug(
+            "MCP metrics: remapped %d CSV key(s) from test id → catalog name "
+            "(aggregatesMap.TEST incomplete; UI expects names in TEST_AVAILABILITY)",
+            remap_n,
+        )
+    return out
+
+
 def parse_csv_metrics(data: dict) -> dict[str, float]:
     csv_text = data.get("csv", "")
     agg_map = data.get("names", {}).get("aggregatesMap", {})
@@ -1482,7 +1513,13 @@ def parse_csv_metrics(data: dict) -> dict[str, float]:
     for tid in sums:
         name = names_map.get(tid, tid)
         result[name] = round(sums[tid] / cnts[tid], 2)
-    return result
+    if not names_map and sums:
+        log.debug(
+            "MCP CSV: aggregatesMap.TEST empty but %d distinct test row key(s) in CSV "
+            "(will remap via TEST_IDS when possible)",
+            len(sums),
+        )
+    return _metric_keys_to_test_names(result)
 
 
 def _merge_parsed_first_wins(responses_in_order: list[dict | None]) -> dict[str, float]:
@@ -1589,9 +1626,10 @@ async def refresh_base_data_async():
     agent_tests = {}
     test_ids = {}
     all_tests = []
-    for t in _parse_list(tests_resp):
-        tid = str(t.get("testid", ""))
-        tname = t.get("name", "")
+    raw_synth_rows = _parse_list(tests_resp)
+    for t in raw_synth_rows:
+        tid = str(t.get("testId") or t.get("testid") or t.get("id") or "").strip()
+        tname = (t.get("name") or t.get("testName") or "").strip()
         ttype = t.get("type", "")
         target = t.get("target", "")
         enabled = t.get("enabled", True)
@@ -1600,7 +1638,7 @@ async def refresh_base_data_async():
         test_ids[tname] = tid
         test_agents = []
         for ag in (t.get("agents") or []):
-            ag_id = str(ag.get("agentId", ""))
+            ag_id = str(ag.get("agentId") or ag.get("agent_id") or ag.get("id") or "").strip()
             ag_name = ag.get("agentName", "")
             ag_loc = ag.get("location", "")
             if ag_id:
@@ -1614,6 +1652,15 @@ async def refresh_base_data_async():
             "agents": test_agents[:5],
         })
 
+    dropped_synth = len(raw_synth_rows) - len(all_tests)
+    if dropped_synth:
+        log.warning(
+            "MCP list_network_app_synthetics_tests: %d row(s) skipped (missing testId/name or disabled); "
+            "%d tests in catalog",
+            dropped_synth,
+            len(all_tests),
+        )
+
     relevant_agent_ids = set(agent_tests.keys())
 
     # --- Cloud & Enterprise Agents ---
@@ -1622,8 +1669,21 @@ async def refresh_base_data_async():
     cloud_count = 0
     enterprise_count = 0
 
-    for a in _parse_list(ce_agents_resp):
-        aid = str(a.get("agentId", ""))
+    ce_raw = _parse_list(ce_agents_resp)
+    ce_orphan = 0
+    for a in ce_raw:
+        ax = str(a.get("agentId") or a.get("agent_id") or a.get("id") or "").strip()
+        if ax and ax not in relevant_agent_ids:
+            ce_orphan += 1
+    if ce_orphan:
+        log.warning(
+            "MCP list_cloud_enterprise_agents: %d agent(s) not referenced by any synthetic test's agents[] "
+            "(no agentId match → omitted from map / enterprise metrics join — check TE test assignment)",
+            ce_orphan,
+        )
+
+    for a in ce_raw:
+        aid = str(a.get("agentId") or a.get("agent_id") or a.get("id") or "").strip()
         if not aid or aid in agent_id_set or aid not in relevant_agent_ids:
             continue
         agent_id_set.add(aid)
@@ -2049,7 +2109,19 @@ async def fetch_metrics_async(hours: int) -> dict[str, float]:
             await asyncio.sleep(delay + random.uniform(0, 0.4))
 
     _set_refresh_status(message=f"{hours}h availability loaded ({len(test_availability)} tests)")
-    log.info("Metrics for %dh: %d tests with availability", hours, len(test_availability))
+    log.info(
+        "Metrics for %dh: %d tests with availability (%d synth tests in catalog)",
+        hours,
+        len(test_availability),
+        len(synth_ids),
+    )
+    gap = len(synth_ids) - len(test_availability)
+    if gap > 0:
+        log.warning(
+            "MCP metrics: %d catalog test(s) missing availability after MCP fetch "
+            "(empty CSV for time window, unsupported metric for test type, or MCP errors — check logs above)",
+            gap,
+        )
     return test_availability
 
 
