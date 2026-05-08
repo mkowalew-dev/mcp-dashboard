@@ -993,7 +993,15 @@ def _build_metrics_from_hourly(hours: int) -> dict[str, float] | None:
 
     if not rows:
         return None
-    return {row[0]: round(row[2], 4) for row in rows if row[0]}
+    out_m: dict[str, float] = {}
+    for row in rows:
+        tname, tid, avg_v = row[0], row[1], row[2]
+        key = _test_id_str_to_catalog_name(str(tid)) if tid else None
+        if not key:
+            key = (tname or "").strip()
+        if key:
+            out_m[key] = round(avg_v, 4)
+    return out_m or None
 
 
 def _percentile(sorted_vals: list[float], p: float) -> float:
@@ -1037,8 +1045,14 @@ def _build_extra_kpis_from_hourly(hours: int) -> dict | None:
     by_test: dict[str, dict] = {}
     for tid, tname, mkey, avg_val in rows:
         if tid not in by_test:
-            by_test[tid] = {"name": tname, "metrics": {}}
+            display = (_test_id_str_to_catalog_name(str(tid)) or (tname or "").strip())
+            by_test[tid] = {"name": display, "metrics": {}}
         by_test[tid]["metrics"][mkey] = avg_val
+
+    for tid in by_test:
+        cat = _test_id_str_to_catalog_name(str(tid))
+        if cat:
+            by_test[tid]["name"] = cat
 
     extra: dict = {
         "avg_response_ms": None, "p50_response_ms": None,
@@ -1464,6 +1478,21 @@ def resolve_coords(location_str: str):
     return None, None
 
 
+def _test_id_str_to_catalog_name(test_id_raw: str) -> str | None:
+    """Resolve MCP metric row dimension (test id string) → current synthetic test name from base cache.
+
+    ThousandEyes aggregatesMap.TEST labels often lag behind or differ from ``list_network_app_synthetics_tests``
+    names after renames; the dashboard keys ``TEST_AVAILABILITY`` / ``EXTRA_KPI`` by catalog names only."""
+    tid = str(test_id_raw).strip()
+    if not tid or tid.startswith("ep-"):
+        return None
+    with _cache_lock:
+        for name, xid in (_base_cache.get("TEST_IDS") or {}).items():
+            if str(xid).strip() == tid:
+                return name
+    return None
+
+
 def _metric_keys_to_test_names(parsed: dict[str, float]) -> dict[str, float]:
     """Map numeric MCP CSV keys to catalog test names when aggregatesMap is missing or incomplete.
 
@@ -1516,8 +1545,18 @@ def parse_csv_metrics(data: dict) -> dict[str, float]:
                 pass
     result = {}
     for tid in sums:
-        name = names_map.get(tid, tid)
-        result[name] = round(sums[tid] / cnts[tid], 2)
+        tid_k = str(tid).strip()
+        catalog_name = _test_id_str_to_catalog_name(tid_k)
+        te_label = names_map.get(tid, names_map.get(tid_k))
+        key = catalog_name or te_label or tid_k
+        if catalog_name and te_label and catalog_name != te_label:
+            log.debug(
+                "MCP CSV: aligned metrics key id=%s TE label '%s' → catalog '%s'",
+                tid_k,
+                te_label,
+                catalog_name,
+            )
+        result[key] = round(sums[tid] / cnts[tid], 2)
     if not names_map and sums:
         log.debug(
             "MCP CSV: aggregatesMap.TEST empty but %d distinct test row key(s) in CSV "
