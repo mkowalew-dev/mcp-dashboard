@@ -1070,6 +1070,13 @@ function renderCategories(site, tests, epAgentsForSite) {
   var svcOrder = (bsvcConfig.services || []).map(function(s) { return s.name; });
   if (svcOrder.indexOf('Other Services') === -1) svcOrder.push('Other Services');
 
+  // API-trimmed configs often omit type_rule buckets (e.g. Network Infrastructure). Without this,
+  // tests still land in grouped[] but never render — KPI counts them while the list stays short.
+  Object.keys(grouped).forEach(function(k) {
+    if (!grouped[k] || grouped[k].length === 0) return;
+    if (svcOrder.indexOf(k) === -1) svcOrder.push(k);
+  });
+
   var svcStatusMap = {};
   var svcCritCount = {};
   svcOrder.forEach(function(svcName) {
