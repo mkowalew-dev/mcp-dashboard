@@ -2007,6 +2007,8 @@ async def refresh_base_data_async():
         test_ids[tname] = tid
         links, n_agents = _collect_agent_links_from_test(t)
         test_agents = [{"name": nm, "loc": loc} for _, nm, loc in links[:5]]
+        # Full id list for Site Health: AGENT_TESTS can be incomplete when MCP omits inverse links.
+        catalog_agent_ids = [str(ag_id).strip() for ag_id, _, _ in links if str(ag_id).strip()]
         for ag_id, _, _ in links:
             agent_tests.setdefault(ag_id, [])
             if tname not in agent_tests[ag_id]:
@@ -2015,6 +2017,7 @@ async def refresh_base_data_async():
             "id": tid, "name": tname, "type": ttype, "target": target,
             "agents_count": n_agents,
             "agents": test_agents,
+            "agent_ids": catalog_agent_ids,
             "no_mcp_agent_ids": n_agents == 0,
         })
 

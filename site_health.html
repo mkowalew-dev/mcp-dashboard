@@ -460,11 +460,41 @@ function getSiteTests(site, data) {
   (data.ALL_TESTS || []).forEach(function(t) { allTestsMap[t.name] = t; });
 
   var testNames = {};
+  function addByName(tn) {
+    if (allTestsMap[tn]) testNames[tn] = allTestsMap[tn];
+  }
+
   site.agents.forEach(function(a) {
-    (agentTests[a.id] || []).forEach(function(tn) {
-      if (allTestsMap[tn]) testNames[tn] = allTestsMap[tn];
-    });
+    var aid = a.id != null ? String(a.id) : '';
+    (agentTests[aid] || agentTests[a.id] || []).forEach(function(tn) { addByName(tn); });
   });
+
+  var siteAgentIds = {};
+  var siteAgentNames = {};
+  site.agents.forEach(function(a) {
+    if (a.id != null) siteAgentIds[String(a.id).trim()] = true;
+    var nm = (a.name || '').toLowerCase().trim();
+    if (nm) siteAgentNames[nm] = true;
+  });
+
+  (data.ALL_TESTS || []).forEach(function(t) {
+    var aids = t.agent_ids || [];
+    for (var i = 0; i < aids.length; i++) {
+      if (siteAgentIds[String(aids[i]).trim()]) {
+        addByName(t.name);
+        return;
+      }
+    }
+    var tagents = t.agents || [];
+    for (var j = 0; j < tagents.length; j++) {
+      var gn = (tagents[j].name || '').toLowerCase().trim();
+      if (gn && siteAgentNames[gn]) {
+        addByName(t.name);
+        return;
+      }
+    }
+  });
+
   return Object.values(testNames);
 }
 
