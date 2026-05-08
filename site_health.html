@@ -471,10 +471,13 @@ function getSiteTests(site, data) {
 
   var siteAgentIds = {};
   var siteAgentNames = {};
+  var siteLocTokens = {};
   site.agents.forEach(function(a) {
     if (a.id != null) siteAgentIds[String(a.id).trim()] = true;
     var nm = (a.name || '').toLowerCase().trim();
     if (nm) siteAgentNames[nm] = true;
+    var lt = firstLocationToken(a.loc || a.city || '');
+    if (lt) siteLocTokens[lt] = true;
   });
 
   (data.ALL_TESTS || []).forEach(function(t) {
@@ -489,6 +492,11 @@ function getSiteTests(site, data) {
     for (var j = 0; j < tagents.length; j++) {
       var gn = (tagents[j].name || '').toLowerCase().trim();
       if (gn && siteAgentNames[gn]) {
+        addByName(t.name);
+        return;
+      }
+      var gloc = firstLocationToken(tagents[j].loc || tagents[j].location || '');
+      if (gloc && siteLocTokens[gloc]) {
         addByName(t.name);
         return;
       }
@@ -900,6 +908,29 @@ function firstLocationToken(s) {
   return t;
 }
 
+/** Drop endpoints whose hostname encodes a known site code that disagrees with the selected site label. */
+function endpointHostnameConflictsSite(endpointName, siteName, siteLoc) {
+  var rules = [
+    { re: /^ATL[-_]/i, needle: 'atlanta' },
+    { re: /^AUS[-_]/i, needle: 'austin' },
+    { re: /^DFW[-_]/i, needle: 'dallas' },
+    { re: /^NYC[-_]/i, needle: 'new york' },
+    { re: /^LAX[-_]/i, needle: 'los angeles' },
+    { re: /^SEA[-_]/i, needle: 'seattle' },
+    { re: /^CHI[-_]/i, needle: 'chicago' },
+    { re: /^DEN[-_]/i, needle: 'denver' },
+  ];
+  var n = (endpointName || '').trim();
+  if (!n) return false;
+  var hay = ((siteName || '') + ' ' + (siteLoc || '')).toLowerCase();
+  for (var i = 0; i < rules.length; i++) {
+    if (!rules[i].re.test(n)) continue;
+    if (hay.indexOf(rules[i].needle) >= 0) continue;
+    return true;
+  }
+  return false;
+}
+
 function endpointAtSiteMatch(agentLoc, agentCity, siteName, siteLoc) {
   var loc = (agentLoc || '').toString().trim();
   var city = (agentCity || '').toString().trim();
@@ -953,6 +984,7 @@ function getEndpointAgentsForSite(site) {
 
   // Build from ENDPOINT_AGENTS first so we always show every endpoint at this location (table matches badge)
   allEp.forEach(function(e) {
+    if (endpointHostnameConflictsSite(e.name, site.name, site.loc || site.name)) return;
     var loc = (e.loc || '').toString().trim();
     var token = firstLocationToken(loc);
     var exact = (loc === siteName || loc === siteLoc);
@@ -964,6 +996,7 @@ function getEndpointAgentsForSite(site) {
   // Add any from ALL_AGENTS that we might have missed (e.g. different loc format)
   allAgents.forEach(function(a) {
     if (a.type !== 'endpoint') return;
+    if (endpointHostnameConflictsSite(a.name, site.name, site.loc || site.name)) return;
     var c = (a.city != null ? a.city : '').toString().trim();
     var l = (a.loc != null ? a.loc : '').toString().trim();
     if (c === site.name || l === site.loc || c === site.loc || l === site.name) {

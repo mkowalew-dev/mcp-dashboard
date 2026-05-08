@@ -1923,6 +1923,39 @@ def _backfill_agent_tests_orphan_enterprise(
     return n_backfilled
 
 
+def _reconcile_agent_tests_from_catalog(
+    agent_tests: dict[str, list[str]], all_tests: list[dict]
+) -> None:
+    """Ensure AGENT_TESTS lists every test name from each test's ``agent_ids`` (fixes MCP skew)."""
+    for t in all_tests:
+        tname = t.get("name")
+        if not tname:
+            continue
+        for raw in t.get("agent_ids") or []:
+            sid = str(raw).strip()
+            if not sid:
+                continue
+            agent_tests.setdefault(sid, [])
+            if tname not in agent_tests[sid]:
+                agent_tests[sid].append(tname)
+
+
+def _normalize_agent_tests_keys(agent_tests: dict) -> dict[str, list[str]]:
+    """Merge duplicate agent-id keys (int/str variants) into canonical string keys."""
+    merged: dict[str, list[str]] = {}
+    for k, names in agent_tests.items():
+        sk = str(k).strip()
+        if not sk:
+            continue
+        merged.setdefault(sk, [])
+        seen = set(merged[sk])
+        for n in names or []:
+            if n and n not in seen:
+                seen.add(n)
+                merged[sk].append(n)
+    return merged
+
+
 # ---------------------------------------------------------------------------
 # Base data: agents, tests, alerts, outages, events, endpoint agents
 # ---------------------------------------------------------------------------
@@ -2006,7 +2039,8 @@ async def refresh_base_data_async():
             continue
         test_ids[tname] = tid
         links, n_agents = _collect_agent_links_from_test(t)
-        test_agents = [{"name": nm, "loc": loc} for _, nm, loc in links[:5]]
+        # Site Health matches tests by agents[].loc tokens — include enough rows (not only five).
+        test_agents = [{"name": nm, "loc": loc} for _, nm, loc in links[:80]]
         # Full id list for Site Health: AGENT_TESTS can be incomplete when MCP omits inverse links.
         catalog_agent_ids = [str(ag_id).strip() for ag_id, _, _ in links if str(ag_id).strip()]
         for ag_id, _, _ in links:
@@ -2116,6 +2150,8 @@ async def refresh_base_data_async():
 
     enterprise_aids = [a["id"] for a in all_agents if a.get("type") == "enterprise"]
     _backfill_agent_tests_orphan_enterprise(agent_tests, all_tests, enterprise_aids)
+    _reconcile_agent_tests_from_catalog(agent_tests, all_tests)
+    agent_tests = _normalize_agent_tests_keys(agent_tests)
     for _t in all_tests:
         _t.pop("no_mcp_agent_ids", None)
 
