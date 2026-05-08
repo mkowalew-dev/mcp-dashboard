@@ -426,6 +426,104 @@ function availDotClass(v) {
   return 'status-red';
 }
 
+function kpiNumericForTest(t, nameKeyed, idKeyed) {
+  if (!t || !nameKeyed) return undefined;
+  var tn = t.name != null ? String(t.name).trim() : '';
+  if (tn && nameKeyed[tn] != null) return nameKeyed[tn];
+  if (t.name != null && nameKeyed[t.name] != null) return nameKeyed[t.name];
+  var tid = t.id != null ? String(t.id).trim() : '';
+  if (tid && idKeyed && idKeyed[tid] != null) return idKeyed[tid];
+  return undefined;
+}
+
+function buildRespLossLookups(extra) {
+  extra = extra || {};
+  var respMap = {}, respById = {}, lossMap = {}, lossById = {};
+  (extra.resp_by_test || []).forEach(function(r) {
+    if (r.test) respMap[String(r.test).trim()] = r.ms;
+    if (r.id != null && String(r.id) !== '') respById[String(r.id).trim()] = r.ms;
+  });
+  (extra.loss_by_test || []).forEach(function(r) {
+    if (r.test) lossMap[String(r.test).trim()] = r.loss;
+    if (r.id != null && String(r.id) !== '') lossById[String(r.id).trim()] = r.loss;
+  });
+  return { respMap: respMap, respById: respById, lossMap: lossMap, lossById: lossById };
+}
+
+function effectiveSyntheticAvailability(test, data) {
+  var availability = data.TEST_AVAILABILITY || {};
+  var availByTestId = data.TEST_AVAILABILITY_BY_TEST_ID || {};
+  var extra = data.EXTRA_KPI || {};
+  var lookups = buildRespLossLookups(extra);
+  var direct = kpiNumericForTest(test, availability, availByTestId);
+  if (direct != null) return direct;
+  var tp = (test.type || '').toLowerCase();
+  var useLoss = tp === 'http-server' || tp === 'ftp-server' || tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec' || tp === 'sip-server';
+  if (useLoss) {
+    var loss = kpiNumericForTest(test, lookups.lossMap || {}, lookups.lossById || {});
+    if (loss != null && typeof loss === 'number' && !isNaN(loss)) {
+      return Math.max(0, Math.min(100, 100 - loss));
+    }
+  }
+  var useResp = tp === 'http-server' || tp === 'ftp-server' || tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec';
+  if (useResp) {
+    var resp = kpiNumericForTest(test, lookups.respMap || {}, lookups.respById || {});
+    if (resp != null && typeof resp === 'number' && !isNaN(resp) && resp >= 0) return 100;
+  }
+  return null;
+}
+
+function getTestAvail(test, data) {
+  var avail = data.TEST_AVAILABILITY || {};
+  var availById = data.TEST_AVAILABILITY_BY_TEST_ID || {};
+  var extra = data.EXTRA_KPI || {};
+  var tp = (test.type || '').toLowerCase();
+
+  if (tp === 'voice') {
+    var mosList = extra.mos_by_test || [];
+    var rec = mosList.find(function(r) { return String(r.test || '').trim() === String(test.name || '').trim(); });
+    return rec && rec.value != null ? rec.value : null;
+  }
+  if (tp === 'sip-server') {
+    var mosList = extra.mos_by_test || [];
+    var rec = mosList.find(function(r) { return String(r.test || '').trim() === String(test.name || '').trim(); });
+    if (rec && rec.value != null) return rec.value;
+    return effectiveSyntheticAvailability(test, data);
+  }
+  if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
+    var lookups = buildRespLossLookups(extra);
+    var l = kpiNumericForTest(test, lookups.lossMap || {}, lookups.lossById || {});
+    if (l != null && typeof l === 'number' && !isNaN(l)) return Math.max(0, 100 - l);
+    var a = kpiNumericForTest(test, avail, availById);
+    return a != null ? a : null;
+  }
+  return effectiveSyntheticAvailability(test, data);
+}
+
+/** Roll up tests to 0–100% for Executive averages (skip Voice MOS-only; map SIP MOS ≤5 to percent). */
+function availPercentForExecutiveMean(test, data) {
+  var tp = (test.type || '').toLowerCase();
+  if (tp === 'voice') return null;
+  var v = getTestAvail(test, data);
+  if (v == null || typeof v !== 'number' || isNaN(v)) return null;
+  if (tp === 'sip-server' && v <= 5) return (v / 5) * 100;
+  return v;
+}
+
+function meanTestAvailability(data) {
+  if (!data) return null;
+  var tests = data.ALL_TESTS || [];
+  var vals = [];
+  for (var i = 0; i < tests.length; i++) {
+    var p = availPercentForExecutiveMean(tests[i], data);
+    if (p != null) vals.push(p);
+  }
+  if (vals.length === 0) return null;
+  var sum = 0;
+  for (var j = 0; j < vals.length; j++) sum += vals[j];
+  return sum / vals.length;
+}
+
 function strokeForScore(score) {
   if (score >= 99) return 'var(--te-green)';
   if (score >= 95) return 'var(--te-yellow)';
@@ -453,20 +551,6 @@ function renderGauge(score) {
     'stroke-dasharray="' + c + '" stroke-dashoffset="' + offset + '" transform="rotate(-90 60 60)" stroke-linecap="round"/>' +
     '</svg>' +
     '<div class="gauge-score"><div class="gauge-score-val">' + escHtml(s.toFixed(1)) + '%</div><div class="gauge-score-lbl">Score</div></div>';
-}
-
-function meanAvailability(avail) {
-  var vals = [];
-  for (var k in avail) {
-    if (Object.prototype.hasOwnProperty.call(avail, k)) {
-      var v = avail[k];
-      if (typeof v === 'number' && !isNaN(v)) vals.push(v);
-    }
-  }
-  if (vals.length === 0) return null;
-  var sum = 0;
-  for (var i = 0; i < vals.length; i++) sum += vals[i];
-  return sum / vals.length;
 }
 
 function updateStaleBanner() {
@@ -556,13 +640,12 @@ function renderAll() {
   if (loadSub) loadSub.textContent = 'Fetching live data from ' + orgName + '...';
   renderHeaderMeta();
 
-  var avail = DATA.TEST_AVAILABILITY || {};
   var ex = DATA.EXTRA_KPI || {};
   var c = DATA.COUNTS || {};
   var tests = DATA.ALL_TESTS || [];
   var testTypes = DATA.TEST_TYPES || {};
 
-  var score = meanAvailability(avail);
+  var score = meanTestAvailability(DATA);
   renderGauge(score);
 
   document.getElementById('statServices').textContent = String(c.tests != null ? c.tests : tests.length);
@@ -631,12 +714,12 @@ function renderAll() {
   }
 
   for (var ti = 0; ti < tests.length; ti++) {
-    var tn = tests[ti].name;
     var gname = getBusinessService(tests[ti]);
     if (!groups[gname]) groups[gname] = { avails: [], count: 0 };
     groups[gname].count++;
-    if (avail[tn] != null && typeof avail[tn] === 'number') {
-      groups[gname].avails.push(avail[tn]);
+    var ap = availPercentForExecutiveMean(tests[ti], DATA);
+    if (ap != null && typeof ap === 'number' && !isNaN(ap)) {
+      groups[gname].avails.push(ap);
     }
   }
 
@@ -682,10 +765,11 @@ function renderAll() {
   document.getElementById('bizGrid').innerHTML = bizHtml || '<div style="color:var(--te-text-dim);font-size:12px;">No business services mapped to active tests.</div>';
 
   var worst = [];
-  for (var name in avail) {
-    if (!Object.prototype.hasOwnProperty.call(avail, name)) continue;
-    var v = avail[name];
-    if (typeof v === 'number' && !isNaN(v)) worst.push({ name: name, avail: v, type: testTypes[name] || '' });
+  for (var wi = 0; wi < tests.length; wi++) {
+    var wt = tests[wi];
+    var wv = availPercentForExecutiveMean(wt, DATA);
+    if (wv == null || typeof wv !== 'number' || isNaN(wv)) continue;
+    worst.push({ name: wt.name, avail: wv, type: testTypes[wt.name] || wt.type || '' });
   }
   worst.sort(function(a, b) { return a.avail - b.avail; });
   worst = worst.slice(0, 8);
@@ -975,13 +1059,13 @@ function drillTableWrap(headCols, bodyRows) {
 
 function drillAvail() {
   if (!DATA) return;
-  var avail = DATA.TEST_AVAILABILITY || {};
   var testTypes = DATA.TEST_TYPES || {};
+  var tests = DATA.ALL_TESTS || [];
   var items = [];
-  for (var name in avail) {
-    if (!Object.prototype.hasOwnProperty.call(avail, name)) continue;
-    var v = avail[name];
-    if (typeof v === 'number' && !isNaN(v)) items.push({ name: name, val: v, type: testTypes[name] || '' });
+  for (var di = 0; di < tests.length; di++) {
+    var dt = tests[di];
+    var v = availPercentForExecutiveMean(dt, DATA);
+    if (typeof v === 'number' && !isNaN(v)) items.push({ name: dt.name, val: v, type: testTypes[dt.name] || dt.type || '' });
   }
   items.sort(function(a, b) { return a.val - b.val; });
   items = items.slice(0, 5);
@@ -1034,14 +1118,13 @@ function drillLoss() {
 
 function drillBizService(svcName) {
   if (!DATA) return;
-  var avail = DATA.TEST_AVAILABILITY || {};
   var testTypes = DATA.TEST_TYPES || {};
   var tests = DATA.ALL_TESTS || [];
   var items = [];
   for (var i = 0; i < tests.length; i++) {
     var t = tests[i];
     if (getBusinessService(t) !== svcName) continue;
-    var v = avail[t.name];
+    var v = availPercentForExecutiveMean(t, DATA);
     if (typeof v === 'number' && !isNaN(v)) {
       items.push({ name: t.name, val: v, type: testTypes[t.name] || t.type || '' });
     }
