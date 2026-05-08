@@ -1324,10 +1324,46 @@ function toggleBsvc(id) { document.getElementById(id).classList.toggle('expanded
 
 function kpiNumericForTest(t, nameKeyed, idKeyed) {
   if (!t || !nameKeyed) return undefined;
-  if (nameKeyed[t.name] != null) return nameKeyed[t.name];
+  var tn = t.name != null ? String(t.name).trim() : '';
+  if (tn && nameKeyed[tn] != null) return nameKeyed[tn];
+  if (t.name != null && nameKeyed[t.name] != null) return nameKeyed[t.name];
   var tid = t.id != null ? String(t.id).trim() : '';
   if (tid && idKeyed && idKeyed[tid] != null) return idKeyed[tid];
   return undefined;
+}
+
+function buildRespLossLookups(extra) {
+  extra = extra || {};
+  var respMap = {}, respById = {}, lossMap = {}, lossById = {};
+  (extra.resp_by_test || []).forEach(function(r) {
+    if (r.test) respMap[String(r.test).trim()] = r.ms;
+    if (r.id != null && String(r.id) !== '') respById[String(r.id).trim()] = r.ms;
+  });
+  (extra.loss_by_test || []).forEach(function(r) {
+    if (r.test) lossMap[String(r.test).trim()] = r.loss;
+    if (r.id != null && String(r.id) !== '') lossById[String(r.id).trim()] = r.loss;
+  });
+  return { respMap: respMap, respById: respById, lossMap: lossMap, lossById: lossById };
+}
+
+function effectiveSyntheticAvailability(t, availability, availByTestId, lookups) {
+  var direct = kpiNumericForTest(t, availability, availByTestId);
+  if (direct != null) return direct;
+  if (!lookups) return null;
+  var tp = (t.type || '').toLowerCase();
+  var useLoss = tp === 'http-server' || tp === 'ftp-server' || tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec' || tp === 'sip-server';
+  if (useLoss) {
+    var loss = kpiNumericForTest(t, lookups.lossMap || {}, lookups.lossById || {});
+    if (loss != null && typeof loss === 'number' && !isNaN(loss)) {
+      return Math.max(0, Math.min(100, 100 - loss));
+    }
+  }
+  var useResp = tp === 'http-server' || tp === 'ftp-server' || tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec';
+  if (useResp) {
+    var resp = kpiNumericForTest(t, lookups.respMap || {}, lookups.respById || {});
+    if (resp != null && typeof resp === 'number' && !isNaN(resp) && resp >= 0) return 100;
+  }
+  return null;
 }
 
 function renderCEATests() {
@@ -1380,6 +1416,8 @@ function renderCEATests() {
   var apiTxnTimeMap = {};
   (extra.api_txn_time_by_test || []).forEach(function(r) { apiTxnTimeMap[r.test] = r.value; });
 
+  var httpLookups = { respMap: respMap, respById: respById, lossMap: lossMap, lossById: lossById };
+
   function getTestHealth(t) {
     var tp = (t.type || '').toLowerCase();
     if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
@@ -1397,7 +1435,7 @@ function renderCEATests() {
       return { status: 'unknown', kpi: 'Pkt Loss', val: '--' };
     }
     if (tp === 'http-server' || tp === 'ftp-server') {
-      var a = kpiNumericForTest(t, availability, availByTestId);
+      var a = effectiveSyntheticAvailability(t, availability, availByTestId, httpLookups);
       if (a == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
       if (a < 95) return { status: 'critical', kpi: 'Availability', val: a.toFixed(1) + '%' };
       if (a < 99) return { status: 'warning', kpi: 'Availability', val: a.toFixed(1) + '%' };
@@ -1439,20 +1477,20 @@ function renderCEATests() {
       return { status: 'healthy', kpi: 'Completion', val: pc.toFixed(1) + '%' };
     }
     if (tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec') {
-      var da = kpiNumericForTest(t, availability, availByTestId);
+      var da = effectiveSyntheticAvailability(t, availability, availByTestId, httpLookups);
       if (da == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
       if (da < 95) return { status: 'critical', kpi: 'Availability', val: da.toFixed(1) + '%' };
       if (da < 99) return { status: 'warning', kpi: 'Availability', val: da.toFixed(1) + '%' };
       return { status: 'healthy', kpi: 'Availability', val: da.toFixed(1) + '%' };
     }
     if (tp === 'sip-server') {
-      var sa = kpiNumericForTest(t, availability, availByTestId);
+      var sa = effectiveSyntheticAvailability(t, availability, availByTestId, httpLookups);
       if (sa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
       if (sa < 95) return { status: 'critical', kpi: 'Availability', val: sa.toFixed(1) + '%' };
       if (sa < 99) return { status: 'warning', kpi: 'Availability', val: sa.toFixed(1) + '%' };
       return { status: 'healthy', kpi: 'Availability', val: sa.toFixed(1) + '%' };
     }
-    var fa = kpiNumericForTest(t, availability, availByTestId);
+    var fa = effectiveSyntheticAvailability(t, availability, availByTestId, httpLookups);
     if (fa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
     if (fa < 95) return { status: 'critical', kpi: 'Availability', val: fa.toFixed(1) + '%' };
     if (fa < 99) return { status: 'warning', kpi: 'Availability', val: fa.toFixed(1) + '%' };
@@ -1566,7 +1604,7 @@ function renderCEATests() {
       return pa - pb;
     });
     items.forEach(function(t, i) {
-      var avail = kpiNumericForTest(t, availability, availByTestId);
+      var avail = effectiveSyntheticAvailability(t, availability, availByTestId, httpLookups);
       var resp = kpiNumericForTest(t, respMap, respById);
       var loss = kpiNumericForTest(t, lossMap, lossById);
       var jitter = kpiNumericForTest(t, jitterMap, jitterById);
@@ -2057,7 +2095,7 @@ function nocBuildExtraMaps(extra) {
   };
 }
 
-function nocGaugeTestHealthPct(t, maps, availability, availByTestId) {
+function nocGaugeTestHealthPct(t, maps, availability, availByTestId, httpLookups) {
   availability = availability || {};
   availByTestId = availByTestId || {};
   maps = maps || {};
@@ -2089,11 +2127,16 @@ function nocGaugeTestHealthPct(t, maps, availability, availByTestId) {
   if (tp === 'page-load') return pageCompMap[t.name] != null ? pageCompMap[t.name] : availOf(t);
   if (tp === 'api') return apiCompMap[t.name] != null ? apiCompMap[t.name] : availOf(t);
   if (tp === 'bgp') return bgpReachMap[t.name] != null ? bgpReachMap[t.name] : null;
+  if (tp === 'http-server' || tp === 'ftp-server' || tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec' || tp === 'sip-server') {
+    var lk = httpLookups || buildRespLossLookups(typeof DATA !== 'undefined' && DATA ? DATA.EXTRA_KPI : {});
+    var eh = effectiveSyntheticAvailability(t, availability, availByTestId, lk);
+    return eh != null ? eh : null;
+  }
   var av = availOf(t);
   return av != null ? av : null;
 }
 
-function nocExplainTestHealth(t, availability, maps, availByTestId) {
+function nocExplainTestHealth(t, availability, maps, availByTestId, httpLookups) {
   availability = availability || {};
   availByTestId = availByTestId || {};
   maps = maps || {};
@@ -2122,7 +2165,8 @@ function nocExplainTestHealth(t, availability, maps, availByTestId) {
     return { status: 'unknown', kpi: 'Pkt Loss', val: '--' };
   }
   if (tp === 'http-server' || tp === 'ftp-server') {
-    var a = kpiNumericForTest(t, availability, availByTestId);
+    var lkH = httpLookups || buildRespLossLookups(typeof DATA !== 'undefined' && DATA ? DATA.EXTRA_KPI : {});
+    var a = effectiveSyntheticAvailability(t, availability, availByTestId, lkH);
     if (a == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
     if (a < 95) return { status: 'critical', kpi: 'Availability', val: a.toFixed(1) + '%' };
     if (a < 99) return { status: 'warning', kpi: 'Availability', val: a.toFixed(1) + '%' };
@@ -2164,20 +2208,23 @@ function nocExplainTestHealth(t, availability, maps, availByTestId) {
     return { status: 'healthy', kpi: 'Completion', val: pc.toFixed(1) + '%' };
   }
   if (tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec') {
-    var da = kpiNumericForTest(t, availability, availByTestId);
+    var lkD = httpLookups || buildRespLossLookups(typeof DATA !== 'undefined' && DATA ? DATA.EXTRA_KPI : {});
+    var da = effectiveSyntheticAvailability(t, availability, availByTestId, lkD);
     if (da == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
     if (da < 95) return { status: 'critical', kpi: 'Availability', val: da.toFixed(1) + '%' };
     if (da < 99) return { status: 'warning', kpi: 'Availability', val: da.toFixed(1) + '%' };
     return { status: 'healthy', kpi: 'Availability', val: da.toFixed(1) + '%' };
   }
   if (tp === 'sip-server') {
-    var sa = kpiNumericForTest(t, availability, availByTestId);
+    var lkS = httpLookups || buildRespLossLookups(typeof DATA !== 'undefined' && DATA ? DATA.EXTRA_KPI : {});
+    var sa = effectiveSyntheticAvailability(t, availability, availByTestId, lkS);
     if (sa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
     if (sa < 95) return { status: 'critical', kpi: 'Availability', val: sa.toFixed(1) + '%' };
     if (sa < 99) return { status: 'warning', kpi: 'Availability', val: sa.toFixed(1) + '%' };
     return { status: 'healthy', kpi: 'Availability', val: sa.toFixed(1) + '%' };
   }
-  var fa = kpiNumericForTest(t, availability, availByTestId);
+  var lkF = httpLookups || buildRespLossLookups(typeof DATA !== 'undefined' && DATA ? DATA.EXTRA_KPI : {});
+  var fa = effectiveSyntheticAvailability(t, availability, availByTestId, lkF);
   if (fa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
   if (fa < 95) return { status: 'critical', kpi: 'Availability', val: fa.toFixed(1) + '%' };
   if (fa < 99) return { status: 'warning', kpi: 'Availability', val: fa.toFixed(1) + '%' };
@@ -2236,6 +2283,7 @@ function buildServiceGaugeModal(serviceName) {
   var availByTestIdGauge = DATA.TEST_AVAILABILITY_BY_TEST_ID || {};
   var extra = DATA.EXTRA_KPI || {};
   var maps = nocBuildExtraMaps(extra);
+  var gaugeLookups = buildRespLossLookups(extra);
   var agentTests = DATA.AGENT_TESTS || {};
   var agents = DATA.ALL_AGENTS || [];
 
@@ -2255,8 +2303,8 @@ function buildServiceGaugeModal(serviceName) {
 
   var rows = [];
   items.forEach(function(t) {
-    var hp = nocGaugeTestHealthPct(t, maps, availability, availByTestIdGauge);
-    var ex = nocExplainTestHealth(t, availability, maps, availByTestIdGauge);
+    var hp = nocGaugeTestHealthPct(t, maps, availability, availByTestIdGauge, gaugeLookups);
+    var ex = nocExplainTestHealth(t, availability, maps, availByTestIdGauge, gaugeLookups);
     var id = t.id || '';
     var teLink = id && String(id).indexOf('ep-') !== 0 ? 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(id) : '';
     rows.push({ test: t, healthPct: hp, explain: ex, teLink: teLink });
@@ -2344,7 +2392,7 @@ function buildServiceGaugeModal(serviceName) {
     inSvc.forEach(function(n) {
       var tt = testByName[n];
       if (!tt) return;
-      var v = nocGaugeTestHealthPct(tt, maps, availability, availByTestIdGauge);
+      var v = nocGaugeTestHealthPct(tt, maps, availability, availByTestIdGauge, gaugeLookups);
       if (v != null) {
         pctVals.push(v);
         if (v < worstPct) {
@@ -2426,9 +2474,10 @@ function renderGauges() {
   if (tests.length === 0) return;
 
   var maps = nocBuildExtraMaps(extra);
+  var gaugeLookups = buildRespLossLookups(extra);
 
   function testHealthPct(t) {
-    return nocGaugeTestHealthPct(t, maps, availability, availByTestIdGauge);
+    return nocGaugeTestHealthPct(t, maps, availability, availByTestIdGauge, gaugeLookups);
   }
 
   var grouped = {};
