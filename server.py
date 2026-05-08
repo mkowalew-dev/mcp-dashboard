@@ -996,12 +996,14 @@ def _build_metrics_from_hourly(hours: int) -> dict[str, float] | None:
     out_m: dict[str, float] = {}
     for row in rows:
         tname, tid, avg_v = row[0], row[1], row[2]
-        key = _test_id_str_to_catalog_name(str(tid)) if tid else None
+        key = _resolve_mcp_dimension_to_catalog_name(str(tid)) if tid else None
         if not key:
-            key = (tname or "").strip()
+            key = ((tname or "").strip())
         if key:
             out_m[key] = round(avg_v, 4)
-    return out_m or None
+    synth = _get_metrics_synth_tests()
+    merged = coalesce_per_test_metric_map(out_m, synth)
+    return merged or None
 
 
 def _percentile(sorted_vals: list[float], p: float) -> float:
@@ -1478,19 +1480,106 @@ def resolve_coords(location_str: str):
     return None, None
 
 
+def _normalized_te_id_candidates(s: object) -> list[str]:
+    """Variants of CSV / MCP test id strings (quotes, floats as 123.0, ints)."""
+    raw = str(s).strip().strip('"').strip("'")
+    cands: dict[str, None] = {}
+    if raw:
+        cands.setdefault(raw, None)
+    try:
+        f = float(raw)
+        if f.is_integer():
+            cands.setdefault(str(int(f)), None)
+    except (ValueError, TypeError, OverflowError):
+        pass
+    return list(cands.keys())
+
+
 def _test_id_str_to_catalog_name(test_id_raw: str) -> str | None:
     """Resolve MCP metric row dimension (test id string) → current synthetic test name from base cache.
 
     ThousandEyes aggregatesMap.TEST labels often lag behind or differ from ``list_network_app_synthetics_tests``
     names after renames; the dashboard keys ``TEST_AVAILABILITY`` / ``EXTRA_KPI`` by catalog names only."""
-    tid = str(test_id_raw).strip()
-    if not tid or tid.startswith("ep-"):
-        return None
-    with _cache_lock:
-        for name, xid in (_base_cache.get("TEST_IDS") or {}).items():
-            if str(xid).strip() == tid:
-                return name
+    for cand in _normalized_te_id_candidates(test_id_raw):
+        if not cand or cand.startswith("ep-"):
+            continue
+        with _cache_lock:
+            for name, xid in (_base_cache.get("TEST_IDS") or {}).items():
+                if str(name).startswith("ep-"):
+                    continue
+                for xc in _normalized_te_id_candidates(xid):
+                    if xc == cand:
+                        return name
     return None
+
+
+def _resolve_mcp_dimension_to_catalog_name(dim_raw: str) -> str | None:
+    """Map a synthetics CSV TEST / EYEBROW_TEST dimension value → catalog ``ALL_TESTS.name``."""
+    if dim_raw is None:
+        return None
+    ds = str(dim_raw).strip().strip('"').strip("'")
+    if not ds or ds.startswith("ep-"):
+        return None
+    by_id = _test_id_str_to_catalog_name(ds)
+    if by_id:
+        return by_id
+    with _cache_lock:
+        test_ids_map = dict(_base_cache.get("TEST_IDS") or {})
+    if ds in test_ids_map:
+        return ds
+    dsl = ds.lower()
+    for name in test_ids_map.keys():
+        if isinstance(name, str) and name.strip().lower() == dsl:
+            return name
+    return None
+
+
+def coalesce_per_test_metric_map(raw: dict[str, float], name_to_tid: dict[str, str]) -> dict[str, float]:
+    """Fold arbitrary MCP CSV keys (ids, float ids, TE labels) onto canonical catalog test names.
+
+    Per-agent requests key off test id and work; batched ``group_by: TEST`` responses often key rows by
+    numeric id or legacy labels, so ``TEST_AVAILABILITY[t.name]`` stayed empty while ``/api/agent_perf`` did not."""
+    rawn: dict[str, float] = {}
+    for k, v in (raw or {}).items():
+        if isinstance(v, (int, float)):
+            rawn[str(k).strip()] = float(v)
+    if not name_to_tid:
+        return rawn
+    alias_vals: defaultdict[str, list[float]] = defaultdict(list)
+    for rk, rv in rawn.items():
+        cn = _resolve_mcp_dimension_to_catalog_name(rk)
+        if cn:
+            alias_vals[cn].append(rv)
+            continue
+        lk = rk.lower()
+        for nm in name_to_tid.keys():
+            if isinstance(nm, str) and nm.strip().lower() == lk:
+                alias_vals[nm].append(rv)
+                break
+    out: dict[str, float] = {}
+    for canon_name, tid in name_to_tid.items():
+        if str(tid).strip().startswith("ep-"):
+            continue
+        if canon_name in rawn:
+            out[canon_name] = rawn[canon_name]
+            continue
+        bucket = alias_vals.get(canon_name)
+        if bucket:
+            out[canon_name] = round(sum(bucket) / len(bucket), 4)
+    return out
+
+
+def _test_availability_by_test_id(metrics: dict[str, float], name_to_tid: dict[str, str]) -> dict[str, float]:
+    """Parallel map keyed by synthetics test id (string) for UI fallback joins."""
+    by_id: dict[str, float] = {}
+    for name, tid in (name_to_tid or {}).items():
+        ts = str(tid).strip()
+        if ts.startswith("ep-"):
+            continue
+        v = metrics.get(name)
+        if isinstance(v, (int, float)):
+            by_id[ts] = float(v)
+    return by_id
 
 
 def _metric_keys_to_test_names(parsed: dict[str, float]) -> dict[str, float]:
@@ -1524,29 +1613,42 @@ def _metric_keys_to_test_names(parsed: dict[str, float]) -> dict[str, float]:
     return out
 
 
+def _csv_pick_test_dimension_column(fieldnames: list[str] | None) -> str:
+    if not fieldnames:
+        return "TEST"
+    fn = list(fieldnames)
+    for p in ("EYEBROW_TEST", "TEST", "Test", "test"):
+        if p in fn:
+            return p
+    for c in fn:
+        if c and str(c).upper() in ("TEST", "EYEBROW_TEST"):
+            return c
+    return "TEST"
+
+
 def parse_csv_metrics(data: dict) -> dict[str, float]:
     csv_text = data.get("csv", "")
     agg_map = data.get("names", {}).get("aggregatesMap", {})
     names_map = agg_map.get("TEST", agg_map.get("EYEBROW_TEST", {}))
-    test_col = "TEST"
-    if "EYEBROW_TEST" in csv_text.split("\n", 1)[0]:
-        test_col = "EYEBROW_TEST"
     sums = defaultdict(float)
     cnts = defaultdict(int)
     reader = csv.DictReader(io.StringIO(csv_text))
+    test_col = _csv_pick_test_dimension_column(reader.fieldnames)
     for row in reader:
-        tid = row.get(test_col, "")
-        v = row.get("v", "")
-        if tid and v:
+        tid = (row.get(test_col, "") or "").strip()
+        vcell = row.get("v", "")
+        if vcell == "" or vcell is None:
+            vcell = row.get("value", "")
+        if tid and vcell != "" and vcell is not None:
             try:
-                sums[tid] += float(v)
+                sums[tid] += float(vcell)
                 cnts[tid] += 1
             except ValueError:
                 pass
     result = {}
     for tid in sums:
         tid_k = str(tid).strip()
-        catalog_name = _test_id_str_to_catalog_name(tid_k)
+        catalog_name = _resolve_mcp_dimension_to_catalog_name(tid_k)
         te_label = names_map.get(tid, names_map.get(tid_k))
         key = catalog_name or te_label or tid_k
         if catalog_name and te_label and catalog_name != te_label:
@@ -2286,21 +2388,22 @@ async def fetch_metrics_async(hours: int) -> dict[str, float]:
                 log.error("MCP metrics batch error: metric=%s, batch_index=%s, error=%s", loss_metric, i, e)
             await asyncio.sleep(delay + random.uniform(0, 0.4))
 
-    _set_refresh_status(message=f"{hours}h availability loaded ({len(test_availability)} tests)")
+    coalesced = coalesce_per_test_metric_map(test_availability, synth_ids)
+    _set_refresh_status(message=f"{hours}h availability loaded ({len(coalesced)} tests)")
     log.info(
-        "Metrics for %dh: %d tests with availability (%d synth tests in catalog)",
+        "Metrics for %dh: %d catalog tests with availability (%d synth tests in catalog)",
         hours,
-        len(test_availability),
+        len(coalesced),
         len(synth_ids),
     )
-    gap = len(synth_ids) - len(test_availability)
+    gap = sum(1 for n in synth_ids if n not in coalesced)
     if gap > 0:
         log.warning(
             "MCP metrics: %d catalog test(s) missing availability after MCP fetch "
             "(empty CSV for time window, unsupported metric for test type, or MCP errors — check logs above)",
             gap,
         )
-    return test_availability
+    return coalesced
 
 
 def get_or_fetch_metrics(window_key: str) -> dict[str, float] | None:
@@ -2365,6 +2468,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         await asyncio.sleep(delay + random.uniform(0, 0.5))
 
     if resp_by_test:
+        resp_by_test = coalesce_per_test_metric_map(resp_by_test, test_ids_by_name)
         vals = list(resp_by_test.values())
         extra["avg_response_ms"] = round(sum(vals) / len(vals))
         sorted_v = sorted(vals)
@@ -2393,6 +2497,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         await asyncio.sleep(delay + random.uniform(0, 0.5))
 
     if loss_by_test:
+        loss_by_test = coalesce_per_test_metric_map(loss_by_test, test_ids_by_name)
         vals = list(loss_by_test.values())
         extra["avg_packet_loss"] = round(sum(vals) / len(vals), 2)
         extra["loss_affected_paths"] = sum(1 for v in vals if v > 0)
@@ -2420,6 +2525,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         await asyncio.sleep(delay + random.uniform(0, 0.5))
 
     if jitter_by_test:
+        jitter_by_test = coalesce_per_test_metric_map(jitter_by_test, test_ids_by_name)
         jitter_detail = []
         for test_name, j_val in jitter_by_test.items():
             numeric_id = test_ids_by_name.get(test_name, "")
@@ -2438,6 +2544,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
         await asyncio.sleep(delay + random.uniform(0, 0.5))
 
     if latency_by_test:
+        latency_by_test = coalesce_per_test_metric_map(latency_by_test, test_ids_by_name)
         lat_detail = []
         for test_name, lat_val in latency_by_test.items():
             numeric_id = test_ids_by_name.get(test_name, "")
@@ -2470,6 +2577,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
             await asyncio.sleep(delay + random.uniform(0, 0.5))
         await asyncio.sleep(delay * 0.5)
         if by_test:
+            by_test = coalesce_per_test_metric_map(by_test, test_ids_by_name)
             detail = []
             for test_name, val in by_test.items():
                 numeric_id_v = test_ids_by_name.get(test_name, "")
@@ -2503,6 +2611,7 @@ async def fetch_extra_kpis_async(hours: int) -> dict:
             await asyncio.sleep(delay + random.uniform(0, 0.5))
         await asyncio.sleep(delay * 0.5)
         if by_test:
+            by_test = coalesce_per_test_metric_map(by_test, test_ids_by_name)
             detail = []
             for test_name, val in by_test.items():
                 numeric_id_v = test_ids_by_name.get(test_name, "")
@@ -3225,7 +3334,16 @@ def api_data():
         extra_kpis = e_entry["data"] if e_entry else {}
         data_source = "cache"
 
-    base["TEST_AVAILABILITY"] = metrics
+    name_to_tid_avail = {
+        n: t
+        for n, t in (base.get("TEST_IDS") or {}).items()
+        if not str(t).strip().startswith("ep-")
+    }
+    if metrics:
+        metrics = coalesce_per_test_metric_map(metrics, name_to_tid_avail)
+    canon_av = metrics or {}
+    base["TEST_AVAILABILITY"] = canon_av
+    base["TEST_AVAILABILITY_BY_TEST_ID"] = _test_availability_by_test_id(canon_av, name_to_tid_avail)
     base["EXTRA_KPI"] = extra_kpis
     base["window"] = window
     base["served_metrics_window"] = served_mw

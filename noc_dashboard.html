@@ -1322,20 +1322,45 @@ function getBusinessServiceTypeRule(test, cfg) {
 
 function toggleBsvc(id) { document.getElementById(id).classList.toggle('expanded'); }
 
+function kpiNumericForTest(t, nameKeyed, idKeyed) {
+  if (!t || !nameKeyed) return undefined;
+  if (nameKeyed[t.name] != null) return nameKeyed[t.name];
+  var tid = t.id != null ? String(t.id).trim() : '';
+  if (tid && idKeyed && idKeyed[tid] != null) return idKeyed[tid];
+  return undefined;
+}
+
 function renderCEATests() {
   var container = document.getElementById('tab-cea');
   var tests = DATA.ALL_TESTS || [];
   var availability = DATA.TEST_AVAILABILITY || {};
+  var availByTestId = DATA.TEST_AVAILABILITY_BY_TEST_ID || {};
   var issues = DATA.KNOWN_ISSUES || {};
   var extra = DATA.EXTRA_KPI || {};
   var respMap = {};
-  (extra.resp_by_test || []).forEach(function(r) { respMap[r.test] = r.ms; });
+  var respById = {};
+  (extra.resp_by_test || []).forEach(function(r) {
+    if (r.test) respMap[r.test] = r.ms;
+    if (r.id != null && String(r.id) !== '') respById[String(r.id)] = r.ms;
+  });
   var lossMap = {};
-  (extra.loss_by_test || []).forEach(function(r) { lossMap[r.test] = r.loss; });
+  var lossById = {};
+  (extra.loss_by_test || []).forEach(function(r) {
+    if (r.test) lossMap[r.test] = r.loss;
+    if (r.id != null && String(r.id) !== '') lossById[String(r.id)] = r.loss;
+  });
   var jitterMap = {};
-  (extra.jitter_by_test || []).forEach(function(r) { jitterMap[r.test] = r.jitter; });
+  var jitterById = {};
+  (extra.jitter_by_test || []).forEach(function(r) {
+    if (r.test) jitterMap[r.test] = r.jitter;
+    if (r.id != null && String(r.id) !== '') jitterById[String(r.id)] = r.jitter;
+  });
   var latencyMap = {};
-  (extra.latency_by_test || []).forEach(function(r) { latencyMap[r.test] = r.latency; });
+  var latencyById = {};
+  (extra.latency_by_test || []).forEach(function(r) {
+    if (r.test) latencyMap[r.test] = r.latency;
+    if (r.id != null && String(r.id) !== '') latencyById[String(r.id)] = r.latency;
+  });
   var mosMap = {};
   (extra.mos_by_test || []).forEach(function(r) { mosMap[r.test] = r.value; });
   var voipLatMap = {};
@@ -1358,13 +1383,13 @@ function renderCEATests() {
   function getTestHealth(t) {
     var tp = (t.type || '').toLowerCase();
     if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
-      var l = lossMap[t.name];
+      var l = kpiNumericForTest(t, lossMap, lossById);
       if (l != null) {
         if (l > 5) return { status: 'critical', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
         if (l > 1) return { status: 'warning', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
         return { status: 'healthy', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
       }
-      var lat = latencyMap[t.name];
+      var lat = kpiNumericForTest(t, latencyMap, latencyById);
       if (lat != null) {
         if (lat > 200) return { status: 'warning', kpi: 'Latency', val: Math.round(lat) + 'ms' };
         return { status: 'healthy', kpi: 'Latency', val: Math.round(lat) + 'ms' };
@@ -1372,7 +1397,7 @@ function renderCEATests() {
       return { status: 'unknown', kpi: 'Pkt Loss', val: '--' };
     }
     if (tp === 'http-server' || tp === 'ftp-server') {
-      var a = availability[t.name];
+      var a = kpiNumericForTest(t, availability, availByTestId);
       if (a == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
       if (a < 95) return { status: 'critical', kpi: 'Availability', val: a.toFixed(1) + '%' };
       if (a < 99) return { status: 'warning', kpi: 'Availability', val: a.toFixed(1) + '%' };
@@ -1414,20 +1439,20 @@ function renderCEATests() {
       return { status: 'healthy', kpi: 'Completion', val: pc.toFixed(1) + '%' };
     }
     if (tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec') {
-      var da = availability[t.name];
+      var da = kpiNumericForTest(t, availability, availByTestId);
       if (da == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
       if (da < 95) return { status: 'critical', kpi: 'Availability', val: da.toFixed(1) + '%' };
       if (da < 99) return { status: 'warning', kpi: 'Availability', val: da.toFixed(1) + '%' };
       return { status: 'healthy', kpi: 'Availability', val: da.toFixed(1) + '%' };
     }
     if (tp === 'sip-server') {
-      var sa = availability[t.name];
+      var sa = kpiNumericForTest(t, availability, availByTestId);
       if (sa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
       if (sa < 95) return { status: 'critical', kpi: 'Availability', val: sa.toFixed(1) + '%' };
       if (sa < 99) return { status: 'warning', kpi: 'Availability', val: sa.toFixed(1) + '%' };
       return { status: 'healthy', kpi: 'Availability', val: sa.toFixed(1) + '%' };
     }
-    var fa = availability[t.name];
+    var fa = kpiNumericForTest(t, availability, availByTestId);
     if (fa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
     if (fa < 95) return { status: 'critical', kpi: 'Availability', val: fa.toFixed(1) + '%' };
     if (fa < 99) return { status: 'warning', kpi: 'Availability', val: fa.toFixed(1) + '%' };
@@ -1541,11 +1566,11 @@ function renderCEATests() {
       return pa - pb;
     });
     items.forEach(function(t, i) {
-      var avail = availability[t.name];
-      var resp = respMap[t.name];
-      var loss = lossMap[t.name];
-      var jitter = jitterMap[t.name];
-      var latency = latencyMap[t.name];
+      var avail = kpiNumericForTest(t, availability, availByTestId);
+      var resp = kpiNumericForTest(t, respMap, respById);
+      var loss = kpiNumericForTest(t, lossMap, lossById);
+      var jitter = kpiNumericForTest(t, jitterMap, jitterById);
+      var latency = kpiNumericForTest(t, latencyMap, latencyById);
       var mos = mosMap[t.name];
       var voipLat = voipLatMap[t.name];
       var voipLoss = voipLossMap[t.name];
@@ -1997,7 +2022,12 @@ function renderEndpointTable() {
 function nocBuildExtraMaps(extra) {
   extra = extra || {};
   var lossMap = {};
-  (extra.loss_by_test || []).forEach(function(r) { lossMap[r.test] = r.loss != null ? r.loss : r.value; });
+  var lossIdMap = {};
+  (extra.loss_by_test || []).forEach(function(r) {
+    var lv = r.loss != null ? r.loss : r.value;
+    if (r.test) lossMap[r.test] = lv;
+    if (r.id != null && String(r.id) !== '') lossIdMap[String(r.id)] = lv;
+  });
   var mosMap = {};
   (extra.mos_by_test || []).forEach(function(r) { mosMap[r.test] = r.value; });
   var apiCompMap = {};
@@ -2009,50 +2039,68 @@ function nocBuildExtraMaps(extra) {
   var bgpReachMap = {};
   (extra.bgp_reach_by_test || []).forEach(function(r) { bgpReachMap[r.test] = r.value; });
   var latencyMap = {};
-  (extra.latency_by_test || []).forEach(function(r) { latencyMap[r.test] = r.latency; });
+  var latencyIdMap = {};
+  (extra.latency_by_test || []).forEach(function(r) {
+    if (r.test) latencyMap[r.test] = r.latency;
+    if (r.id != null && String(r.id) !== '') latencyIdMap[String(r.id)] = r.latency;
+  });
   return {
     lossMap: lossMap,
+    lossIdMap: lossIdMap,
     mosMap: mosMap,
     apiCompMap: apiCompMap,
     txnCompMap: txnCompMap,
     pageCompMap: pageCompMap,
     bgpReachMap: bgpReachMap,
     latencyMap: latencyMap,
+    latencyIdMap: latencyIdMap,
   };
 }
 
-function nocGaugeTestHealthPct(t, maps, availability) {
+function nocGaugeTestHealthPct(t, maps, availability, availByTestId) {
   availability = availability || {};
+  availByTestId = availByTestId || {};
   maps = maps || {};
   var lossMap = maps.lossMap || {};
+  var lossIdMap = maps.lossIdMap || {};
+  var latencyMap = maps.latencyMap || {};
+  var latencyIdMap = maps.latencyIdMap || {};
   var mosMap = maps.mosMap || {};
   var apiCompMap = maps.apiCompMap || {};
   var txnCompMap = maps.txnCompMap || {};
   var pageCompMap = maps.pageCompMap || {};
   var bgpReachMap = maps.bgpReachMap || {};
+  var availOf = function(tt) {
+    return kpiNumericForTest(tt, availability, availByTestId);
+  };
   var tp = (t.type || '').toLowerCase();
   if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
-    var l = lossMap[t.name];
+    var l = kpiNumericForTest(t, lossMap, lossIdMap);
     if (l != null) return Math.max(0, 100 - l);
-    return availability[t.name] != null ? availability[t.name] : null;
+    var ao = availOf(t);
+    return ao != null ? ao : null;
   }
   if (tp === 'voice') {
     var m = mosMap[t.name];
     if (m != null) return Math.min(100, (m / 4.5) * 100);
     return null;
   }
-  if (tp === 'web-transactions') return txnCompMap[t.name] != null ? txnCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
-  if (tp === 'page-load') return pageCompMap[t.name] != null ? pageCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
-  if (tp === 'api') return apiCompMap[t.name] != null ? apiCompMap[t.name] : (availability[t.name] != null ? availability[t.name] : null);
+  if (tp === 'web-transactions') return txnCompMap[t.name] != null ? txnCompMap[t.name] : availOf(t);
+  if (tp === 'page-load') return pageCompMap[t.name] != null ? pageCompMap[t.name] : availOf(t);
+  if (tp === 'api') return apiCompMap[t.name] != null ? apiCompMap[t.name] : availOf(t);
   if (tp === 'bgp') return bgpReachMap[t.name] != null ? bgpReachMap[t.name] : null;
-  return availability[t.name] != null ? availability[t.name] : null;
+  var av = availOf(t);
+  return av != null ? av : null;
 }
 
-function nocExplainTestHealth(t, availability, maps) {
+function nocExplainTestHealth(t, availability, maps, availByTestId) {
   availability = availability || {};
+  availByTestId = availByTestId || {};
   maps = maps || {};
   var lossMap = maps.lossMap || {};
+  var lossIdMap = maps.lossIdMap || {};
   var latencyMap = maps.latencyMap || {};
+  var latencyIdMap = maps.latencyIdMap || {};
   var mosMap = maps.mosMap || {};
   var bgpReachMap = maps.bgpReachMap || {};
   var apiCompMap = maps.apiCompMap || {};
@@ -2060,13 +2108,13 @@ function nocExplainTestHealth(t, availability, maps) {
   var pageCompMap = maps.pageCompMap || {};
   var tp = (t.type || '').toLowerCase();
   if (tp === 'agent-to-server' || tp === 'agent-to-agent') {
-    var l = lossMap[t.name];
+    var l = kpiNumericForTest(t, lossMap, lossIdMap);
     if (l != null) {
       if (l > 5) return { status: 'critical', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
       if (l > 1) return { status: 'warning', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
       return { status: 'healthy', kpi: 'Pkt Loss', val: l.toFixed(2) + '%' };
     }
-    var lat = latencyMap[t.name];
+    var lat = kpiNumericForTest(t, latencyMap, latencyIdMap);
     if (lat != null) {
       if (lat > 200) return { status: 'warning', kpi: 'Latency', val: Math.round(lat) + 'ms' };
       return { status: 'healthy', kpi: 'Latency', val: Math.round(lat) + 'ms' };
@@ -2074,7 +2122,7 @@ function nocExplainTestHealth(t, availability, maps) {
     return { status: 'unknown', kpi: 'Pkt Loss', val: '--' };
   }
   if (tp === 'http-server' || tp === 'ftp-server') {
-    var a = availability[t.name];
+    var a = kpiNumericForTest(t, availability, availByTestId);
     if (a == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
     if (a < 95) return { status: 'critical', kpi: 'Availability', val: a.toFixed(1) + '%' };
     if (a < 99) return { status: 'warning', kpi: 'Availability', val: a.toFixed(1) + '%' };
@@ -2116,20 +2164,20 @@ function nocExplainTestHealth(t, availability, maps) {
     return { status: 'healthy', kpi: 'Completion', val: pc.toFixed(1) + '%' };
   }
   if (tp === 'dns-server' || tp === 'dnstrace' || tp === 'dnssec') {
-    var da = availability[t.name];
+    var da = kpiNumericForTest(t, availability, availByTestId);
     if (da == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
     if (da < 95) return { status: 'critical', kpi: 'Availability', val: da.toFixed(1) + '%' };
     if (da < 99) return { status: 'warning', kpi: 'Availability', val: da.toFixed(1) + '%' };
     return { status: 'healthy', kpi: 'Availability', val: da.toFixed(1) + '%' };
   }
   if (tp === 'sip-server') {
-    var sa = availability[t.name];
+    var sa = kpiNumericForTest(t, availability, availByTestId);
     if (sa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
     if (sa < 95) return { status: 'critical', kpi: 'Availability', val: sa.toFixed(1) + '%' };
     if (sa < 99) return { status: 'warning', kpi: 'Availability', val: sa.toFixed(1) + '%' };
     return { status: 'healthy', kpi: 'Availability', val: sa.toFixed(1) + '%' };
   }
-  var fa = availability[t.name];
+  var fa = kpiNumericForTest(t, availability, availByTestId);
   if (fa == null) return { status: 'unknown', kpi: 'Availability', val: '--' };
   if (fa < 95) return { status: 'critical', kpi: 'Availability', val: fa.toFixed(1) + '%' };
   if (fa < 99) return { status: 'warning', kpi: 'Availability', val: fa.toFixed(1) + '%' };
@@ -2185,6 +2233,7 @@ function gaugeItemKeydown(e) {
 function buildServiceGaugeModal(serviceName) {
   var tests = DATA.ALL_TESTS || [];
   var availability = DATA.TEST_AVAILABILITY || {};
+  var availByTestIdGauge = DATA.TEST_AVAILABILITY_BY_TEST_ID || {};
   var extra = DATA.EXTRA_KPI || {};
   var maps = nocBuildExtraMaps(extra);
   var agentTests = DATA.AGENT_TESTS || {};
@@ -2206,8 +2255,8 @@ function buildServiceGaugeModal(serviceName) {
 
   var rows = [];
   items.forEach(function(t) {
-    var hp = nocGaugeTestHealthPct(t, maps, availability);
-    var ex = nocExplainTestHealth(t, availability, maps);
+    var hp = nocGaugeTestHealthPct(t, maps, availability, availByTestIdGauge);
+    var ex = nocExplainTestHealth(t, availability, maps, availByTestIdGauge);
     var id = t.id || '';
     var teLink = id && String(id).indexOf('ep-') !== 0 ? 'https://app.thousandeyes.com/network-app-synthetics/views/?testId=' + encodeURIComponent(id) : '';
     rows.push({ test: t, healthPct: hp, explain: ex, teLink: teLink });
@@ -2295,7 +2344,7 @@ function buildServiceGaugeModal(serviceName) {
     inSvc.forEach(function(n) {
       var tt = testByName[n];
       if (!tt) return;
-      var v = nocGaugeTestHealthPct(tt, maps, availability);
+      var v = nocGaugeTestHealthPct(tt, maps, availability, availByTestIdGauge);
       if (v != null) {
         pctVals.push(v);
         if (v < worstPct) {
@@ -2372,13 +2421,14 @@ function openGaugeModal(serviceName) {
 function renderGauges() {
   var tests = DATA.ALL_TESTS || [];
   var availability = DATA.TEST_AVAILABILITY || {};
+  var availByTestIdGauge = DATA.TEST_AVAILABILITY_BY_TEST_ID || {};
   var extra = DATA.EXTRA_KPI || {};
   if (tests.length === 0) return;
 
   var maps = nocBuildExtraMaps(extra);
 
   function testHealthPct(t) {
-    return nocGaugeTestHealthPct(t, maps, availability);
+    return nocGaugeTestHealthPct(t, maps, availability, availByTestIdGauge);
   }
 
   var grouped = {};
