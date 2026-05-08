@@ -471,15 +471,14 @@ function getSiteTests(site, data) {
 
   var siteAgentIds = {};
   var siteAgentNames = {};
-  var siteLocTokens = {};
   site.agents.forEach(function(a) {
     if (a.id != null) siteAgentIds[String(a.id).trim()] = true;
     var nm = (a.name || '').toLowerCase().trim();
     if (nm) siteAgentNames[nm] = true;
-    var lt = firstLocationToken(a.loc || a.city || '');
-    if (lt) siteLocTokens[lt] = true;
   });
 
+  // Second pass: include tests whose catalog lists this site's agents by id or exact agent display name.
+  // Do not match on location strings — shared city/state tokens pulled in unrelated tests account-wide.
   (data.ALL_TESTS || []).forEach(function(t) {
     var aids = t.agent_ids || [];
     for (var i = 0; i < aids.length; i++) {
@@ -492,11 +491,6 @@ function getSiteTests(site, data) {
     for (var j = 0; j < tagents.length; j++) {
       var gn = (tagents[j].name || '').toLowerCase().trim();
       if (gn && siteAgentNames[gn]) {
-        addByName(t.name);
-        return;
-      }
-      var gloc = firstLocationToken(tagents[j].loc || tagents[j].location || '');
-      if (gloc && siteLocTokens[gloc]) {
         addByName(t.name);
         return;
       }

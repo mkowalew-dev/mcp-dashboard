@@ -196,8 +196,8 @@ WINDOWS = {
 
 # When MCP omits enterprise agent IDs on each test's agents[] array, AGENT_TESTS stays empty and
 # Site Health shows "no tests". Fallback attaches synthetic tests to those enterprise agents.
-# Values: none | implicit | all (default: all).
-AGENT_TESTS_ORPHAN_FALLBACK = (os.getenv("AGENT_TESTS_ORPHAN_FALLBACK") or "all").strip().lower()
+# Values: none | implicit | all (default: none — strict per-site tests; use "all" only for demos).
+AGENT_TESTS_ORPHAN_FALLBACK = (os.getenv("AGENT_TESTS_ORPHAN_FALLBACK") or "none").strip().lower()
 
 # First paint: load a small window first, then 1h hourly + 24h cache fallback in background
 INITIAL_BOOTSTRAP_DISABLED = (os.getenv("INITIAL_BOOTSTRAP_DISABLED") or "").strip().lower() in ("1", "true", "yes")
