@@ -1594,14 +1594,20 @@ def _metric_keys_to_test_names(parsed: dict[str, float]) -> dict[str, float]:
             ts = str(tid)
             if ts.startswith("ep-"):
                 continue
-            id_to_name[ts] = name
+            for cand in _normalized_te_id_candidates(ts):
+                id_to_name[cand] = name
     out: dict[str, float] = {}
     remap_n = 0
     for k, v in parsed.items():
         sk = str(k).strip()
-        if sk in id_to_name:
+        matched: str | None = None
+        for cand in _normalized_te_id_candidates(sk):
+            if cand in id_to_name:
+                matched = id_to_name[cand]
+                break
+        if matched:
             remap_n += 1
-            out[id_to_name[sk]] = v
+            out[matched] = v
         else:
             out[sk] = v
     if remap_n:
@@ -1610,6 +1616,98 @@ def _metric_keys_to_test_names(parsed: dict[str, float]) -> dict[str, float]:
             "(aggregatesMap.TEST incomplete; UI expects names in TEST_AVAILABILITY)",
             remap_n,
         )
+    return out
+
+
+def _backfill_availability_from_extra_loss(
+    metrics: dict[str, float],
+    extra: dict | None,
+    test_types: dict[str, str],
+    name_to_tid: dict[str, str],
+) -> dict[str, float]:
+    """Fill gaps when MCP omits WEB_AVAILABILITY for batched TEST rolls but extra KPIs have data.
+
+    Order: (1) derive from NET_LOSS in ``loss_by_test`` as ``100 - loss`` for DNS/HTTP/FTP/SIP types;
+    (2) if still missing for HTTP/FTP and ``resp_by_test`` has TTFB, assume 100% (fetch succeeded).
+
+    Per-agent ``WEB_AVAILABILITY`` (/api/agent_perf) can still show ~100% while the aggregate CSV is empty."""
+    if not extra or not test_types:
+        return metrics
+    loss_detail = extra.get("loss_by_test")
+    if not loss_detail or not isinstance(loss_detail, list):
+        return metrics
+    loss_by_name: dict[str, float] = {}
+    loss_by_id: dict[str, float] = {}
+    for r in loss_detail:
+        if not isinstance(r, dict):
+            continue
+        lo = r.get("loss")
+        if lo is None or not isinstance(lo, (int, float)):
+            continue
+        tnm = r.get("test")
+        if tnm:
+            loss_by_name[str(tnm)] = float(lo)
+        tid = r.get("id")
+        if tid is not None and str(tid).strip():
+            loss_by_id[str(tid).strip()] = float(lo)
+
+    availish = frozenset(
+        {"http-server", "ftp-server", "dns-server", "dnstrace", "dnssec", "sip-server"}
+    )
+    out = dict(metrics)
+    for tname, tid in name_to_tid.items():
+        tt_raw = test_types.get(tname, "") or ""
+        tt_lower = str(tt_raw).strip().lower()
+        if tt_lower not in availish:
+            continue
+        if out.get(tname) is not None:
+            continue
+        lo = loss_by_name.get(tname)
+        if lo is None and tid:
+            for cand in _normalized_te_id_candidates(str(tid)):
+                if cand in loss_by_id:
+                    lo = loss_by_id[cand]
+                    break
+        if lo is None:
+            continue
+        out[tname] = round(max(0.0, min(100.0, 100.0 - float(lo))), 2)
+
+    # Loss alone can be absent for pure HTTP paths; TTFB implies the fetch succeeded.
+    still_missing = [n for n, i in name_to_tid.items() if out.get(n) is None]
+    if still_missing:
+        resp_detail = extra.get("resp_by_test") or []
+        resp_by_name: dict[str, float] = {}
+        resp_by_id: dict[str, float] = {}
+        if isinstance(resp_detail, list):
+            for r in resp_detail:
+                if not isinstance(r, dict):
+                    continue
+                ms = r.get("ms")
+                if ms is None or not isinstance(ms, (int, float)):
+                    continue
+                tnm = r.get("test")
+                if tnm:
+                    resp_by_name[str(tnm)] = float(ms)
+                tid_r = r.get("id")
+                if tid_r is not None and str(tid_r).strip():
+                    resp_by_id[str(tid_r).strip()] = float(ms)
+        httpish = frozenset({"http-server", "ftp-server"})
+        for tname in still_missing:
+            if out.get(tname) is not None:
+                continue
+            tt_lower = str(test_types.get(tname, "") or "").strip().lower()
+            if tt_lower not in httpish:
+                continue
+            ms = resp_by_name.get(tname)
+            tid = name_to_tid.get(tname)
+            if ms is None and tid:
+                for cand in _normalized_te_id_candidates(str(tid)):
+                    if cand in resp_by_id:
+                        ms = resp_by_id[cand]
+                        break
+            if ms is not None and ms >= 0:
+                out[tname] = 100.0
+
     return out
 
 
@@ -3342,6 +3440,12 @@ def api_data():
     if metrics:
         metrics = coalesce_per_test_metric_map(metrics, name_to_tid_avail)
     canon_av = metrics or {}
+    canon_av = _backfill_availability_from_extra_loss(
+        canon_av,
+        extra_kpis,
+        base.get("TEST_TYPES") or {},
+        name_to_tid_avail,
+    )
     base["TEST_AVAILABILITY"] = canon_av
     base["TEST_AVAILABILITY_BY_TEST_ID"] = _test_availability_by_test_id(canon_av, name_to_tid_avail)
     base["EXTRA_KPI"] = extra_kpis
