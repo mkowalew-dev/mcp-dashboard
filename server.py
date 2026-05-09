@@ -1464,6 +1464,124 @@ async def safe_call(tool_name, args=None):
         return None
 
 
+# Hard caps to prevent unbounded loops if the MCP server returns a self-referential
+# cursor or never sets hasMore=False on a buggy page.
+_MCP_PAGE_LIMIT_DEFAULT = int(os.getenv("MCP_PAGE_LIMIT", "50"))
+_MCP_PAGE_SIZE_DEFAULT = int(os.getenv("MCP_PAGE_SIZE", "200"))
+
+
+def _next_cursor_from_response(resp) -> str | None:
+    """Extract the next-page cursor from common MCP/ThousandEyes pagination shapes."""
+    if not isinstance(resp, dict):
+        return None
+    for key in ("nextCursor", "next_cursor", "cursor"):
+        v = resp.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    pagination = resp.get("pagination") or resp.get("page") or resp.get("meta")
+    if isinstance(pagination, dict):
+        for key in ("nextCursor", "next_cursor", "cursor", "next"):
+            v = pagination.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    for wrapper_key in ("result", "data"):
+        wrapped = resp.get(wrapper_key)
+        if isinstance(wrapped, dict):
+            nested = _next_cursor_from_response(wrapped)
+            if nested:
+                return nested
+    return None
+
+
+def _has_more_from_response(resp) -> bool | None:
+    """Read the boolean ``hasMore`` flag from the response (None if absent)."""
+    if not isinstance(resp, dict):
+        return None
+    for key in ("hasMore", "has_more"):
+        if key in resp:
+            return bool(resp.get(key))
+    pagination = resp.get("pagination") or resp.get("page") or resp.get("meta")
+    if isinstance(pagination, dict):
+        for key in ("hasMore", "has_more"):
+            if key in pagination:
+                return bool(pagination.get(key))
+    for wrapper_key in ("result", "data"):
+        wrapped = resp.get(wrapper_key)
+        if isinstance(wrapped, dict):
+            nested = _has_more_from_response(wrapped)
+            if nested is not None:
+                return nested
+    return None
+
+
+async def safe_call_paginated(
+    tool_name: str,
+    args: dict | None = None,
+    *,
+    page_limit: int = _MCP_PAGE_LIMIT_DEFAULT,
+) -> dict | None:
+    """Run a paginated MCP list_* tool, merging every page's rows under ``results``.
+
+    ThousandEyes MCP list_* tools (e.g. ``list_network_app_synthetics_tests``) return a single
+    page per call with ``nextCursor`` / ``hasMore``. Without paging, accounts with more tests
+    than the page size silently lose the tail — which is what hid the majority of tests for
+    sites whose agent ids only appeared on later pages."""
+    base_args = dict(args or {})
+    base_args.setdefault("page_size", _MCP_PAGE_SIZE_DEFAULT)
+    merged_rows: list = []
+    last_resp: dict | None = None
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+    pages_fetched = 0
+
+    for page_idx in range(max(1, page_limit)):
+        call_args = dict(base_args)
+        if cursor:
+            call_args["cursor"] = cursor
+        resp = await safe_call(tool_name, call_args)
+        if resp is None:
+            if page_idx == 0:
+                return None
+            break
+        if isinstance(resp, dict):
+            last_resp = resp
+        rows = _parse_list(resp)
+        if rows:
+            merged_rows.extend(rows)
+        pages_fetched += 1
+        next_cursor = _next_cursor_from_response(resp)
+        has_more = _has_more_from_response(resp)
+        # Stop conditions: explicit hasMore=False, no cursor returned, or the cursor repeats
+        # (which the MCP server should never emit but we guard against to avoid an infinite loop).
+        if has_more is False:
+            break
+        if not next_cursor:
+            break
+        if next_cursor in seen_cursors:
+            log.warning(
+                "MCP %s pagination: repeated cursor after %d page(s); stopping to avoid loop",
+                tool_name, pages_fetched,
+            )
+            break
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+    else:
+        log.warning(
+            "MCP %s pagination: hit page_limit=%d before exhausting cursor; "
+            "raise MCP_PAGE_LIMIT if the account legitimately has more pages",
+            tool_name, page_limit,
+        )
+
+    if last_resp is None:
+        return None
+    if pages_fetched > 1:
+        log.info(
+            "MCP %s: merged %d row(s) across %d page(s)",
+            tool_name, len(merged_rows), pages_fetched,
+        )
+    return {"results": merged_rows, "_pages_fetched": pages_fetched}
+
+
 def resolve_coords(location_str: str):
     if not location_str:
         return None, None
@@ -1965,6 +2083,10 @@ async def refresh_base_data_async():
     _set_refresh_status(phase="base", message="Fetching base data (tests, agents, alerts)...")
 
     # Single gather for all base calls to minimize wall time
+    # ``detail="full"`` is required so each test row carries its agents[] / agentIds list.
+    # Without it, MCP returns only summary rows, AGENT_TESTS stays empty for most agents,
+    # and Site Health shows just the handful of tests whose ids happen to leak through.
+    # Pagination is mandatory: the server caps page_size and silently drops the tail otherwise.
     (
         tests_resp,
         ep_tests_resp,
@@ -1975,7 +2097,10 @@ async def refresh_base_data_async():
         events_resp,
         outages_resp,
     ) = await asyncio.gather(
-        safe_call("list_network_app_synthetics_tests"),
+        safe_call_paginated(
+            "list_network_app_synthetics_tests",
+            {"detail": "full"},
+        ),
         safe_call("list_endpoint_agent_tests"),
         safe_call("get_account_groups"),
         safe_call("list_cloud_enterprise_agents"),
