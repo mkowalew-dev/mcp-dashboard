@@ -1529,7 +1529,6 @@ async def safe_call_paginated(
     base_args = dict(args or {})
     base_args.setdefault("page_size", _MCP_PAGE_SIZE_DEFAULT)
     merged_rows: list = []
-    last_resp: dict | None = None
     cursor: str | None = None
     seen_cursors: set[str] = set()
     pages_fetched = 0
@@ -1543,8 +1542,6 @@ async def safe_call_paginated(
             if page_idx == 0:
                 return None
             break
-        if isinstance(resp, dict):
-            last_resp = resp
         rows = _parse_list(resp)
         if rows:
             merged_rows.extend(rows)
@@ -1572,7 +1569,7 @@ async def safe_call_paginated(
             tool_name, page_limit,
         )
 
-    if last_resp is None:
+    if pages_fetched == 0:
         return None
     if pages_fetched > 1:
         log.info(
